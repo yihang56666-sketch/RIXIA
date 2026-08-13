@@ -1,0 +1,35 @@
+{
+  "name": "rixia",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "一个轻量、专注本地记录的个人效率工作台",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "mobile:sync": "npm run build && cap sync android",
+    "mobile:doctor": "node scripts/build-android-debug-apk.mjs --doctor",
+    "mobile:sdk:install": "node scripts/setup-android-sdk.mjs --install",
+    "mobile:apk": "node scripts/build-android-debug-apk.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
+    "lucide-react": "^0.544.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.1",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5",
+    "vitest": "^3.2.4"
+  }
+}

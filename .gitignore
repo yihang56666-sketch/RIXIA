@@ -1,0 +1,15 @@
+node_modules
+dist
+.npm-cache
+.npm-cache-codex
+.DS_Store
+*.log
+.vite
+coverage
+
+artifacts
+.mobile-toolchain
+android/app/build
+android/.gradle
+/.git-history-backup/
+

@@ -1,0 +1,10 @@
+{
+  "name": "RIXIA · 个人节奏",
+  "short_name": "RIXIA",
+  "description": "一个轻量、专注本地记录的个人效率工作台",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#f4efe6",
+  "lang": "zh-CN"
+}
