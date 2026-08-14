@@ -1,4 +1,4 @@
-import { CalendarDays, Inbox, LayoutGrid, UserRound } from "lucide-react";
+import { BookOpen, CalendarDays, Inbox, LayoutGrid, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import { VIEW_TITLES } from "../catalog";
 import { greeting, weekdayLabel } from "../lib/time";
@@ -9,6 +9,7 @@ const NAV: Array<{ view: ViewKey; label: string; icon: typeof Inbox }> = [
   { view: "today", label: "今天", icon: CalendarDays },
   { view: "inbox", label: "收集箱", icon: Inbox },
   { view: "tools", label: "工具", icon: LayoutGrid },
+  { view: "kaoyan", label: "考研", icon: BookOpen },
   { view: "settings", label: "设置", icon: UserRound },
 ];
 

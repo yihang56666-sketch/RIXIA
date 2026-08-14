@@ -7,6 +7,7 @@ export type ViewKey =
   | "notes"
   | "countdowns"
   | "focus"
+  | "kaoyan"
   | "settings";
 
 export type ToolKey = "tasks" | "habits" | "notes" | "countdowns" | "focus";
@@ -45,6 +46,23 @@ export interface CountdownItem {
   createdAt: string;
 }
 
+export interface StudySubject {
+  id: string;
+  title: string;
+  color: string;
+  createdAt: string;
+}
+
+export interface StudyUnit {
+  id: string;
+  subjectId: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  completedDates: string[];
+  createdAt: string;
+}
+
 export interface AppState {
   theme: "paper" | "ink";
   backgroundImage: string | null;
@@ -55,5 +73,7 @@ export interface AppState {
   habits: HabitItem[];
   notes: NoteItem[];
   countdowns: CountdownItem[];
+  subjects: StudySubject[];
+  studyUnits: StudyUnit[];
   focusMinutes: number;
 }

@@ -8,6 +8,8 @@ import type {
   HabitItem,
   InboxItem,
   NoteItem,
+  StudySubject,
+  StudyUnit,
   TaskItem,
   ToolKey,
   ViewKey,
@@ -31,6 +33,15 @@ interface AppActions {
   removeNote: (id: string) => void;
   addCountdown: (title: string, date: string) => void;
   removeCountdown: (id: string) => void;
+  addSubject: (title: string, color: string) => void;
+  updateSubject: (id: string, title: string, color: string) => void;
+  removeSubject: (id: string) => void;
+  moveSubject: (id: string, direction: -1 | 1) => void;
+  addStudyUnit: (subjectId: string, title: string, startDate: string, endDate: string) => void;
+  updateStudyUnit: (id: string, title: string, startDate: string, endDate: string) => void;
+  removeStudyUnit: (id: string) => void;
+  moveStudyUnit: (id: string, direction: -1 | 1) => void;
+  toggleStudyDate: (id: string, date: string) => void;
   setFocusMinutes: (minutes: number) => void;
 }
 
@@ -48,6 +59,8 @@ export const useAppStore = create<AppState & AppActions>()(
       habits: [],
       notes: [],
       countdowns: [],
+      subjects: [],
+      studyUnits: [],
       focusMinutes: 25,
       setView: (view) => set({ view }),
       setTheme: (theme) => set({ theme }),
@@ -127,6 +140,69 @@ export const useAppStore = create<AppState & AppActions>()(
         set((state) => ({ countdowns: [item, ...state.countdowns] }));
       },
       removeCountdown: (id) => set((state) => ({ countdowns: state.countdowns.filter((item) => item.id !== id) })),
+      addSubject: (title, color) => {
+        const value = title.trim();
+        if (!value) return;
+        const item: StudySubject = { id: createId(), title: value, color, createdAt: new Date().toISOString() };
+        set((state) => ({ subjects: [...state.subjects, item] }));
+      },
+      updateSubject: (id, title, color) => {
+        const value = title.trim();
+        if (!value) return;
+        set((state) => ({
+          subjects: state.subjects.map((item) => (item.id === id ? { ...item, title: value, color } : item)),
+        }));
+      },
+      removeSubject: (id) => set((state) => ({
+        subjects: state.subjects.filter((item) => item.id !== id),
+        studyUnits: state.studyUnits.filter((item) => item.subjectId !== id),
+      })),
+      moveSubject: (id, direction) => set((state) => {
+        const index = state.subjects.findIndex((item) => item.id === id);
+        const target = index + direction;
+        if (index < 0 || target < 0 || target >= state.subjects.length) return state;
+        const subjects = [...state.subjects];
+        [subjects[index], subjects[target]] = [subjects[target], subjects[index]];
+        return { subjects };
+      }),
+      addStudyUnit: (subjectId, title, startDate, endDate) => {
+        const value = title.trim();
+        if (!value || !startDate || !endDate || startDate > endDate) return;
+        const item: StudyUnit = {
+          id: createId(), subjectId, title: value, startDate, endDate, completedDates: [], createdAt: new Date().toISOString(),
+        };
+        set((state) => ({ studyUnits: [...state.studyUnits, item] }));
+      },
+      updateStudyUnit: (id, title, startDate, endDate) => {
+        const value = title.trim();
+        if (!value || !startDate || !endDate || startDate > endDate) return;
+        set((state) => ({
+          studyUnits: state.studyUnits.map((item) => (item.id === id ? { ...item, title: value, startDate, endDate } : item)),
+        }));
+      },
+      removeStudyUnit: (id) => set((state) => ({ studyUnits: state.studyUnits.filter((item) => item.id !== id) })),
+      moveStudyUnit: (id, direction) => set((state) => {
+        const unit = state.studyUnits.find((item) => item.id === id);
+        if (!unit) return state;
+        const peerIndexes = state.studyUnits.map((item, index) => item.subjectId === unit.subjectId ? index : -1).filter((index) => index >= 0);
+        const localIndex = peerIndexes.indexOf(state.studyUnits.findIndex((item) => item.id === id));
+        const targetLocalIndex = localIndex + direction;
+        if (targetLocalIndex < 0 || targetLocalIndex >= peerIndexes.length) return state;
+        const studyUnits = [...state.studyUnits];
+        const targetIndex = peerIndexes[targetLocalIndex];
+        const currentIndex = peerIndexes[localIndex];
+        [studyUnits[currentIndex], studyUnits[targetIndex]] = [studyUnits[targetIndex], studyUnits[currentIndex]];
+        return { studyUnits };
+      }),
+      toggleStudyDate: (id, date) => set((state) => ({
+        studyUnits: state.studyUnits.map((item) => {
+          if (item.id !== id) return item;
+          const completedDates = item.completedDates.includes(date)
+            ? item.completedDates.filter((entry) => entry !== date)
+            : [...item.completedDates, date];
+          return { ...item, completedDates };
+        }),
+      })),
       setFocusMinutes: (minutes) => set({ focusMinutes: minutes }),
     }),
     { name: "rixia-v1" },

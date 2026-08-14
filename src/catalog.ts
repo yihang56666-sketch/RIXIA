@@ -47,5 +47,6 @@ export const VIEW_TITLES: Record<ViewKey, string> = {
   notes: "笔记",
   countdowns: "倒计时",
   focus: "专注",
+  kaoyan: "考研",
   settings: "设置",
 };

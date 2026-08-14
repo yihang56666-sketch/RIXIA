@@ -4,6 +4,7 @@ import { CountdownsView } from "./features/countdowns/CountdownsView";
 import { FocusView } from "./features/focus/FocusView";
 import { HabitsView } from "./features/habits/HabitsView";
 import { InboxView } from "./features/inbox/InboxView";
+import { KaoyanView } from "./features/kaoyan/KaoyanView";
 import { NotesView } from "./features/notes/NotesView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { TasksView } from "./features/tasks/TasksView";
@@ -29,6 +30,7 @@ export default function App() {
       <Shell>
         {view === "today" && <TodayView />}
         {view === "inbox" && <InboxView />}
+        {view === "kaoyan" && <KaoyanView />}
         {view === "tools" && <ToolsView />}
         {view === "tasks" && <TasksView />}
         {view === "habits" && <HabitsView />}
