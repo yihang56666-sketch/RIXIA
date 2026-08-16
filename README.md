@@ -15,10 +15,18 @@ The app is built as a responsive React + TypeScript web interface and packaged f
 
 ### Personal rhythm tools
 
-- **Habits** record daily repetitions and keep a history of completed dates.
-- **Notes** store short local memos for later reference.
+- **Habits** record daily repetitions, keep a history of completed dates, show week dots, a 15-week GitHub-style heatmap, streaks, and a 30-day habit-strength score.
+- **Notes** store short local memos and can be edited in place.
 - **Countdowns** track dates that matter, such as exams, deadlines, or trips.
-- **Focus** provides a configurable focus timer, with a 25-minute default.
+- **Focus** provides a configurable focus timer with automatic break rounds, a daily focus goal, session history, a weekly minutes chart, a completion chime, and screen wake-lock while running.
+
+### Power features
+
+- **Command palette** (`Ctrl/Cmd + K`): search across tasks, habits, notes, countdowns, inbox, and subjects; jump to any view; switch themes; create a task straight from the search box.
+- **Weekly review** on Today compares completed tasks, habit check-ins, and focus minutes against the previous 7 days.
+- **Task and note editing**: tap a task to change its title and due date; edit notes any time.
+- **Data round-trip**: export all data as a JSON backup and import it back on any device.
+- **Installable PWA**: with the bundled service worker the app installs and runs offline on Windows, Android, and desktop browsers.
 
 ### Graduate entrance examination planner
 
@@ -48,7 +56,7 @@ The Kaoyan area is a structured study planner for exam preparation:
 - Capacitor 8 Android runtime
 - Vitest unit tests
 
-The interface follows an Apple-inspired design language: frosted-glass surfaces, spring-curve motion, and a responsive shell that adapts to phones (floating tab bar), tablets, and desktops (sidebar navigation). No UI framework is used; all styling lives in `src/styles/global.css` as a token-based theme system.
+The interface follows an Apple-inspired design language: frosted-glass surfaces, spring-curve motion, and a responsive shell that adapts to phones (floating tab bar), tablets, and desktops (sidebar navigation). No UI framework is used; all styling lives in `src/styles/global.css` as a token-based theme system. Feature ideas were researched from well-regarded open-source apps — see `docs/inspirations.md` for the mapping from Loop Habit Tracker, Super Productivity, Pomotroid, and others.
 
 The project intentionally has no application server, database, authentication flow, or analytics dependency. The main state model lives in `src/store/useAppStore.ts`; feature screens are organized under `src/features`; shared types are defined in `src/types.ts`.
 

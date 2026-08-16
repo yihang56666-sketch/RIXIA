@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Modal } from "../../components/Modal";
 import { QuickAdd } from "../../components/QuickAdd";
 import { dueLabel, lastNDates, todayKey } from "../../lib/time";
 import { useAppStore } from "../../store/useAppStore";
@@ -7,8 +8,12 @@ import type { TaskItem } from "../../types";
 type Filter = "today" | "open" | "all";
 
 function TaskRow({ item, today }: { item: TaskItem; today: string }) {
-  const { toggleTask, removeTask } = useAppStore();
-  const due = dueLabel(item.due, today);
+  const { toggleTask, removeTask, updateTask } = useAppStore();
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(item.title);
+  const [due, setDue] = useState(item.due ?? "");
+  const dueInfo = dueLabel(item.due, today);
+
   return (
     <div className="item">
       <button
@@ -16,11 +21,44 @@ function TaskRow({ item, today }: { item: TaskItem; today: string }) {
         onClick={() => toggleTask(item.id)}
         aria-label={item.done ? "标记为未完成" : "标记为完成"}
       />
-      <div>
+      <button className="task-edit-trigger" onClick={() => setEditing(true)} title="点击编辑">
         <p className={item.done ? "done" : ""}>{item.title}</p>
-        <span className={`due-chip tone-${due.tone}`} style={{ marginTop: 5 }}>{due.text}</span>
-      </div>
+        <span className={`due-chip tone-${dueInfo.tone}`} style={{ marginTop: 5 }}>{dueInfo.text}</span>
+      </button>
       <button className="danger" onClick={() => removeTask(item.id)}>删除</button>
+
+      {editing && (
+        <Modal title="编辑任务" onClose={() => setEditing(false)}>
+          <form
+            className="stack"
+            style={{ gap: 10 }}
+            onSubmit={(event) => {
+              event.preventDefault();
+              updateTask(item.id, title, due || null);
+              setEditing(false);
+            }}
+          >
+            <input className="field" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="任务标题" autoFocus />
+            <label className="date-fields" style={{ gridTemplateColumns: "1fr" }}>
+              <span className="muted" style={{ fontSize: 12 }}>到期日（留空表示无日期）</span>
+              <input className="field" type="date" value={due} onChange={(event) => setDue(event.target.value)} />
+            </label>
+            <div className="form-actions" style={{ justifyContent: "space-between" }}>
+              <button
+                type="button"
+                className="danger"
+                onClick={() => {
+                  removeTask(item.id);
+                  setEditing(false);
+                }}
+              >
+                删除任务
+              </button>
+              <button className="primary compact" type="submit">保存</button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -68,7 +106,7 @@ export function TasksView() {
             </div>
           ))}
         </div>
-        <p className="muted" style={{ fontSize: 11.5, marginTop: 8, textAlign: "center" }}>近 7 天任务分布</p>
+        <p className="muted" style={{ fontSize: 11.5, marginTop: 8, textAlign: "center" }}>近 7 天任务分布 · 点击任务可编辑</p>
       </section>
 
       <section className="card">

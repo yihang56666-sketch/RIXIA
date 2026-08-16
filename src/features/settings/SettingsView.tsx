@@ -1,4 +1,4 @@
-import { Download, ImagePlus, RotateCcw } from "lucide-react";
+import { Download, ImagePlus, RotateCcw, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { THEMES, TOOLS } from "../../catalog";
 import { Switch } from "../../components/Switch";
@@ -22,7 +22,9 @@ export function SettingsView() {
     focusSessions,
   } = useAppStore();
   const fileInput = useRef<HTMLInputElement>(null);
+  const importInput = useRef<HTMLInputElement>(null);
   const [backgroundError, setBackgroundError] = useState("");
+  const [importMessage, setImportMessage] = useState("");
 
   async function selectBackground(file: File | undefined) {
     if (!file) return;
@@ -58,6 +60,33 @@ export function SettingsView() {
     anchor.download = `rixia-backup-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function importData(file: File | undefined) {
+    if (!file) return;
+    setImportMessage("");
+    try {
+      const parsed = JSON.parse(await file.text()) as { data?: Record<string, unknown> };
+      const data = parsed.data ?? parsed;
+      if (!data || typeof data !== "object" || !Array.isArray((data as { tasks?: unknown }).tasks)) {
+        throw new Error("这不是有效的 RIXIA 备份文件");
+      }
+      if (!window.confirm("导入会覆盖当前的全部数据，确定继续吗？建议先导出一份当前数据。")) return;
+      const pick = <T,>(key: string): T[] => ((data as Record<string, T[]>)[key] as T[]) ?? [];
+      useAppStore.setState({
+        tasks: pick("tasks"),
+        habits: pick("habits"),
+        notes: pick("notes"),
+        countdowns: pick("countdowns"),
+        inbox: pick("inbox"),
+        subjects: pick("subjects"),
+        studyUnits: pick("studyUnits"),
+        focusSessions: pick("focusSessions"),
+      });
+      setImportMessage("导入完成，数据已恢复");
+    } catch (error) {
+      setImportMessage(error instanceof Error ? error.message : "导入失败");
+    }
   }
 
   return (
@@ -149,9 +178,22 @@ export function SettingsView() {
           <div className="data-stat"><strong>{subjects.length}</strong><span>科目</span></div>
           <div className="data-stat"><strong>{focusSessions.length}</strong><span>专注回合</span></div>
         </div>
-        <button className="ghost-btn" style={{ marginTop: 14 }} onClick={exportData}>
-          <Download size={16} /> 导出数据备份（JSON）
-        </button>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+          <button className="ghost-btn" onClick={exportData}>
+            <Download size={16} /> 导出数据备份（JSON）
+          </button>
+          <input
+            ref={importInput}
+            className="visually-hidden"
+            type="file"
+            accept="application/json,.json"
+            onChange={(event) => void importData(event.target.files?.[0])}
+          />
+          <button className="ghost-btn" onClick={() => importInput.current?.click()}>
+            <Upload size={16} /> 从备份导入
+          </button>
+        </div>
+        {importMessage && <p className="muted" style={{ fontSize: 13, marginTop: 10 }}>{importMessage}</p>}
         <p className="muted" style={{ fontSize: 12.5, marginTop: 10 }}>
           所有内容仅保存在当前设备的本地存储中，不会上传到任何服务器。
         </p>

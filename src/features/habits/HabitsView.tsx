@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { ChevronDown, Flame, Trash2 } from "lucide-react";
 import { Heatmap } from "../../components/Heatmap";
+import { ProgressRing } from "../../components/ProgressRing";
 import { QuickAdd } from "../../components/QuickAdd";
 import { bestStreak, habitStreak, lastNDates, todayKey } from "../../lib/time";
+import { habitStrength } from "../../lib/stats";
 import { useAppStore } from "../../store/useAppStore";
 import type { HabitItem } from "../../types";
 
@@ -12,6 +14,7 @@ function HabitCard({ habit, today }: { habit: HabitItem; today: string }) {
   const checked = habit.checkedDates.includes(today);
   const streak = habitStreak(habit.checkedDates, today);
   const best = bestStreak(habit.checkedDates);
+  const strength = habitStrength(habit.checkedDates, lastNDates(30, today));
   const weekDates = lastNDates(7, today);
 
   return (
@@ -30,7 +33,10 @@ function HabitCard({ habit, today }: { habit: HabitItem; today: string }) {
             ))}
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <ProgressRing percent={strength} size={42} stroke={4.5}>
+            <span style={{ fontSize: 11, fontVariantNumeric: "tabular-nums" }}>{strength}</span>
+          </ProgressRing>
           <span
             className="due-chip tone-today"
             style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
@@ -53,7 +59,7 @@ function HabitCard({ habit, today }: { habit: HabitItem; today: string }) {
       >
         <ChevronDown size={14} style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.3s var(--ease-spring)" }} />
         {expanded ? "收起热力图" : "查看近 15 周"}
-        <span style={{ color: "var(--text-3)" }}>· 最长连续 {best} 天 · 共 {habit.checkedDates.length} 次</span>
+        <span style={{ color: "var(--text-3)" }}>· 30 天强度 {strength}% · 最长连续 {best} 天 · 共 {habit.checkedDates.length} 次</span>
       </button>
       {expanded && (
         <div style={{ marginTop: 10, animation: "fadeUp 0.35s var(--ease-out) both" }}>

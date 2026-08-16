@@ -3,8 +3,15 @@
   "short_name": "RIXIA",
   "description": "一个轻量、专注本地记录的个人效率工作台",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#f4efe6",
-  "lang": "zh-CN"
+  "orientation": "portrait-primary",
+  "background_color": "#f3ede2",
+  "theme_color": "#f3ede2",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
 }

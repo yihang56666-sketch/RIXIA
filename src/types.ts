@@ -34,6 +34,7 @@ export interface TaskItem {
   done: boolean;
   due: string | null;
   createdAt: string;
+  completedAt?: string | null;
 }
 
 export interface HabitItem {
@@ -94,4 +95,5 @@ export interface AppState {
   studyUnits: StudyUnit[];
   focusMinutes: number;
   focusSessions: FocusSession[];
+  focusGoalMinutes: number;
 }

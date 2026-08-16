@@ -3,10 +3,12 @@ import {
   CalendarDays,
   Inbox,
   LayoutGrid,
+  Search,
   UserRound,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { TOOLS, TOOL_ICONS, VIEW_TITLES } from "../catalog";
+import { CommandPalette } from "./CommandPalette";
 import { formatDateLabel, greeting, todayKey, weekdayLabel } from "../lib/time";
 import { useAppStore } from "../store/useAppStore";
 import type { ViewKey } from "../types";
@@ -40,10 +42,23 @@ function SideItem({ view, label, Icon }: { view: ViewKey; label: string; Icon: t
 export function Shell({ children }: { children: ReactNode }) {
   const view = useAppStore((state) => state.view);
   const enabledTools = useAppStore((state) => state.enabledTools);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const now = new Date();
+
+  useEffect(() => {
+    function handleKey(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, []);
 
   return (
     <div className="app-shell">
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">R</span>
@@ -75,9 +90,16 @@ export function Shell({ children }: { children: ReactNode }) {
 
       <div className="shell-main">
         <header className="page-head">
-          <p className="eyebrow">{formatDateLabel(todayKey(now))} · {weekdayLabel(now)}</p>
-          <h1>{VIEW_TITLES[view]}</h1>
-          <p className="muted page-sub">{greeting(now)}，今天也要保持节奏</p>
+          <div className="page-head-row">
+            <div>
+              <p className="eyebrow">{formatDateLabel(todayKey(now))} · {weekdayLabel(now)}</p>
+              <h1>{VIEW_TITLES[view]}</h1>
+              <p className="muted page-sub">{greeting(now)}，今天也要保持节奏</p>
+            </div>
+            <button className="icon-button palette-trigger" onClick={() => setPaletteOpen(true)} aria-label="打开命令面板" title="命令面板 (Ctrl+K)">
+              <Search size={17} />
+            </button>
+          </div>
         </header>
         <main className="view-stage" key={view}>
           {children}

@@ -1,7 +1,39 @@
-import { Flame, Hourglass, Inbox, ListTodo, Timer } from "lucide-react";
+import { Flame, Hourglass, Inbox, ListTodo, Minus, Timer, TrendingDown, TrendingUp } from "lucide-react";
 import { ProgressRing } from "../../components/ProgressRing";
 import { daysUntil, habitStreak, lastNDates, todayKey } from "../../lib/time";
+import {
+  focusMinutesByDay,
+  habitCheckinsByDay,
+  habitStrength,
+  taskCompletionsByDay,
+  trendSummary,
+} from "../../lib/stats";
 import { useAppStore } from "../../store/useAppStore";
+
+function TrendBadge({ summary }: { summary: ReturnType<typeof trendSummary> }) {
+  if (summary.deltaPercent === null) {
+    return <span className="muted" style={{ fontSize: 12 }}>—</span>;
+  }
+  if (summary.deltaPercent === 0) {
+    return (
+      <span className="muted" style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 3 }}>
+        <Minus size={12} /> 持平
+      </span>
+    );
+  }
+  const up = summary.deltaPercent > 0;
+  return (
+    <span
+      style={{
+        fontSize: 12, display: "inline-flex", alignItems: "center", gap: 3,
+        color: up ? "var(--good)" : "var(--danger)",
+      }}
+    >
+      {up ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+      {up ? "+" : ""}{summary.deltaPercent}%
+    </span>
+  );
+}
 
 export function TodayView() {
   const {
@@ -28,9 +60,31 @@ export function TodayView() {
     .reduce((sum, item) => sum + item.minutes, 0);
   const nextCountdown = [...countdowns].sort((a, b) => daysUntil(a.date) - daysUntil(b.date))[0];
   const weekDates = lastNDates(7, today);
+  const prevWeekDates = lastNDates(14, today).slice(0, 7);
   const pendingUnits = studyUnits.filter(
     (unit) => unit.startDate <= today && today <= unit.endDate && !unit.completedDates.includes(today),
   );
+
+  const review = [
+    {
+      key: "tasks",
+      label: "完成事项",
+      current: taskCompletionsByDay(tasks, weekDates).reduce((sum, value) => sum + value, 0),
+      previous: taskCompletionsByDay(tasks, prevWeekDates).reduce((sum, value) => sum + value, 0),
+    },
+    {
+      key: "habits",
+      label: "习惯打卡",
+      current: habitCheckinsByDay(habits, weekDates).reduce((sum, value) => sum + value, 0),
+      previous: habitCheckinsByDay(habits, prevWeekDates).reduce((sum, value) => sum + value, 0),
+    },
+    {
+      key: "focus",
+      label: "专注分钟",
+      current: focusMinutesByDay(focusSessions, weekDates).reduce((sum, value) => sum + value, 0),
+      previous: focusMinutesByDay(focusSessions, prevWeekDates).reduce((sum, value) => sum + value, 0),
+    },
+  ];
 
   return (
     <div className="stack">
@@ -49,6 +103,29 @@ export function TodayView() {
               <p className="muted" style={{ fontSize: 11 }}>完成度</p>
             </div>
           </ProgressRing>
+        </div>
+      </section>
+
+      <section className="card">
+        <div className="row" style={{ marginBottom: 10 }}>
+          <div>
+            <h2>近 7 天回顾</h2>
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>与之前 7 天相比</p>
+          </div>
+        </div>
+        <div className="review-grid">
+          {review.map((item) => {
+            const summary = trendSummary(item.current, item.previous);
+            return (
+              <div key={item.key} className="review-cell">
+                <strong style={{ fontSize: 21, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>
+                  {item.current}
+                </strong>
+                <span className="muted" style={{ fontSize: 12 }}>{item.label}</span>
+                <TrendBadge summary={summary} />
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -114,6 +191,7 @@ export function TodayView() {
           ) : (
             habits.slice(0, 4).map((item) => {
               const checked = item.checkedDates.includes(today);
+              const strength = habitStrength(item.checkedDates, lastNDates(30, today));
               return (
                 <div className="item" key={item.id}>
                   <button className={checked ? "check on" : "check"} onClick={() => toggleHabitToday(item.id)} aria-label="切换打卡" />
@@ -125,7 +203,12 @@ export function TodayView() {
                       ))}
                     </div>
                   </div>
-                  <span className="muted" style={{ fontSize: 13 }}>连续 {habitStreak(item.checkedDates)} 天</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <ProgressRing percent={strength} size={40} stroke={4}>
+                      <span style={{ fontSize: 10.5, fontVariantNumeric: "tabular-nums" }}>{strength}</span>
+                    </ProgressRing>
+                    <span className="muted" style={{ fontSize: 13 }}>连续 {habitStreak(item.checkedDates)} 天</span>
+                  </div>
                 </div>
               );
             })

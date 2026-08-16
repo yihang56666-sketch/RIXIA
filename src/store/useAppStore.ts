@@ -25,12 +25,14 @@ interface AppActions {
   removeInbox: (id: string) => void;
   convertInboxToTask: (id: string) => void;
   addTask: (title: string, due?: string | null) => void;
+  updateTask: (id: string, title: string, due: string | null) => void;
   toggleTask: (id: string) => void;
   removeTask: (id: string) => void;
   addHabit: (title: string) => void;
   toggleHabitToday: (id: string) => void;
   removeHabit: (id: string) => void;
   addNote: (body: string) => void;
+  updateNote: (id: string, body: string) => void;
   removeNote: (id: string) => void;
   addCountdown: (title: string, date: string) => void;
   removeCountdown: (id: string) => void;
@@ -45,6 +47,7 @@ interface AppActions {
   toggleStudyDate: (id: string, date: string) => void;
   setFocusMinutes: (minutes: number) => void;
   addFocusSession: (minutes: number) => void;
+  setFocusGoalMinutes: (minutes: number) => void;
 }
 
 const defaultTools: ToolKey[] = ["tasks", "habits", "notes", "countdowns", "focus"];
@@ -65,6 +68,7 @@ export const useAppStore = create<AppState & AppActions>()(
       studyUnits: [],
       focusMinutes: 25,
       focusSessions: [],
+      focusGoalMinutes: 120,
       setView: (view) => set({ view }),
       setTheme: (theme) => set({ theme }),
       setBackgroundImage: (backgroundImage) => set({ backgroundImage }),
@@ -97,12 +101,24 @@ export const useAppStore = create<AppState & AppActions>()(
           done: false,
           due,
           createdAt: new Date().toISOString(),
+          completedAt: null,
         };
         set((state) => ({ tasks: [item, ...state.tasks] }));
       },
+      updateTask: (id, title, due) => {
+        const value = title.trim();
+        if (!value) return;
+        set((state) => ({
+          tasks: state.tasks.map((item) => (item.id === id ? { ...item, title: value, due } : item)),
+        }));
+      },
       toggleTask: (id) =>
         set((state) => ({
-          tasks: state.tasks.map((item) => (item.id === id ? { ...item, done: !item.done } : item)),
+          tasks: state.tasks.map((item) =>
+            item.id === id
+              ? { ...item, done: !item.done, completedAt: !item.done ? new Date().toISOString() : null }
+              : item,
+          ),
         })),
       removeTask: (id) => set((state) => ({ tasks: state.tasks.filter((item) => item.id !== id) })),
       addHabit: (title) => {
@@ -129,6 +145,13 @@ export const useAppStore = create<AppState & AppActions>()(
         if (!value) return;
         const item: NoteItem = { id: createId(), body: value, createdAt: new Date().toISOString() };
         set((state) => ({ notes: [item, ...state.notes] }));
+      },
+      updateNote: (id, body) => {
+        const value = body.trim();
+        if (!value) return;
+        set((state) => ({
+          notes: state.notes.map((item) => (item.id === id ? { ...item, body: value } : item)),
+        }));
       },
       removeNote: (id) => set((state) => ({ notes: state.notes.filter((item) => item.id !== id) })),
       addCountdown: (title, date) => {
@@ -217,6 +240,7 @@ export const useAppStore = create<AppState & AppActions>()(
         };
         set((state) => ({ focusSessions: [session, ...state.focusSessions] }));
       },
+      setFocusGoalMinutes: (minutes) => set({ focusGoalMinutes: Math.max(15, Math.min(600, minutes)) }),
     }),
     {
       name: "rixia-v1",
@@ -226,6 +250,7 @@ export const useAppStore = create<AppState & AppActions>()(
         return {
           ...state,
           focusSessions: state.focusSessions ?? [],
+          focusGoalMinutes: state.focusGoalMinutes ?? 120,
         };
       },
     },
