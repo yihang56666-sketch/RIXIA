@@ -18,7 +18,8 @@ The app is built as a responsive React + TypeScript web interface and packaged f
 - **Habits** record daily repetitions, keep a history of completed dates, show week dots, a 15-week GitHub-style heatmap, streaks, and a 30-day habit-strength score.
 - **Notes** store short local memos and can be edited in place.
 - **Countdowns** track dates that matter, such as exams, deadlines, or trips.
-- **Focus** provides a configurable focus timer with automatic break rounds, a daily focus goal, session history, a weekly minutes chart, a completion chime, and screen wake-lock while running.
+- **Focus** provides a Pomodoro countdown with automatic break rounds, a free-run stopwatch mode, a daily focus goal, session history, a weekly minutes chart, a completion chime, synthesized ambient noise (white / rain / waves), and screen wake-lock while running.
+- **Videos ("看课")** lets you collect Bilibili videos by pasting a link or BV id and watch them inside the app through the official embedded player — handy for online courses right next to your study plan.
 
 ### Power features
 

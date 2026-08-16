@@ -1,7 +1,7 @@
 {
   "name": "rixia",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "一个轻量、专注本地记录的个人效率工作台",
   "scripts": {

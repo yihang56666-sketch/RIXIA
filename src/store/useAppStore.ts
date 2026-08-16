@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { extractBvid } from "../lib/bilibili";
 import { createId } from "../lib/id";
 import { todayKey } from "../lib/time";
 import type {
@@ -13,6 +14,7 @@ import type {
   StudyUnit,
   TaskItem,
   ToolKey,
+  VideoItem,
   ViewKey,
 } from "../types";
 
@@ -48,9 +50,11 @@ interface AppActions {
   setFocusMinutes: (minutes: number) => void;
   addFocusSession: (minutes: number) => void;
   setFocusGoalMinutes: (minutes: number) => void;
+  addVideo: (input: string, title?: string) => void;
+  removeVideo: (id: string) => void;
 }
 
-const defaultTools: ToolKey[] = ["tasks", "habits", "notes", "countdowns", "focus"];
+const defaultTools: ToolKey[] = ["tasks", "habits", "notes", "countdowns", "focus", "videos"];
 
 export const useAppStore = create<AppState & AppActions>()(
   persist(
@@ -69,6 +73,7 @@ export const useAppStore = create<AppState & AppActions>()(
       focusMinutes: 25,
       focusSessions: [],
       focusGoalMinutes: 120,
+      videos: [],
       setView: (view) => set({ view }),
       setTheme: (theme) => set({ theme }),
       setBackgroundImage: (backgroundImage) => set({ backgroundImage }),
@@ -241,16 +246,32 @@ export const useAppStore = create<AppState & AppActions>()(
         set((state) => ({ focusSessions: [session, ...state.focusSessions] }));
       },
       setFocusGoalMinutes: (minutes) => set({ focusGoalMinutes: Math.max(15, Math.min(600, minutes)) }),
+      addVideo: (input, title) => {
+        const bvid = extractBvid(input);
+        if (!bvid) return;
+        if (get().videos.some((item) => item.bvid === bvid)) return;
+        const item: VideoItem = {
+          id: createId(),
+          bvid,
+          title: title?.trim() || `视频 ${bvid}`,
+          addedAt: new Date().toISOString(),
+        };
+        set((state) => ({ videos: [item, ...state.videos] }));
+      },
+      removeVideo: (id) => set((state) => ({ videos: state.videos.filter((item) => item.id !== id) })),
     }),
     {
       name: "rixia-v1",
       version: 1,
       migrate: (persisted) => {
         const state = persisted as Partial<AppState>;
+        const needsVideosTool = state.enabledTools && !state.enabledTools.includes("videos");
         return {
           ...state,
+          ...(needsVideosTool ? { enabledTools: [...state.enabledTools!, "videos"] } : {}),
           focusSessions: state.focusSessions ?? [],
           focusGoalMinutes: state.focusGoalMinutes ?? 120,
+          videos: state.videos ?? [],
         };
       },
     },

@@ -10,6 +10,7 @@ import { SettingsView } from "./features/settings/SettingsView";
 import { TasksView } from "./features/tasks/TasksView";
 import { TodayView } from "./features/today/TodayView";
 import { ToolsView } from "./features/tools/ToolsView";
+import { VideosView } from "./features/videos/VideosView";
 import { useAppStore } from "./store/useAppStore";
 import { THEMES } from "./catalog";
 
@@ -42,6 +43,7 @@ export default function App() {
         {view === "notes" && <NotesView />}
         {view === "countdowns" && <CountdownsView />}
         {view === "focus" && <FocusView />}
+        {view === "videos" && <VideosView />}
         {view === "settings" && <SettingsView />}
       </Shell>
     </div>

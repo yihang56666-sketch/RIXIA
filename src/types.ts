@@ -17,10 +17,11 @@ export type ViewKey =
   | "notes"
   | "countdowns"
   | "focus"
+  | "videos"
   | "kaoyan"
   | "settings";
 
-export type ToolKey = "tasks" | "habits" | "notes" | "countdowns" | "focus";
+export type ToolKey = "tasks" | "habits" | "notes" | "countdowns" | "focus" | "videos";
 
 export interface InboxItem {
   id: string;
@@ -81,6 +82,14 @@ export interface FocusSession {
   completedAt: string;
 }
 
+/** 收藏的哔哩哔哩视频（看课区） */
+export interface VideoItem {
+  id: string;
+  bvid: string;
+  title: string;
+  addedAt: string;
+}
+
 export interface AppState {
   theme: ThemeName;
   backgroundImage: string | null;
@@ -96,4 +105,5 @@ export interface AppState {
   focusMinutes: number;
   focusSessions: FocusSession[];
   focusGoalMinutes: number;
+  videos: VideoItem[];
 }

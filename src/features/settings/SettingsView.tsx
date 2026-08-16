@@ -201,7 +201,7 @@ export function SettingsView() {
 
       <section className="card" style={{ textAlign: "center" }}>
         <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.7 }}>
-          RIXIA · v0.2.0<br />一个安静、本地优先的个人节奏工作台
+          RIXIA · v0.3.0<br />一个安静、本地优先的个人节奏工作台
         </p>
       </section>
     </div>

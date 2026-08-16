@@ -1,4 +1,4 @@
-import { Flame, Hourglass, ListTodo, StickyNote, Timer } from "lucide-react";
+import { Flame, Hourglass, ListTodo, MonitorPlay, StickyNote, Timer } from "lucide-react";
 import type { ThemeName, ToolKey, ViewKey } from "./types";
 
 export const TOOL_ICONS = {
@@ -7,6 +7,7 @@ export const TOOL_ICONS = {
   notes: StickyNote,
   countdowns: Hourglass,
   focus: Timer,
+  videos: MonitorPlay,
 } as const;
 
 export const TOOLS: Array<{
@@ -45,6 +46,12 @@ export const TOOLS: Array<{
     hint: "用计时器专心工作",
     reason: "减少切换，完成一个专注回合",
   },
+  {
+    key: "videos",
+    title: "看课",
+    hint: "收藏并观看哔哩哔哩视频",
+    reason: "网课与教程，就在工作台里",
+  },
 ];
 
 export const VIEW_TITLES: Record<ViewKey, string> = {
@@ -56,6 +63,7 @@ export const VIEW_TITLES: Record<ViewKey, string> = {
   notes: "笔记",
   countdowns: "倒计时",
   focus: "专注",
+  videos: "看课",
   kaoyan: "考研",
   settings: "设置",
 };

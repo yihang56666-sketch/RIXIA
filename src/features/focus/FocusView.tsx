@@ -1,7 +1,8 @@
-import { Coffee, Minus, Plus, RotateCcw, SkipForward, Timer } from "lucide-react";
+import { Coffee, Minus, Plus, RotateCcw, SkipForward, Square, Timer, Volume2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ProgressRing } from "../../components/ProgressRing";
 import { playChime } from "../../lib/chime";
+import { NOISE_OPTIONS, setAmbienceVolume, startAmbience, stopAmbience, type NoiseKind } from "../../lib/noise";
 import { focusMinutesByDay } from "../../lib/stats";
 import { formatTime, lastNDates, todayKey, weekdayLabel } from "../../lib/time";
 import { useAppStore } from "../../store/useAppStore";
@@ -9,8 +10,10 @@ import { requestWakeLock } from "../../lib/wakeLock";
 
 const PRESETS = [25, 15, 5];
 const BREAK_MINUTES = 5;
+const COUNTUP_LAP_SECONDS = 30 * 60;
 
 type Phase = "focus" | "break";
+type Mode = "countdown" | "countup";
 
 export function FocusView() {
   const {
@@ -21,19 +24,25 @@ export function FocusView() {
     focusSessions,
     addFocusSession,
   } = useAppStore();
+  const [mode, setMode] = useState<Mode>("countdown");
   const [phase, setPhase] = useState<Phase>("focus");
   const [seconds, setSeconds] = useState(focusMinutes * 60);
   const [running, setRunning] = useState(false);
+  const [upSeconds, setUpSeconds] = useState(0);
+  const [upRunning, setUpRunning] = useState(false);
+  const [noiseKind, setNoiseKind] = useState<NoiseKind | null>(null);
+  const [noiseVolume, setNoiseVolume] = useState(0.4);
   const releaseWakeLock = useRef<(() => void) | null>(null);
   const today = todayKey();
 
   const phaseTotal = (phase === "focus" ? focusMinutes : BREAK_MINUTES) * 60;
+  const active = running || upRunning;
 
   useEffect(() => {
-    if (phase !== "focus") return;
+    if (phase !== "focus" || mode !== "countdown") return;
     setSeconds(focusMinutes * 60);
     setRunning(false);
-  }, [focusMinutes, phase]);
+  }, [focusMinutes, phase, mode]);
 
   useEffect(() => {
     if (!running) return;
@@ -43,9 +52,17 @@ export function FocusView() {
     return () => window.clearInterval(timer);
   }, [running]);
 
+  useEffect(() => {
+    if (!upRunning) return;
+    const timer = window.setInterval(() => {
+      setUpSeconds((value) => value + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [upRunning]);
+
   // 屏幕常亮：计时运行期间申请，停止时释放
   useEffect(() => {
-    if (running) {
+    if (active) {
       void requestWakeLock().then((release) => {
         releaseWakeLock.current = release;
       });
@@ -57,7 +74,10 @@ export function FocusView() {
       releaseWakeLock.current?.();
       releaseWakeLock.current = null;
     };
-  }, [running]);
+  }, [active]);
+
+  // 离开页面时停止氛围音
+  useEffect(() => () => stopAmbience(), []);
 
   // 回合结束：专注 → 记录并自动进入休息；休息 → 就绪下一回合
   useEffect(() => {
@@ -75,7 +95,43 @@ export function FocusView() {
     }
   }, [seconds, running, phase, focusMinutes, addFocusSession]);
 
-  const percent = Math.round((seconds / phaseTotal) * 100);
+  function toggleNoise(kind: NoiseKind) {
+    if (noiseKind === kind) {
+      stopAmbience();
+      setNoiseKind(null);
+    } else {
+      startAmbience(kind, noiseVolume);
+      setNoiseKind(kind);
+    }
+  }
+
+  function changeNoiseVolume(value: number) {
+    const clamped = Math.max(0, Math.min(1, value));
+    setNoiseVolume(clamped);
+    setAmbienceVolume(clamped);
+  }
+
+  function switchMode(next: Mode) {
+    if (next === mode) return;
+    setRunning(false);
+    setUpRunning(false);
+    setPhase("focus");
+    setSeconds(focusMinutes * 60);
+    setMode(next);
+  }
+
+  function finishCountUp() {
+    setUpRunning(false);
+    playChime();
+    const minutes = Math.floor(upSeconds / 60);
+    if (minutes > 0) addFocusSession(minutes);
+    setUpSeconds(0);
+  }
+
+  const percent =
+    mode === "countup"
+      ? Math.round(((upSeconds % COUNTUP_LAP_SECONDS) / COUNTUP_LAP_SECONDS) * 100)
+      : Math.round((seconds / phaseTotal) * 100);
   const todaySessions = focusSessions.filter((item) => item.date === today);
   const todayMinutes = todaySessions.reduce((sum, item) => sum + item.minutes, 0);
   const totalMinutes = focusSessions.reduce((sum, item) => sum + item.minutes, 0);
@@ -100,26 +156,43 @@ export function FocusView() {
 
   return (
     <div className="stack">
-      <section className={`card focus-face${phase === "break" ? " focus-break" : ""}`}>
+      <section className={`card focus-face${phase === "break" && mode === "countdown" ? " focus-break" : ""}`}>
+        <div className="segmented" style={{ width: "min(220px, 100%)", marginBottom: 4 }} role="tablist" aria-label="计时模式">
+          <button className={mode === "countdown" ? "segment active" : "segment"} role="tab" aria-selected={mode === "countdown"} onClick={() => switchMode("countdown")}>
+            番茄倒计时
+          </button>
+          <button className={mode === "countup" ? "segment active" : "segment"} role="tab" aria-selected={mode === "countup"} onClick={() => switchMode("countup")}>
+            自由正计时
+          </button>
+        </div>
+
         <p className="eyebrow">
-          {phase === "break" ? "休息一下" : running ? "专注中" : "专注计时"}
+          {mode === "countup"
+            ? upRunning ? "计时中" : "正计时"
+            : phase === "break" ? "休息一下" : running ? "专注中" : "专注计时"}
         </p>
         <ProgressRing
           percent={percent}
           size={216}
           stroke={13}
-          color={phase === "break" ? "var(--good)" : "var(--accent)"}
+          color={phase === "break" && mode === "countdown" ? "var(--good)" : "var(--accent)"}
         >
           <div className="focus-time">
-            {phase === "break" && <Coffee size={22} style={{ marginBottom: 4 }} />}
-            {formatTime(seconds)}
+            {mode === "countup" ? formatTime(upSeconds) : (
+              <>
+                {phase === "break" && <Coffee size={22} style={{ marginBottom: 4 }} />}
+                {formatTime(seconds)}
+              </>
+            )}
             <small>
-              {phase === "break" ? "刚完成一个专注回合" : running ? "保持节奏" : "准备开始"}
+              {mode === "countup"
+                ? upRunning ? "按自己的节奏来" : "开始后随时可以结束"
+                : phase === "break" ? "刚完成一个专注回合" : running ? "保持节奏" : "准备开始"}
             </small>
           </div>
         </ProgressRing>
 
-        {phase === "focus" && (
+        {mode === "countdown" && phase === "focus" && (
           <div className="focus-presets">
             {PRESETS.map((item) => (
               <button
@@ -137,12 +210,21 @@ export function FocusView() {
             </div>
           </div>
         )}
-        {phase === "break" && (
+        {mode === "countdown" && phase === "break" && (
           <p className="muted" style={{ fontSize: 13 }}>建议离开屏幕，看看远处，喝口水</p>
         )}
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
-          {phase === "break" ? (
+          {mode === "countup" ? (
+            <>
+              <button className="primary compact" style={{ minWidth: 110 }} onClick={() => setUpRunning(!upRunning)}>
+                {upRunning ? "暂停" : upSeconds === 0 ? "开始计时" : "继续"}
+              </button>
+              <button className="ghost-btn" onClick={finishCountUp} disabled={upSeconds === 0} title="结束并计入专注记录（满 1 分钟）">
+                <Square size={15} /> 完成并记录
+              </button>
+            </>
+          ) : phase === "break" ? (
             <>
               <button className="ghost-btn" onClick={() => setRunning(!running)}>
                 {running ? "暂停休息" : "继续休息"}
@@ -161,6 +243,45 @@ export function FocusView() {
               </button>
             </>
           )}
+        </div>
+      </section>
+
+      <section className="card">
+        <div className="row" style={{ marginBottom: 12 }}>
+          <div>
+            <h2>专注氛围</h2>
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>实时合成的环境音，离线可用</p>
+          </div>
+          <Volume2 size={17} color="var(--text-3)" />
+        </div>
+        <div className="noise-row">
+          <button className="chip" onClick={() => toggleNoise("white")} style={{ order: 1 }}>
+            停止
+          </button>
+          {NOISE_OPTIONS.map((option) => (
+            <button
+              key={option.key}
+              className={noiseKind === option.key ? "chip active" : "chip"}
+              onClick={() => toggleNoise(option.key)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
+          <Volume2 size={15} color="var(--text-3)" />
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(noiseVolume * 100)}
+            className="noise-slider"
+            onChange={(event) => changeNoiseVolume(Number(event.target.value) / 100)}
+            aria-label="氛围音音量"
+          />
+          <span className="muted" style={{ fontSize: 12, minWidth: 32, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+            {Math.round(noiseVolume * 100)}%
+          </span>
         </div>
       </section>
 
