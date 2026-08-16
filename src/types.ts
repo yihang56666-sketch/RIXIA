@@ -1,3 +1,13 @@
+export type ThemeName =
+  | "paper"
+  | "mist"
+  | "matcha"
+  | "sunset"
+  | "ink"
+  | "graphite"
+  | "dusk"
+  | "deep";
+
 export type ViewKey =
   | "today"
   | "inbox"
@@ -63,8 +73,15 @@ export interface StudyUnit {
   createdAt: string;
 }
 
+export interface FocusSession {
+  id: string;
+  date: string;
+  minutes: number;
+  completedAt: string;
+}
+
 export interface AppState {
-  theme: "paper" | "ink";
+  theme: ThemeName;
   backgroundImage: string | null;
   view: ViewKey;
   enabledTools: ToolKey[];
@@ -76,4 +93,5 @@ export interface AppState {
   subjects: StudySubject[];
   studyUnits: StudyUnit[];
   focusMinutes: number;
+  focusSessions: FocusSession[];
 }

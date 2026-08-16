@@ -11,6 +11,7 @@ import { TasksView } from "./features/tasks/TasksView";
 import { TodayView } from "./features/today/TodayView";
 import { ToolsView } from "./features/tools/ToolsView";
 import { useAppStore } from "./store/useAppStore";
+import { THEMES } from "./catalog";
 
 export default function App() {
   const view = useAppStore((state) => state.view);
@@ -19,6 +20,9 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = THEMES.find((item) => item.key === theme)?.dark
+      ? "dark"
+      : "light";
   }, [theme]);
 
   return (
@@ -27,6 +31,7 @@ export default function App() {
       data-has-background={backgroundImage ? "true" : "false"}
       style={backgroundImage ? { backgroundImage: `url(${backgroundImage})` } : undefined}
     >
+      <div className="app-overlay" />
       <Shell>
         {view === "today" && <TodayView />}
         {view === "inbox" && <InboxView />}

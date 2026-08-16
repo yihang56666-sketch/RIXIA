@@ -5,6 +5,7 @@ import { todayKey } from "../lib/time";
 import type {
   AppState,
   CountdownItem,
+  FocusSession,
   HabitItem,
   InboxItem,
   NoteItem,
@@ -43,6 +44,7 @@ interface AppActions {
   moveStudyUnit: (id: string, direction: -1 | 1) => void;
   toggleStudyDate: (id: string, date: string) => void;
   setFocusMinutes: (minutes: number) => void;
+  addFocusSession: (minutes: number) => void;
 }
 
 const defaultTools: ToolKey[] = ["tasks", "habits", "notes", "countdowns", "focus"];
@@ -62,6 +64,7 @@ export const useAppStore = create<AppState & AppActions>()(
       subjects: [],
       studyUnits: [],
       focusMinutes: 25,
+      focusSessions: [],
       setView: (view) => set({ view }),
       setTheme: (theme) => set({ theme }),
       setBackgroundImage: (backgroundImage) => set({ backgroundImage }),
@@ -204,7 +207,27 @@ export const useAppStore = create<AppState & AppActions>()(
         }),
       })),
       setFocusMinutes: (minutes) => set({ focusMinutes: minutes }),
+      addFocusSession: (minutes) => {
+        if (minutes <= 0) return;
+        const session: FocusSession = {
+          id: createId(),
+          date: todayKey(),
+          minutes,
+          completedAt: new Date().toISOString(),
+        };
+        set((state) => ({ focusSessions: [session, ...state.focusSessions] }));
+      },
     }),
-    { name: "rixia-v1" },
+    {
+      name: "rixia-v1",
+      version: 1,
+      migrate: (persisted) => {
+        const state = persisted as Partial<AppState>;
+        return {
+          ...state,
+          focusSessions: state.focusSessions ?? [],
+        };
+      },
+    },
   ),
 );

@@ -1,11 +1,13 @@
 import { FormEvent, useState } from "react";
-import { daysUntil, formatDateLabel } from "../../lib/time";
+import { Trash2 } from "lucide-react";
+import { daysUntil, formatShortDate, todayKey } from "../../lib/time";
 import { useAppStore } from "../../store/useAppStore";
 
 export function CountdownsView() {
   const { countdowns, addCountdown, removeCountdown } = useAppStore();
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
+  const today = todayKey();
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -17,34 +19,42 @@ export function CountdownsView() {
   return (
     <div className="stack">
       <section className="card">
-        <form className="stack" onSubmit={handleSubmit}>
+        <form className="stack" onSubmit={handleSubmit} style={{ gap: 10 }}>
           <input className="field" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例如：研究生考试" />
           <input className="field" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <button className="primary" type="submit">添加倒计时</button>
+          <button className="primary compact" type="submit">添加倒计时</button>
         </form>
       </section>
-      <section className="card">
-        {countdowns.length === 0 ? (
-          <p className="empty">还没有倒计时</p>
-        ) : (
-          [...countdowns]
+
+      {countdowns.length === 0 ? (
+        <section className="card">
+          <p className="empty">还没有倒计时，记录一个重要的日子</p>
+        </section>
+      ) : (
+        <div className="countdown-grid">
+          {[...countdowns]
             .sort((a, b) => daysUntil(a.date) - daysUntil(b.date))
             .map((item) => {
-              const days = daysUntil(item.date);
-              const label = days > 0 ? `还有 ${days} 天` : days === 0 ? "就是今天" : `已过去 ${Math.abs(days)} 天`;
+              const days = daysUntil(item.date, today);
+              const past = days < 0;
               return (
-                <div className="item" key={item.id}>
-                  <span />
-                  <div>
-                    <p>{item.title}</p>
-                    <p className="muted">{formatDateLabel(item.date)} · {label}</p>
+                <article key={item.id} className={`card countdown-card${past ? " past" : ""}`}>
+                  <div className="count-days">
+                    {Math.abs(days)}
+                    <small>{days === 0 ? "" : past ? "天前" : "天后"}</small>
                   </div>
-                  <button className="danger" onClick={() => removeCountdown(item.id)}>删除</button>
-                </div>
+                  <strong style={{ fontSize: 14.5 }}>{item.title}</strong>
+                  <span className="muted" style={{ fontSize: 12.5 }}>
+                    {formatShortDate(item.date)} · {days === 0 ? "就是今天" : past ? "已过去" : "倒计时中"}
+                  </span>
+                  <button className="delete-icon" style={{ alignSelf: "flex-start", marginTop: 4 }} onClick={() => removeCountdown(item.id)} aria-label="删除倒计时" title="删除倒计时">
+                    <Trash2 size={15} />
+                  </button>
+                </article>
               );
-            })
-        )}
-      </section>
+            })}
+        </div>
+      )}
     </div>
   );
 }

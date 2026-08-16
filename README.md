@@ -32,9 +32,10 @@ The Kaoyan area is a structured study planner for exam preparation:
 
 ### Personalization
 
-- Paper and dark visual themes.
-- Optional full-screen background image stored on the device.
+- Eight built-in skins: four light (Paper, Mist, Matcha, Sunset) and four dark (Ink, Graphite, Dusk, Deep), each with its own accent palette.
+- Optional full-screen background image stored on the device, with an automatic readability scrim.
 - Configurable tool visibility from the settings view.
+- Local data export as a JSON backup file.
 - Android adaptive launcher icon and native splash resources.
 
 ## Technology
@@ -46,6 +47,8 @@ The Kaoyan area is a structured study planner for exam preparation:
 - Lucide React icons
 - Capacitor 8 Android runtime
 - Vitest unit tests
+
+The interface follows an Apple-inspired design language: frosted-glass surfaces, spring-curve motion, and a responsive shell that adapts to phones (floating tab bar), tablets, and desktops (sidebar navigation). No UI framework is used; all styling lives in `src/styles/global.css` as a token-based theme system.
 
 The project intentionally has no application server, database, authentication flow, or analytics dependency. The main state model lives in `src/store/useAppStore.ts`; feature screens are organized under `src/features`; shared types are defined in `src/types.ts`.
 

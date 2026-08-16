@@ -1,6 +1,7 @@
 import { type CSSProperties, type FormEvent, useState } from "react";
 import { ArrowLeft, CalendarDays, Check, ChevronDown, ChevronUp, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { dateKeysInRange, subjectProgress, unitProgress } from "../../lib/kaoyan";
+import { ProgressRing } from "../../components/ProgressRing";
 import { daysUntil, formatDateLabel, todayKey, weekdayLabel } from "../../lib/time";
 import { useAppStore } from "../../store/useAppStore";
 import type { StudySubject, StudyUnit } from "../../types";
@@ -101,10 +102,19 @@ export function KaoyanView() {
     return <div className="stack kaoyan-view">
       <button className="back-button" onClick={() => setPage({ kind: "subject", subjectId: unit.subjectId })}><ArrowLeft size={18} /> {unitSubject.title}</button>
       <section className="kaoyan-hero card" style={{ "--subject-color": unitSubject.color } as CSSProperties}>
-        <p className="eyebrow">学习小类</p><h2>{unit.title}</h2>
-        <div className="hero-progress"><strong>{progress.percent}%</strong><span>{progress.completed} / {progress.total} 天</span></div>
-        <ProgressBar percent={progress.percent} color={unitSubject.color} />
-        <p className="muted">{formatDateLabel(unit.startDate)} 至 {formatDateLabel(unit.endDate)}</p>
+        <div className="hero-with-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <div>
+            <p className="eyebrow">学习小类</p>
+            <h2>{unit.title}</h2>
+            <p className="muted" style={{ marginTop: 8 }}>{formatDateLabel(unit.startDate)} 至 {formatDateLabel(unit.endDate)} · 共 {progress.total} 天</p>
+          </div>
+          <ProgressRing percent={progress.percent} size={86} stroke={8} color={unitSubject.color}>
+            <div>
+              <strong style={{ fontSize: 18, fontVariantNumeric: "tabular-nums" }}>{progress.percent}%</strong>
+              <p className="muted" style={{ fontSize: 10.5 }}>{progress.completed}/{progress.total} 天</p>
+            </div>
+          </ProgressRing>
+        </div>
       </section>
       <section className="card timeline-card">
         <div className="row"><div><h3>每日时间线</h3><p className="muted">可补打，也可取消</p></div><button title="编辑小类" aria-label="编辑小类" className="icon-button" onClick={() => setEditingUnit(unit.id)}><Pencil size={17} /></button></div>
@@ -133,8 +143,24 @@ export function KaoyanView() {
     return <div className="stack kaoyan-view">
       <button className="back-button" onClick={() => setPage({ kind: "subjects" })}><ArrowLeft size={18} /> 全部科目</button>
       <section className="kaoyan-hero card" style={{ "--subject-color": subject.color } as CSSProperties}>
-        <div className="row"><div><p className="eyebrow">考研科目</p><h2>{subject.title}</h2></div><button title="编辑科目" aria-label="编辑科目" className="icon-button" onClick={() => setEditingSubject(subject.id)}><Pencil size={17} /></button></div>
-        {editingSubject === subject.id ? <SubjectForm subject={subject} onDone={() => setEditingSubject(null)} /> : <><div className="hero-progress"><strong>{progress.percent}%</strong><span>{progress.completed} / {progress.total} 天</span></div><ProgressBar percent={progress.percent} color={subject.color} /></>}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <div>
+            <div className="row">
+              <div>
+                <p className="eyebrow">考研科目</p>
+                <h2>{subject.title}</h2>
+              </div>
+              <button title="编辑科目" aria-label="编辑科目" className="icon-button" onClick={() => setEditingSubject(subject.id)}><Pencil size={17} /></button>
+            </div>
+          </div>
+          <ProgressRing percent={progress.percent} size={86} stroke={8} color={subject.color}>
+            <div>
+              <strong style={{ fontSize: 18, fontVariantNumeric: "tabular-nums" }}>{progress.percent}%</strong>
+              <p className="muted" style={{ fontSize: 10.5 }}>{progress.completed}/{progress.total} 天</p>
+            </div>
+          </ProgressRing>
+        </div>
+        {editingSubject === subject.id && <SubjectForm subject={subject} onDone={() => setEditingSubject(null)} />}
       </section>
       <section className="card"><div className="row"><div><h3>学习小类</h3><p className="muted">章节与专项计划</p></div><button title="添加小类" aria-label="添加小类" className="add-round" onClick={() => setAddingUnit(!addingUnit)}><Plus size={18} /></button></div>
         {addingUnit && <UnitForm subjectId={subject.id} onDone={() => setAddingUnit(false)} />}
@@ -155,8 +181,63 @@ export function KaoyanView() {
     </div>;
   }
 
+  const todayPending = studyUnits.filter(
+    (item) => item.startDate <= today && today <= item.endDate && !item.completedDates.includes(today),
+  );
+  const overall = subjectProgress(studyUnits);
+
   return <div className="stack kaoyan-view">
-    <section className="kaoyan-intro"><p className="eyebrow">2026 考研计划</p><h2>每天推进一点<br />终会走到终点</h2><p className="muted">按科目整理复习节奏，今天完成今天的计划。</p></section>
+    <section className="kaoyan-intro">
+      <p className="eyebrow">2026 考研计划</p>
+      <h2>每天推进一点<br />终会走到终点</h2>
+      {studyUnits.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 14 }}>
+          <ProgressRing percent={overall.percent} size={64} stroke={7}>
+            <strong style={{ fontSize: 14, fontVariantNumeric: "tabular-nums" }}>{overall.percent}%</strong>
+          </ProgressRing>
+          <p className="muted" style={{ fontSize: 13.5 }}>
+            总进度 {overall.completed} / {overall.total} 天
+            {todayPending.length > 0 && <> · 今天还有 <strong style={{ color: "var(--accent)" }}>{todayPending.length}</strong> 个小类待打卡</>}
+          </p>
+        </div>
+      )}
+    </section>
+
+    {todayPending.length > 0 && (
+      <section className="card">
+        <div className="row">
+          <div>
+            <h3>今日待打卡</h3>
+            <p className="muted">快速完成今天的学习计划</p>
+          </div>
+        </div>
+        <div className="today-units">
+          {todayPending.map((item) => {
+            const itemSubject = subjects.find((entry) => entry.id === item.subjectId);
+            return (
+              <div key={item.id} className="today-unit-row">
+                <div className="meta">
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <span className="subject-dot" style={{ backgroundColor: itemSubject?.color ?? "var(--accent)" }} />
+                    <strong style={{ fontSize: 14 }}>{item.title}</strong>
+                  </span>
+                  <span>{itemSubject?.title} · {dueLabel(item.endDate)}</span>
+                </div>
+                <button
+                  className="today-check"
+                  title="完成今天"
+                  aria-label="完成今天"
+                  onClick={() => toggleStudyDate(item.id, today)}
+                >
+                  <Check size={15} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    )}
+
     <section className="card"><div className="row"><div><h3>我的科目</h3><p className="muted">{subjects.length ? `${subjects.length} 个复习大类` : "从第一个科目开始"}</p></div><button title="添加科目" aria-label="添加科目" className="add-round" onClick={() => setAddingSubject(!addingSubject)}><Plus size={18} /></button></div>
       {addingSubject && <SubjectForm onDone={() => setAddingSubject(false)} />}
       {subjects.length === 0 ? <div className="kaoyan-empty"><CalendarDays size={28} /><p>添加高数、英语、政治等科目，开始安排学习小类。</p></div> : <div className="subject-list">

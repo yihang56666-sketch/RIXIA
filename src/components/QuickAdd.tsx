@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import { ArrowUp } from "lucide-react";
 
 export function QuickAdd({
   placeholder,
@@ -18,15 +19,15 @@ export function QuickAdd({
   }
 
   return (
-    <form className="stack" onSubmit={handleSubmit}>
+    <form className="quick-add" onSubmit={handleSubmit}>
       <input
-        className="field"
+        className="field quick-add-input"
         value={value}
         onChange={(event) => setValue(event.target.value)}
         placeholder={placeholder}
       />
-      <button className="primary" type="submit">
-        {button}
+      <button className="quick-add-submit" type="submit" aria-label={button} title={button}>
+        <ArrowUp size={17} strokeWidth={2.2} />
       </button>
     </form>
   );
