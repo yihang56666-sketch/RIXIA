@@ -117,6 +117,19 @@ The APK is generated at:
 android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Merged app with FocuBili (Flutter)
+
+RIXIA can also ship inside [FocuBili](https://github.com/L1Xu4n/FocuBili), a Flutter-based third-party Bilibili client focused on study viewing. The merged project (branch `rixia-merge` of the FocuBili checkout, e.g. `../focubili-src`) embeds the RIXIA web build as a fourth top-level page rendered through `webview_flutter`:
+
+```bash
+npm run flutter:sync            # 构建 RIXIA 并同步到 ../focubili-src/assets/rixia
+cd ../focubili-src
+flutter pub get
+flutter build apk --debug       # 合体版 debug APK
+```
+
+The web build uses a relative asset base (`base: "./"` in `vite.config.ts`) so it loads correctly from Flutter assets. RIXIA data stays in the WebView's local storage; FocuBili account data stays in its own storage — the two sides do not interfere.
+
 The repository also includes the latest checked-in debug build at [release/RIXIA-0.1.0-debug.apk](release/RIXIA-0.1.0-debug.apk). On Android, open the file and allow installation from the browser or file manager when prompted.
 
 The helper scripts can diagnose the Android toolchain or build the APK automatically:

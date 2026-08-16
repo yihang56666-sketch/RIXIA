@@ -13,7 +13,8 @@
     "mobile:sync": "npm run build && cap sync android",
     "mobile:doctor": "node scripts/build-android-debug-apk.mjs --doctor",
     "mobile:sdk:install": "node scripts/setup-android-sdk.mjs --install",
-    "mobile:apk": "node scripts/build-android-debug-apk.mjs"
+    "mobile:apk": "node scripts/build-android-debug-apk.mjs",
+    "flutter:sync": "node scripts/export-flutter-assets.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
