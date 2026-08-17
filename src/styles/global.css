@@ -2260,3 +2260,24 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   font-size: 12.5px;
   line-height: 1.7;
 }
+
+/* ---------- Library 内嵌播放器面板 ---------- */
+
+.library-player {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+.library-player .player-wrap {
+  margin: 0;
+}
+.player-fallback {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 40px 12px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  text-align: center;
+}

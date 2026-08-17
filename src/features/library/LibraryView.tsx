@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ExternalLink, MonitorPlay, Play, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, MonitorPlay, Play, Trash2 } from "lucide-react";
 import { createLearningProvider } from "../../lib/learning/provider";
+import type { PlayerSession } from "../../lib/learning/types";
 import { isProviderError } from "../../lib/learning/types";
 import { relativeTime } from "../../lib/time";
 import { useAppStore } from "../../store/useAppStore";
@@ -105,6 +106,8 @@ export function LibraryView() {
   );
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [retryResourceId, setRetryResourceId] = useState<string | null>(null);
+  const [activeSession, setActiveSession] = useState<PlayerSession | null>(null);
+  const [activeResource, setActiveResource] = useState<CourseResource | null>(null);
 
   async function openExternal(resource: CourseResource) {
     setPlayerError(null);
@@ -112,11 +115,8 @@ export function LibraryView() {
     try {
       const session = await provider.openPlayer(resource.id);
       touchResource(resource.id);
-      if (session.iframeUrl) {
-        window.open(session.iframeUrl, "_blank", "noopener");
-      } else if (session.externalUrl) {
-        window.open(session.externalUrl, "_blank", "noopener");
-      }
+      setActiveSession(session);
+      setActiveResource(resource);
     } catch (err) {
       if (isProviderError(err)) {
         setPlayerError(err.message);
@@ -129,8 +129,59 @@ export function LibraryView() {
     }
   }
 
+  function closePlayer() {
+    setActiveSession(null);
+    setActiveResource(null);
+  }
+
   return (
     <div className="stack">
+      {activeSession && activeResource && (
+        <section className="card library-player">
+          <div className="row" style={{ marginBottom: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <h2 style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {activeResource.title}
+              </h2>
+              <p className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>{activeResource.bvid}</p>
+            </div>
+            <a
+              className="ghost-btn compact"
+              href={activeSession.externalUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <ExternalLink size={15} /> 在 B 站打开
+            </a>
+            <button className="icon-button" onClick={closePlayer} aria-label="关闭播放器" title="关闭">
+              <ArrowLeft size={16} />
+            </button>
+          </div>
+          <div className="player-wrap">
+            {activeSession.iframeUrl ? (
+              <iframe
+                src={activeSession.iframeUrl}
+                title={activeResource.title}
+                className="player-frame"
+                allowFullScreen
+                referrerPolicy="no-referrer-when-downgrade"
+                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+              />
+            ) : (
+              <div className="player-fallback">
+                <MonitorPlay size={32} color="var(--text-3)" strokeWidth={1.5} />
+                <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+                  当前 Provider 无法内嵌播放，请到 B 站打开
+                </p>
+                <a className="primary compact" href={activeSession.externalUrl} target="_blank" rel="noreferrer">
+                  <ExternalLink size={15} /> 打开 B 站
+                </a>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
       <section className="card">
         <div className="segmented" role="tablist" aria-label="资料库视图">
           {TABS.map((item) => (
