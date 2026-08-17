@@ -17,6 +17,12 @@ export type ViewKey =
   | "library"
   | "focus"
   | "settings"
+  | "search"
+  | "bilibili-player"
+  | "favorites"
+  | "followed"
+  | "watch-history"
+  | "login"
   // Legacy deep-link targets (kept for command palette / persisted state)
   | "inbox"
   | "tools"

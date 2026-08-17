@@ -13,6 +13,14 @@ import { TasksView } from "./features/tasks/TasksView";
 import { TodayView } from "./features/today/TodayView";
 import { ToolsView } from "./features/tools/ToolsView";
 import { VideosView } from "./features/videos/VideosView";
+import {
+  BilibiliFavoritesView,
+  BilibiliFollowedView,
+  BilibiliLoginView,
+  BilibiliWatchHistoryView,
+} from "./features/bilibili/BilibiliAccountViews";
+import { BilibiliPlayerRoute } from "./features/bilibili/BilibiliPlayerView";
+import { BilibiliSearchView } from "./features/bilibili/BilibiliSearchView";
 import { useAppStore } from "./store/useAppStore";
 import { THEMES } from "./catalog";
 
@@ -39,6 +47,12 @@ export default function App() {
         {view === "today" && <TodayView />}
         {view === "plan" && <PlanView />}
         {view === "library" && <LibraryView />}
+        {view === "search" && <BilibiliSearchView />}
+        {view === "bilibili-player" && <BilibiliPlayerRoute />}
+        {view === "favorites" && <BilibiliFavoritesView />}
+        {view === "followed" && <BilibiliFollowedView />}
+        {view === "watch-history" && <BilibiliWatchHistoryView />}
+        {view === "login" && <BilibiliLoginView />}
         {view === "inbox" && <InboxView />}
         {view === "kaoyan" && <KaoyanView />}
         {view === "tools" && <ToolsView />}
