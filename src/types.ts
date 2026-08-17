@@ -33,6 +33,29 @@ export type Density = "comfortable" | "standard" | "compact";
 
 export type ResourceStatus = "saved" | "in-progress" | "completed";
 
+/** 习惯频率类型。借鉴自 Loop Habit Tracker 的数据模型。 */
+export type HabitFrequency =
+  | { type: "daily" }
+  | { type: "weekly-count"; target: number } // 每周 N 次
+  | { type: "interval-days"; interval: number }; // 每 N 天 1 次
+
+/** 专注回合循环配置。借鉴自 Super Productivity。 */
+export interface FocusRounds {
+  workMinutes: number;
+  shortBreakMinutes: number;
+  longBreakMinutes: number;
+  /** 每完成 N 个短休息后插入一次长休息 */
+  longBreakEvery: number;
+}
+
+/** 日记页一条目。借鉴自 usememos/memos 与 AFFiNE 的 daily-doc 概念。 */
+export interface JournalEntry {
+  /** 日期作为主键 "YYYY-MM-DD" */
+  date: string;
+  body: string;
+  updatedAt: string;
+}
+
 export interface InboxItem {
   id: string;
   text: string;
@@ -53,6 +76,9 @@ export interface HabitItem {
   title: string;
   createdAt: string;
   checkedDates: string[];
+  frequency?: HabitFrequency;
+  color?: string;
+  reminderTime?: string;
 }
 
 export interface NoteItem {
@@ -138,13 +164,15 @@ export interface AppState {
   focusMinutes: number;
   focusSessions: FocusSession[];
   focusGoalMinutes: number;
+  focusRounds: FocusRounds;
   activeFocus: ActiveFocus | null;
   resources: CourseResource[];
   timestampNotes: TimestampNote[];
+  journals: JournalEntry[];
 }
 
 export interface BackupData {
-  formatVersion: 2;
+  formatVersion: 3;
   theme: ThemeName;
   density: Density;
   enabledTools: ToolKey[];
@@ -157,6 +185,8 @@ export interface BackupData {
   studyUnits: StudyUnit[];
   focusSessions: FocusSession[];
   focusGoalMinutes: number;
+  focusRounds: FocusRounds;
   resources: CourseResource[];
   timestampNotes: TimestampNote[];
+  journals: JournalEntry[];
 }

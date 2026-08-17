@@ -64,7 +64,7 @@ describe("useAppStore v2 migration and resources", () => {
 
   it("imports and exports a v2 backup round-trip", () => {
     const backup = {
-      formatVersion: 2,
+      formatVersion: 3,
       theme: "graphite",
       density: "compact",
       enabledTools: ["tasks", "focus"],

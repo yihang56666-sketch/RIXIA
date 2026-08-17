@@ -11,9 +11,12 @@ import type {
   CountdownItem,
   CourseResource,
   Density,
+  FocusRounds,
   FocusSession,
+  HabitFrequency,
   HabitItem,
   InboxItem,
+  JournalEntry,
   NoteItem,
   ResourceStatus,
   StudySubject,
@@ -37,7 +40,9 @@ interface AppActions {
   updateTask: (id: string, title: string, due: string | null) => void;
   toggleTask: (id: string) => void;
   removeTask: (id: string) => void;
-  addHabit: (title: string) => void;
+  addHabit: (title: string, frequency?: HabitFrequency, color?: string) => void;
+  updateHabitFrequency: (id: string, frequency: HabitFrequency) => void;
+  updateHabitColor: (id: string, color: string | undefined) => void;
   toggleHabitToday: (id: string) => void;
   removeHabit: (id: string) => void;
   addNote: (body: string) => void;
@@ -55,6 +60,7 @@ interface AppActions {
   moveStudyUnit: (id: string, direction: -1 | 1) => void;
   toggleStudyDate: (id: string, date: string) => void;
   setFocusMinutes: (minutes: number) => void;
+  setFocusRounds: (rounds: FocusRounds) => void;
   addFocusSession: (minutes: number, resourceId?: string) => void;
   setFocusGoalMinutes: (minutes: number) => void;
   addResource: (input: string, title?: string) => CourseResource | null;
@@ -65,6 +71,8 @@ interface AppActions {
   addTimestampNote: (resourceId: string, seconds: number, body: string) => void;
   removeTimestampNote: (id: string) => void;
   setActiveFocus: (focus: ActiveFocus | null) => void;
+  saveJournal: (date: string, body: string) => void;
+  getJournal: (date: string) => JournalEntry | undefined;
   importBackup: (input: unknown) => void;
   exportBackup: () => BackupData;
   resetAll: () => void;
@@ -91,9 +99,11 @@ const initialState: Omit<
   focusMinutes: 25,
   focusSessions: [],
   focusGoalMinutes: 120,
+  focusRounds: { workMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, longBreakEvery: 4 },
   activeFocus: null,
   resources: [],
   timestampNotes: [],
+  journals: [],
 };
 
 export const useAppStore = create<AppState & AppActions>()(
@@ -153,12 +163,29 @@ export const useAppStore = create<AppState & AppActions>()(
           ),
         })),
       removeTask: (id) => set((state) => ({ tasks: state.tasks.filter((item) => item.id !== id) })),
-      addHabit: (title) => {
+      addHabit: (title, frequency, color) => {
         const value = title.trim();
         if (!value) return;
-        const item: HabitItem = { id: createId(), title: value, createdAt: new Date().toISOString(), checkedDates: [] };
+        const item: HabitItem = {
+          id: createId(),
+          title: value,
+          createdAt: new Date().toISOString(),
+          checkedDates: [],
+          frequency: frequency ?? { type: "daily" },
+          color,
+        };
         set((state) => ({ habits: [item, ...state.habits] }));
       },
+      updateHabitFrequency: (id, frequency) => set((state) => ({
+        habits: state.habits.map((item) =>
+          item.id === id ? { ...item, frequency } : item,
+        ),
+      })),
+      updateHabitColor: (id, color) => set((state) => ({
+        habits: state.habits.map((item) =>
+          item.id === id ? { ...item, color } : item,
+        ),
+      })),
       toggleHabitToday: (id) => {
         const today = todayKey();
         set((state) => ({
@@ -277,6 +304,14 @@ export const useAppStore = create<AppState & AppActions>()(
         }));
       },
       setFocusGoalMinutes: (minutes) => set({ focusGoalMinutes: Math.max(15, Math.min(600, minutes)) }),
+      setFocusRounds: (rounds) => set({
+        focusRounds: {
+          workMinutes: Math.max(1, Math.min(120, Math.round(rounds.workMinutes))),
+          shortBreakMinutes: Math.max(0, Math.min(60, Math.round(rounds.shortBreakMinutes))),
+          longBreakMinutes: Math.max(0, Math.min(120, Math.round(rounds.longBreakMinutes))),
+          longBreakEvery: Math.max(1, Math.min(12, Math.round(rounds.longBreakEvery))),
+        },
+      }),
       addResource: (input, title) => {
         const bvid = extractBvid(input);
         if (!bvid) return null;
@@ -342,6 +377,19 @@ export const useAppStore = create<AppState & AppActions>()(
         timestampNotes: state.timestampNotes.filter((item) => item.id !== id),
       })),
       setActiveFocus: (focus) => set({ activeFocus: focus }),
+      saveJournal: (date, body) => set((state) => {
+        const existing = state.journals.find((entry) => entry.date === date);
+        const updatedAt = new Date().toISOString();
+        if (existing) {
+          return {
+            journals: state.journals.map((entry) =>
+              entry.date === date ? { ...entry, body, updatedAt } : entry,
+            ),
+          };
+        }
+        return { journals: [...state.journals, { date, body, updatedAt }] };
+      }),
+      getJournal: (date) => get().journals.find((entry) => entry.date === date),
       importBackup: (input) => {
         const data = validateBackup(input);
         set({
@@ -357,14 +405,16 @@ export const useAppStore = create<AppState & AppActions>()(
           studyUnits: data.studyUnits,
           focusSessions: data.focusSessions,
           focusGoalMinutes: data.focusGoalMinutes,
+          focusRounds: data.focusRounds,
           resources: data.resources,
           timestampNotes: data.timestampNotes,
+          journals: data.journals,
         });
       },
       exportBackup: () => {
         const state = get();
         return {
-          formatVersion: 2,
+          formatVersion: 3,
           theme: state.theme,
           density: state.density,
           enabledTools: state.enabledTools,
@@ -377,15 +427,17 @@ export const useAppStore = create<AppState & AppActions>()(
           studyUnits: state.studyUnits,
           focusSessions: state.focusSessions,
           focusGoalMinutes: state.focusGoalMinutes,
+          focusRounds: state.focusRounds,
           resources: state.resources,
           timestampNotes: state.timestampNotes,
+          journals: state.journals,
         };
       },
       resetAll: () => set({ ...initialState }),
     }),
     {
       name: "rixia-v1",
-      version: 2,
+      version: 3,
       migrate: (persisted, version) => migratePersistedState(persisted, version) as unknown as AppState & AppActions,
     },
   ),

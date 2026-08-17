@@ -14,7 +14,7 @@ describe("persisted state v2 migration", () => {
       },
       1,
     );
-    expect(result.version).toBe(2);
+    expect(result.version).toBe(3);
     expect(result.theme).toBe("porcelain");
     expect(result.resources?.[0]).toMatchObject({ id: "v1", bvid: "BV1", status: "saved" });
     expect(result.tasks?.[0].id).toBe("t1");
@@ -92,7 +92,7 @@ describe("persisted state v2 migration", () => {
 
   it("round-trips a complete backup object", () => {
     const backup = {
-      formatVersion: 2,
+      formatVersion: 3,
       theme: "graphite",
       density: "comfortable",
       enabledTools: ["tasks", "focus"],

@@ -3,9 +3,12 @@ import type {
   AppState,
   BackupData,
   CourseResource,
+  FocusRounds,
   FocusSession,
+  HabitFrequency,
   HabitItem,
   InboxItem,
+  JournalEntry,
   NoteItem,
   ResourceStatus,
   TaskItem,
@@ -104,6 +107,62 @@ function migrateToolList(input: unknown): ToolKey[] {
   return filtered.length ? filtered : valid;
 }
 
+function migrateHabitFrequency(input: unknown): HabitFrequency {
+  if (typeof input !== "object" || input === null) return { type: "daily" };
+  const obj = input as Record<string, unknown>;
+  if (obj.type === "weekly-count") {
+    const target = typeof obj.target === "number" && obj.target > 0 ? Math.min(7, Math.round(obj.target)) : 3;
+    return { type: "weekly-count", target };
+  }
+  if (obj.type === "interval-days") {
+    const interval = typeof obj.interval === "number" && obj.interval > 0 ? Math.min(365, Math.round(obj.interval)) : 1;
+    return { type: "interval-days", interval };
+  }
+  return { type: "daily" };
+}
+
+function migrateHabit(input: unknown): HabitItem | null {
+  if (!isObject(input)) return null;
+  const id = typeof input.id === "string" ? input.id : "";
+  const title = typeof input.title === "string" ? input.title : "";
+  const createdAt = typeof input.createdAt === "string" ? input.createdAt : "";
+  if (!id || !title || !createdAt) return null;
+  return {
+    id,
+    title,
+    createdAt,
+    checkedDates: asArray<string>(input.checkedDates, []),
+    frequency: migrateHabitFrequency(input.frequency),
+    color: typeof input.color === "string" ? input.color : undefined,
+    reminderTime: typeof input.reminderTime === "string" ? input.reminderTime : undefined,
+  };
+}
+
+function migrateFocusRounds(input: unknown): FocusRounds {
+  const fallback: FocusRounds = { workMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, longBreakEvery: 4 };
+  if (!isObject(input)) return fallback;
+  const obj = input as Record<string, unknown>;
+  const workRaw = typeof obj.workMinutes === "number" ? obj.workMinutes : fallback.workMinutes;
+  const shortRaw = typeof obj.shortBreakMinutes === "number" ? obj.shortBreakMinutes : fallback.shortBreakMinutes;
+  const longRaw = typeof obj.longBreakMinutes === "number" ? obj.longBreakMinutes : fallback.longBreakMinutes;
+  const everyRaw = typeof obj.longBreakEvery === "number" ? obj.longBreakEvery : fallback.longBreakEvery;
+  return {
+    workMinutes: Math.max(1, Math.min(120, Math.round(workRaw))),
+    shortBreakMinutes: Math.max(0, Math.min(60, Math.round(shortRaw))),
+    longBreakMinutes: Math.max(0, Math.min(120, Math.round(longRaw))),
+    longBreakEvery: Math.max(1, Math.min(12, Math.round(everyRaw))),
+  };
+}
+
+function migrateJournal(input: unknown): JournalEntry | null {
+  if (!isObject(input)) return null;
+  const date = typeof input.date === "string" ? input.date : "";
+  const body = typeof input.body === "string" ? input.body : "";
+  const updatedAt = typeof input.updatedAt === "string" ? input.updatedAt : "";
+  if (!date || !body.trim() || !updatedAt) return null;
+  return { date, body, updatedAt };
+}
+
 function migrateIdItem<T extends { id: string; createdAt: string }>(
   input: unknown,
   build: (obj: Record<string, unknown>) => T | null,
@@ -121,7 +180,7 @@ function migrateIdItem<T extends { id: string; createdAt: string }>(
 export function migratePersistedState(
   input: unknown,
   _version: number,
-): Partial<AppState> & { version: 2 } {
+): Partial<AppState> & { version: 3 } {
   const state = isObject(input) ? input : {};
   const theme = migrateTheme(state.theme);
   const density: AppState["density"] =
@@ -152,18 +211,9 @@ export function migratePersistedState(
     };
   });
 
-  const habits = migrateIdItem<HabitItem>(state.habits, (obj) => {
-    const id = typeof obj.id === "string" ? obj.id : "";
-    const title = typeof obj.title === "string" ? obj.title : "";
-    const createdAt = typeof obj.createdAt === "string" ? obj.createdAt : "";
-    if (!id || !title || !createdAt) return null;
-    return {
-      id,
-      title,
-      createdAt,
-      checkedDates: asArray<string>(obj.checkedDates, []),
-    };
-  });
+  const habits = asArray<unknown>(state.habits, [])
+    .map(migrateHabit)
+    .filter((item): item is HabitItem => item !== null);
 
   const notes = migrateIdItem<NoteItem>(state.notes, (obj) => {
     const id = typeof obj.id === "string" ? obj.id : "";
@@ -209,7 +259,7 @@ export function migratePersistedState(
   const activeFocus = migrateActiveFocus(state.activeFocus);
 
   return {
-    version: 2,
+    version: 3,
     theme,
     density,
     backgroundImage:
@@ -259,9 +309,13 @@ export function migratePersistedState(
       typeof state.focusGoalMinutes === "number" && state.focusGoalMinutes > 0
         ? state.focusGoalMinutes
         : 120,
+    focusRounds: migrateFocusRounds(state.focusRounds),
     activeFocus,
     resources,
     timestampNotes,
+    journals: asArray<unknown>(state.journals, [])
+      .map(migrateJournal)
+      .filter((item): item is JournalEntry => item !== null),
   };
 }
 
@@ -283,9 +337,9 @@ export function validateBackup(input: unknown): BackupData {
   requireStringArray(data.notes, "notes");
   requireStringArray(data.inbox, "inbox");
   requireStringArray(data.countdowns, "countdowns");
-  const migrated = migratePersistedState(data, 2);
+  const migrated = migratePersistedState(data, 3);
   return {
-    formatVersion: 2,
+    formatVersion: 3,
     theme: migrated.theme ?? "porcelain",
     density: migrated.density ?? "standard",
     enabledTools: migrated.enabledTools ?? ["tasks", "habits", "notes", "countdowns", "focus", "videos"],
@@ -298,7 +352,9 @@ export function validateBackup(input: unknown): BackupData {
     studyUnits: migrated.studyUnits ?? [],
     focusSessions: migrated.focusSessions ?? [],
     focusGoalMinutes: migrated.focusGoalMinutes ?? 120,
+    focusRounds: migrated.focusRounds ?? { workMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, longBreakEvery: 4 },
     resources: migrated.resources ?? [],
     timestampNotes: migrated.timestampNotes ?? [],
+    journals: migrated.journals ?? [],
   };
 }
