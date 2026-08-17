@@ -1944,3 +1944,115 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   border-radius: var(--radius-sm);
   background: var(--content-surface);
 }
+
+/* ---------- Today 重构：主行动区 + 状态带 + 情境双栏 + 节奏回顾 ---------- */
+
+.today-action {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+}
+.today-action-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+}
+.today-action-body { min-width: 0; }
+.today-action-label {
+  display: block;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.today-action-sub { font-size: 12.5px; margin-top: 2px; }
+.today-action-btn { padding: 11px 22px; }
+
+.today-status-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px 8px;
+  scrollbar-width: none;
+}
+.today-status-strip::-webkit-scrollbar { display: none; }
+.status-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--content-surface);
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.18s var(--ease-out), color 0.18s;
+}
+.status-pill:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); color: var(--text); }
+.status-pill strong { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.today-columns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 13px;
+}
+@media (min-width: 900px) {
+  .today-columns { grid-template-columns: 1fr 1fr; }
+}
+
+.today-resource {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--content-surface);
+  border: 1px solid var(--line);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s var(--ease-out);
+}
+.today-resource:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.today-resource-title { font-weight: 550; }
+.today-resource-meta { font-size: 12.5px; }
+.today-resource + .today-resource { margin-top: 8px; }
+
+.review-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 90px;
+  margin-top: 14px;
+}
+.review-bar-col {
+  flex: 1;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+.review-bar-track {
+  width: 100%;
+  height: 70px;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 4px;
+  background: var(--ring-track);
+  overflow: hidden;
+}
+.review-bar {
+  width: 100%;
+  background: var(--accent);
+  border-radius: 4px 4px 0 0;
+}
