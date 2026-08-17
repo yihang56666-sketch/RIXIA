@@ -3,10 +3,10 @@ import { FormEvent, useState } from "react";
 import { buildPlayerUrl, buildSearchUrl, extractBvid } from "../../lib/bilibili";
 import { relativeTime } from "../../lib/time";
 import { useAppStore } from "../../store/useAppStore";
-import type { VideoItem } from "../../types";
+import type { CourseResource } from "../../types";
 
-function VideoCard({ video, onOpen }: { video: VideoItem; onOpen: () => void }) {
-  const { removeVideo } = useAppStore();
+function VideoCard({ video, onOpen }: { video: CourseResource; onOpen: () => void }) {
+  const { removeResource } = useAppStore();
   return (
     <article className="card video-card">
       <button className="video-cover" onClick={onOpen} aria-label={`观看 ${video.title}`}>
@@ -19,7 +19,7 @@ function VideoCard({ video, onOpen }: { video: VideoItem; onOpen: () => void }) 
         </button>
         <span className="muted video-meta">{video.bvid} · {relativeTime(video.addedAt)}</span>
       </div>
-      <button className="delete-icon" onClick={() => removeVideo(video.id)} aria-label="删除视频" title="删除视频">
+      <button className="delete-icon" onClick={() => removeResource(video.id)} aria-label="删除视频" title="删除视频">
         <Trash2 size={15} />
       </button>
     </article>
@@ -27,11 +27,11 @@ function VideoCard({ video, onOpen }: { video: VideoItem; onOpen: () => void }) 
 }
 
 export function VideosView() {
-  const { videos, addVideo } = useAppStore();
+  const { resources, addResource } = useAppStore();
   const [input, setInput] = useState("");
   const [title, setTitle] = useState("");
   const [error, setError] = useState("");
-  const [watching, setWatching] = useState<VideoItem | null>(null);
+  const [watching, setWatching] = useState<CourseResource | null>(null);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -41,7 +41,7 @@ export function VideosView() {
       return;
     }
     setError("");
-    addVideo(input, title);
+    addResource(input, title);
     setInput("");
     setTitle("");
   }
@@ -110,7 +110,7 @@ export function VideosView() {
         {error && <p className="background-error">{error}</p>}
       </section>
 
-      {videos.length === 0 ? (
+      {resources.length === 0 ? (
         <section className="card">
           <div className="empty" style={{ display: "grid", justifyItems: "center", gap: 10, padding: "30px 8px" }}>
             <MonitorPlay size={26} color="var(--text-3)" strokeWidth={1.5} />
@@ -124,7 +124,7 @@ export function VideosView() {
         </section>
       ) : (
         <div className="video-grid">
-          {videos.map((video) => (
+          {resources.map((video) => (
             <VideoCard key={video.id} video={video} onOpen={() => setWatching(video)} />
           ))}
         </div>

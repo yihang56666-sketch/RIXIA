@@ -13,3 +13,7 @@ android/app/build
 android/.gradle
 /.git-history-backup/
 
+# Agent harness / playwright scratch
+.mimosa
+.playwright-cli
+output

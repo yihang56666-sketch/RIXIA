@@ -1,26 +1,33 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { extractBvid } from "../lib/bilibili";
+import { migratePersistedState, validateBackup } from "../lib/migrations";
 import { createId } from "../lib/id";
 import { todayKey } from "../lib/time";
 import type {
+  ActiveFocus,
   AppState,
+  BackupData,
   CountdownItem,
+  CourseResource,
+  Density,
   FocusSession,
   HabitItem,
   InboxItem,
   NoteItem,
+  ResourceStatus,
   StudySubject,
   StudyUnit,
   TaskItem,
+  TimestampNote,
   ToolKey,
-  VideoItem,
   ViewKey,
 } from "../types";
 
 interface AppActions {
   setView: (view: ViewKey) => void;
   setTheme: (theme: AppState["theme"]) => void;
+  setDensity: (density: Density) => void;
   setBackgroundImage: (backgroundImage: string | null) => void;
   toggleTool: (tool: ToolKey) => void;
   addInbox: (text: string) => void;
@@ -48,34 +55,54 @@ interface AppActions {
   moveStudyUnit: (id: string, direction: -1 | 1) => void;
   toggleStudyDate: (id: string, date: string) => void;
   setFocusMinutes: (minutes: number) => void;
-  addFocusSession: (minutes: number) => void;
+  addFocusSession: (minutes: number, resourceId?: string) => void;
   setFocusGoalMinutes: (minutes: number) => void;
-  addVideo: (input: string, title?: string) => void;
-  removeVideo: (id: string) => void;
+  addResource: (input: string, title?: string) => CourseResource | null;
+  removeResource: (id: string) => void;
+  updateResourceProgress: (id: string, seconds: number, durationSeconds?: number) => void;
+  setResourceStatus: (id: string, status: ResourceStatus) => void;
+  touchResource: (id: string) => void;
+  addTimestampNote: (resourceId: string, seconds: number, body: string) => void;
+  removeTimestampNote: (id: string) => void;
+  setActiveFocus: (focus: ActiveFocus | null) => void;
+  importBackup: (input: unknown) => void;
+  exportBackup: () => BackupData;
+  resetAll: () => void;
 }
 
 const defaultTools: ToolKey[] = ["tasks", "habits", "notes", "countdowns", "focus", "videos"];
 
+const initialState: Omit<
+  AppState,
+  | keyof AppActions
+> = {
+  theme: "porcelain",
+  density: "standard",
+  backgroundImage: null,
+  view: "today",
+  enabledTools: defaultTools,
+  inbox: [],
+  tasks: [],
+  habits: [],
+  notes: [],
+  countdowns: [],
+  subjects: [],
+  studyUnits: [],
+  focusMinutes: 25,
+  focusSessions: [],
+  focusGoalMinutes: 120,
+  activeFocus: null,
+  resources: [],
+  timestampNotes: [],
+};
+
 export const useAppStore = create<AppState & AppActions>()(
   persist(
     (set, get) => ({
-      theme: "paper",
-      backgroundImage: null,
-      view: "today",
-      enabledTools: defaultTools,
-      inbox: [],
-      tasks: [],
-      habits: [],
-      notes: [],
-      countdowns: [],
-      subjects: [],
-      studyUnits: [],
-      focusMinutes: 25,
-      focusSessions: [],
-      focusGoalMinutes: 120,
-      videos: [],
+      ...initialState,
       setView: (view) => set({ view }),
       setTheme: (theme) => set({ theme }),
+      setDensity: (density) => set({ density }),
       setBackgroundImage: (backgroundImage) => set({ backgroundImage }),
       toggleTool: (tool) =>
         set((state) => {
@@ -234,46 +261,132 @@ export const useAppStore = create<AppState & AppActions>()(
           return { ...item, completedDates };
         }),
       })),
-      setFocusMinutes: (minutes) => set({ focusMinutes: minutes }),
-      addFocusSession: (minutes) => {
+      setFocusMinutes: (minutes) => set({ focusMinutes: Math.max(1, Math.min(120, minutes)) }),
+      addFocusSession: (minutes, resourceId) => {
         if (minutes <= 0) return;
         const session: FocusSession = {
           id: createId(),
           date: todayKey(),
           minutes,
           completedAt: new Date().toISOString(),
+          resourceId,
         };
-        set((state) => ({ focusSessions: [session, ...state.focusSessions] }));
+        set((state) => ({
+          focusSessions: [session, ...state.focusSessions],
+          activeFocus: null,
+        }));
       },
       setFocusGoalMinutes: (minutes) => set({ focusGoalMinutes: Math.max(15, Math.min(600, minutes)) }),
-      addVideo: (input, title) => {
+      addResource: (input, title) => {
         const bvid = extractBvid(input);
-        if (!bvid) return;
-        if (get().videos.some((item) => item.bvid === bvid)) return;
-        const item: VideoItem = {
+        if (!bvid) return null;
+        if (get().resources.some((item) => item.bvid === bvid)) return null;
+        const item: CourseResource = {
           id: createId(),
           bvid,
           title: title?.trim() || `视频 ${bvid}`,
+          status: "saved",
           addedAt: new Date().toISOString(),
         };
-        set((state) => ({ videos: [item, ...state.videos] }));
+        set((state) => ({ resources: [item, ...state.resources] }));
+        return item;
       },
-      removeVideo: (id) => set((state) => ({ videos: state.videos.filter((item) => item.id !== id) })),
+      removeResource: (id) => set((state) => ({
+        resources: state.resources.filter((item) => item.id !== id),
+        timestampNotes: state.timestampNotes.filter((item) => item.resourceId !== id),
+      })),
+      updateResourceProgress: (id, seconds, durationSeconds) => set((state) => ({
+        resources: state.resources.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                progressSeconds: Math.max(0, seconds),
+                durationSeconds: durationSeconds ?? item.durationSeconds,
+                lastOpenedAt: new Date().toISOString(),
+                status:
+                  durationSeconds && seconds >= durationSeconds * 0.95
+                    ? "completed"
+                    : item.status === "saved"
+                      ? "in-progress"
+                      : item.status,
+              }
+            : item,
+        ),
+      })),
+      setResourceStatus: (id, status) => set((state) => ({
+        resources: state.resources.map((item) =>
+          item.id === id ? { ...item, status, lastOpenedAt: new Date().toISOString() } : item,
+        ),
+      })),
+      touchResource: (id) => set((state) => ({
+        resources: state.resources.map((item) =>
+          item.id === id ? { ...item, lastOpenedAt: new Date().toISOString() } : item,
+        ),
+      })),
+      addTimestampNote: (resourceId, seconds, body) => {
+        const value = body.trim();
+        if (!value || seconds < 0) return;
+        if (!get().resources.some((item) => item.id === resourceId)) return;
+        const item: TimestampNote = {
+          id: createId(),
+          resourceId,
+          seconds,
+          body: value,
+          createdAt: new Date().toISOString(),
+        };
+        set((state) => ({
+          timestampNotes: [...state.timestampNotes, item].sort((a, b) => a.seconds - b.seconds),
+        }));
+      },
+      removeTimestampNote: (id) => set((state) => ({
+        timestampNotes: state.timestampNotes.filter((item) => item.id !== id),
+      })),
+      setActiveFocus: (focus) => set({ activeFocus: focus }),
+      importBackup: (input) => {
+        const data = validateBackup(input);
+        set({
+          theme: data.theme,
+          density: data.density,
+          enabledTools: data.enabledTools,
+          inbox: data.inbox,
+          tasks: data.tasks,
+          habits: data.habits,
+          notes: data.notes,
+          countdowns: data.countdowns,
+          subjects: data.subjects,
+          studyUnits: data.studyUnits,
+          focusSessions: data.focusSessions,
+          focusGoalMinutes: data.focusGoalMinutes,
+          resources: data.resources,
+          timestampNotes: data.timestampNotes,
+        });
+      },
+      exportBackup: () => {
+        const state = get();
+        return {
+          formatVersion: 2,
+          theme: state.theme,
+          density: state.density,
+          enabledTools: state.enabledTools,
+          inbox: state.inbox,
+          tasks: state.tasks,
+          habits: state.habits,
+          notes: state.notes,
+          countdowns: state.countdowns,
+          subjects: state.subjects,
+          studyUnits: state.studyUnits,
+          focusSessions: state.focusSessions,
+          focusGoalMinutes: state.focusGoalMinutes,
+          resources: state.resources,
+          timestampNotes: state.timestampNotes,
+        };
+      },
+      resetAll: () => set({ ...initialState }),
     }),
     {
       name: "rixia-v1",
-      version: 1,
-      migrate: (persisted) => {
-        const state = persisted as Partial<AppState>;
-        const needsVideosTool = state.enabledTools && !state.enabledTools.includes("videos");
-        return {
-          ...state,
-          ...(needsVideosTool ? { enabledTools: [...state.enabledTools!, "videos"] } : {}),
-          focusSessions: state.focusSessions ?? [],
-          focusGoalMinutes: state.focusGoalMinutes ?? 120,
-          videos: state.videos ?? [],
-        };
-      },
+      version: 2,
+      migrate: (persisted, version) => migratePersistedState(persisted, version) as unknown as AppState & AppActions,
     },
   ),
 );
