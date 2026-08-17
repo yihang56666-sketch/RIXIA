@@ -367,14 +367,31 @@
 }
 
 
-/* ---------- 动效令牌 ---------- */
+/* ---------- 动效、圆角与密度令牌 ---------- */
 
 :root {
   --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --radius: 20px;
-  --radius-sm: 14px;
-  --blur: 22px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius: var(--radius-md);
+  --radius-legacy-sm: var(--radius-sm);
+  --blur: var(--blur-nav);
+}
+
+[data-density="compact"] { --control-h: 36px; --section-gap: 14px; }
+[data-density="standard"] { --control-h: 42px; --section-gap: 20px; }
+[data-density="comfortable"] { --control-h: 48px; --section-gap: 26px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ---------- 基础 ---------- */
@@ -495,25 +512,16 @@ h3 { font-size: 15.5px; font-weight: 620; }
 }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
 
-/* ---------- 卡片（毛玻璃） ---------- */
+/* ---------- 卡片（三层材质：内容表面） ---------- */
 
 .card {
   position: relative;
-  background: var(--surface);
-  backdrop-filter: blur(var(--blur)) saturate(170%);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(170%);
+  background: var(--content-surface-strong);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-md);
   padding: 17px;
   animation: fadeUp 0.5s var(--ease-out) both;
 }
-.view-stage > *:nth-child(1) { animation-delay: 0.02s; }
-.view-stage > *:nth-child(2) { animation-delay: 0.06s; }
-.view-stage > *:nth-child(3) { animation-delay: 0.10s; }
-.view-stage > *:nth-child(4) { animation-delay: 0.14s; }
-.view-stage > *:nth-child(5) { animation-delay: 0.18s; }
-.view-stage > *:nth-child(n + 6) { animation-delay: 0.22s; }
 
 .empty {
   padding: 26px 8px;
@@ -574,8 +582,8 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   box-shadow: var(--glow);
   transition: transform 0.25s var(--ease-spring), filter 0.2s, box-shadow 0.25s;
 }
-.primary:hover { transform: translateY(-1px); filter: brightness(1.05); }
-.primary:active { transform: scale(0.97); }
+.primary:hover { filter: brightness(1.05); }
+.primary:active { transform: scale(0.98); }
 .primary.compact { width: auto; padding: 9px 15px; font-size: 14px; }
 
 .ghost-btn {
@@ -710,7 +718,7 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   border: 1px solid var(--line);
   transition: transform 0.3s var(--ease-spring), box-shadow 0.3s, border-color 0.25s;
 }
-.tool-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.tool-card:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .tool-card:active { transform: scale(0.98); }
 .tool-card strong { font-size: 15.5px; }
 .tool-card .muted { font-size: 12.5px; }
@@ -723,7 +731,7 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   border: 1px solid var(--line);
   transition: transform 0.3s var(--ease-spring), box-shadow 0.3s;
 }
-.stat-tile:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+.stat-tile:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
 .stat-value {
   font-size: 24px;
   font-weight: 700;
@@ -887,7 +895,7 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   border: 1px solid var(--line);
   transition: transform 0.3s var(--ease-spring), box-shadow 0.3s;
 }
-.countdown-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+.countdown-card:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
 .count-days {
   font-size: 34px;
   font-weight: 700;
@@ -974,10 +982,10 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   gap: 4px;
   padding: 7px;
   border-radius: 26px;
-  background: var(--surface-strong);
+  background: var(--nav-surface);
   border: 1px solid var(--line);
-  backdrop-filter: blur(var(--blur)) saturate(180%);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(180%);
+  backdrop-filter: blur(var(--blur-nav)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--blur-nav)) saturate(1.2);
   box-shadow: var(--shadow-lg);
   z-index: 40;
 }
@@ -1301,7 +1309,7 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   gap: 14px;
   min-height: 110px;
 }
-.note-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+.note-card:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
 .note-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.62; font-size: 14.5px; }
 .note-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
@@ -1650,9 +1658,9 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
     height: 100dvh;
     padding: 26px 16px 20px;
     border-right: 1px solid var(--line);
-    background: var(--surface);
-    backdrop-filter: blur(var(--blur)) saturate(170%);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(170%);
+    background: var(--nav-surface);
+    backdrop-filter: blur(var(--blur-nav)) saturate(1.2);
+    -webkit-backdrop-filter: blur(var(--blur-nav)) saturate(1.2);
   }
   .brand { display: flex; align-items: center; gap: 11px; padding: 0 8px; }
   .brand-mark {
