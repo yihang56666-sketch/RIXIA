@@ -1,9 +1,11 @@
-import { useMemo, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { BookOpen, Tag } from "lucide-react";
 import { extractTags, extractWikiLinks } from "../../lib/journal";
 import { todayKey } from "../../lib/time";
 import { useAppStore } from "../../store/useAppStore";
+
+// react-markdown 体积较大，惰性加载，仅当用户进入查看模式后才下载。
+const ReactMarkdown = lazy(() => import("react-markdown"));
 
 /**
  * 每日日记页（借鉴自 usememos/memos 与 AFFiNE 的 daily-doc）：
@@ -72,13 +74,15 @@ export function JournalView({ date }: { date?: string }) {
         </div>
       ) : (
         <div className="journal-body">
-          <ReactMarkdown
-            components={{
-              a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
-            }}
-          >
-            {body}
-          </ReactMarkdown>
+          <Suspense fallback={<p className="muted">加载渲染器…</p>}>
+            <ReactMarkdown
+              components={{
+                a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+              }}
+            >
+              {body}
+            </ReactMarkdown>
+          </Suspense>
           <button className="ghost-btn compact" type="button" onClick={() => setEditing(true)}>
             编辑
           </button>
