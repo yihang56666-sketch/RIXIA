@@ -1,5 +1,7 @@
-import { useState } from "react";
-import { ExternalLink, MonitorPlay, Play, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { AlertTriangle, ExternalLink, MonitorPlay, Play, Trash2 } from "lucide-react";
+import { createLearningProvider } from "../../lib/learning/provider";
+import { isProviderError } from "../../lib/learning/types";
 import { relativeTime } from "../../lib/time";
 import { useAppStore } from "../../store/useAppStore";
 import type { CourseResource } from "../../types";
@@ -75,6 +77,7 @@ export function LibraryView() {
   const inbox = useAppStore((state) => state.inbox);
   const addResource = useAppStore((state) => state.addResource);
   const setView = useAppStore((state) => state.setView);
+  const touchResource = useAppStore((state) => state.touchResource);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
 
@@ -96,8 +99,34 @@ export function LibraryView() {
 
   const savedList = [...resources].sort((a, b) => b.addedAt.localeCompare(a.addedAt));
 
-  function openExternal(resource: CourseResource) {
-    window.open(`https://www.bilibili.com/video/${resource.bvid}`, "_blank", "noopener");
+  const provider = useMemo(
+    () => createLearningProvider(() => ({ resources: useAppStore.getState().resources, timestampNotes: useAppStore.getState().timestampNotes })),
+    [resources],
+  );
+  const [playerError, setPlayerError] = useState<string | null>(null);
+  const [retryResourceId, setRetryResourceId] = useState<string | null>(null);
+
+  async function openExternal(resource: CourseResource) {
+    setPlayerError(null);
+    setRetryResourceId(resource.id);
+    try {
+      const session = await provider.openPlayer(resource.id);
+      touchResource(resource.id);
+      if (session.iframeUrl) {
+        window.open(session.iframeUrl, "_blank", "noopener");
+      } else if (session.externalUrl) {
+        window.open(session.externalUrl, "_blank", "noopener");
+      }
+    } catch (err) {
+      if (isProviderError(err)) {
+        setPlayerError(err.message);
+        if (err.externalUrl) {
+          window.open(err.externalUrl, "_blank", "noopener");
+        }
+      } else {
+        setPlayerError("播放器加载失败");
+      }
+    }
   }
 
   return (
@@ -124,6 +153,22 @@ export function LibraryView() {
           <p className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>
             上次没看完的视频，从这里继续。
           </p>
+          {playerError && retryResourceId && (
+            <div className="library-error" role="alert">
+              <AlertTriangle size={16} color="var(--danger)" />
+              <span>{playerError}</span>
+              <button
+                className="ghost-btn compact"
+                type="button"
+                onClick={() => {
+                  const resource = resources.find((r) => r.id === retryResourceId);
+                  if (resource) openExternal(resource);
+                }}
+              >
+                重试
+              </button>
+            </div>
+          )}
           {continueList.length === 0 ? (
             <div className="empty" style={{ padding: "26px 8px" }}>
               <MonitorPlay size={26} color="var(--text-3)" strokeWidth={1.5} />
