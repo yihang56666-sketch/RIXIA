@@ -567,10 +567,10 @@ function parseUnixTime(value: unknown): Date | null {
 }
 
 function readInteger(value: unknown): number {
-  if (typeof value === "number") return Math.max(0, Math.min(Math.trunc(value), 1 << 31));
+  if (typeof value === "number") return Math.max(0, Math.min(Math.trunc(value), 2 ** 31));
   const n = Number.parseInt(String(value ?? ""), 10);
   if (Number.isNaN(n)) return 0;
-  return Math.max(0, Math.min(n, 1 << 31));
+  return Math.max(0, Math.min(n, 2 ** 31));
 }
 
 function readText(value: unknown, fallback = ""): string {
