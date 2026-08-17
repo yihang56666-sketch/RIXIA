@@ -22,6 +22,7 @@ import {
   taskCompletionsByDay,
   trendSummary,
 } from "../../lib/stats";
+import { JournalView } from "../journal/JournalView";
 import { useAppStore } from "../../store/useAppStore";
 
 function TrendBadge({ summary }: { summary: ReturnType<typeof trendSummary> }) {
@@ -334,6 +335,8 @@ export function TodayView() {
           </div>
         )}
       </section>
+
+      <JournalView />
     </div>
   );
 }

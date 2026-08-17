@@ -1,21 +1,31 @@
 import { useState } from "react";
-import { ChevronDown, Flame, Trash2 } from "lucide-react";
+import { ChevronDown, Flame, Pencil, Trash2 } from "lucide-react";
+import { HabitFrequencyEditor } from "../../components/HabitFrequencyEditor";
 import { Heatmap } from "../../components/Heatmap";
 import { ProgressRing } from "../../components/ProgressRing";
 import { QuickAdd } from "../../components/QuickAdd";
 import { bestStreak, habitStreak, lastNDates, todayKey } from "../../lib/time";
 import { habitStrength } from "../../lib/stats";
 import { useAppStore } from "../../store/useAppStore";
-import type { HabitItem } from "../../types";
+import type { HabitFrequency, HabitItem } from "../../types";
+
+function frequencyLabel(frequency: HabitFrequency | undefined): string {
+  if (!frequency) return "每日";
+  if (frequency.type === "daily") return "每日";
+  if (frequency.type === "weekly-count") return `每周 ${frequency.target} 次`;
+  return `每 ${frequency.interval} 天 1 次`;
+}
 
 function HabitCard({ habit, today }: { habit: HabitItem; today: string }) {
   const { toggleHabitToday, removeHabit } = useAppStore();
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
   const checked = habit.checkedDates.includes(today);
   const streak = habitStreak(habit.checkedDates, today);
   const best = bestStreak(habit.checkedDates);
   const strength = habitStrength(habit.checkedDates, lastNDates(30, today));
   const weekDates = lastNDates(7, today);
+  const accent = habit.color ?? "var(--accent)";
 
   return (
     <div className="item" style={{ display: "block", padding: "14px 2px" }}>
@@ -24,17 +34,23 @@ function HabitCard({ habit, today }: { habit: HabitItem; today: string }) {
           className={checked ? "check on" : "check"}
           onClick={() => toggleHabitToday(habit.id)}
           aria-label={checked ? "取消今日打卡" : "今日打卡"}
+          style={checked ? { background: accent, borderColor: accent } : undefined}
         />
         <div style={{ minWidth: 0 }}>
           <p>{habit.title}</p>
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>{frequencyLabel(habit.frequency)}</p>
           <div className="week-dots" style={{ marginTop: 6 }}>
             {weekDates.map((date) => (
-              <span key={date} className={habit.checkedDates.includes(date) ? "week-dot on" : "week-dot"} />
+              <span
+                key={date}
+                className={habit.checkedDates.includes(date) ? "week-dot on" : "week-dot"}
+                style={habit.checkedDates.includes(date) ? { background: accent } : undefined}
+              />
             ))}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <ProgressRing percent={strength} size={42} stroke={4.5}>
+          <ProgressRing percent={strength} size={42} stroke={4.5} color={accent}>
             <span style={{ fontSize: 11, fontVariantNumeric: "tabular-nums" }}>{strength}</span>
           </ProgressRing>
           <span
@@ -44,6 +60,9 @@ function HabitCard({ habit, today }: { habit: HabitItem; today: string }) {
           >
             <Flame size={13} /> {streak} 天
           </span>
+          <button className="icon-button" onClick={() => setEditing(true)} aria-label="编辑频率" title="编辑频率">
+            <Pencil size={14} />
+          </button>
           <button className="delete-icon" onClick={() => removeHabit(habit.id)} aria-label="删除习惯" title="删除习惯">
             <Trash2 size={15} />
           </button>
@@ -66,6 +85,7 @@ function HabitCard({ habit, today }: { habit: HabitItem; today: string }) {
           <Heatmap checkedDates={habit.checkedDates} today={today} weeks={15} />
         </div>
       )}
+      {editing && <HabitFrequencyEditor habit={habit} onClose={() => setEditing(false)} />}
     </div>
   );
 }

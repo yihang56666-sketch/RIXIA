@@ -8,11 +8,9 @@ import { formatTime, lastNDates, todayKey, weekdayLabel } from "../../lib/time";
 import { useAppStore } from "../../store/useAppStore";
 import { requestWakeLock } from "../../lib/wakeLock";
 
-const PRESETS = [25, 15, 5];
-const BREAK_MINUTES = 5;
 const COUNTUP_LAP_SECONDS = 30 * 60;
 
-type Phase = "focus" | "break";
+type Phase = "focus" | "short-break" | "long-break";
 type Mode = "countdown" | "countup";
 
 export function FocusView() {
@@ -23,6 +21,10 @@ export function FocusView() {
     setFocusGoalMinutes,
     focusSessions,
     addFocusSession,
+    focusRounds,
+    setFocusRounds,
+    activeFocus,
+    setActiveFocus,
   } = useAppStore();
   const [mode, setMode] = useState<Mode>("countdown");
   const [phase, setPhase] = useState<Phase>("focus");
@@ -30,13 +32,19 @@ export function FocusView() {
   const [running, setRunning] = useState(false);
   const [upSeconds, setUpSeconds] = useState(0);
   const [upRunning, setUpRunning] = useState(false);
+  const [completedRounds, setCompletedRounds] = useState(0);
   const [noiseKind, setNoiseKind] = useState<NoiseKind | null>(null);
   const [noiseVolume, setNoiseVolume] = useState(0.4);
   const releaseWakeLock = useRef<(() => void) | null>(null);
   const today = todayKey();
 
-  const phaseTotal = (phase === "focus" ? focusMinutes : BREAK_MINUTES) * 60;
+  const phaseMinutes =
+    phase === "focus" ? focusMinutes
+    : phase === "short-break" ? focusRounds.shortBreakMinutes
+    : focusRounds.longBreakMinutes;
+  const phaseTotal = phaseMinutes * 60;
   const active = running || upRunning;
+  const isBreak = phase !== "focus";
 
   useEffect(() => {
     if (phase !== "focus" || mode !== "countdown") return;
@@ -79,21 +87,28 @@ export function FocusView() {
   // 离开页面时停止氛围音
   useEffect(() => () => stopAmbience(), []);
 
-  // 回合结束：专注 → 记录并自动进入休息；休息 → 就绪下一回合
+  // 回合结束：专注 → 记录并自动进入休息；短休息 N 次后进入长休息
   useEffect(() => {
     if (seconds !== 0 || !running) return;
     setRunning(false);
     playChime();
     if (phase === "focus") {
       addFocusSession(focusMinutes);
-      setPhase("break");
-      setSeconds(BREAK_MINUTES * 60);
+      setActiveFocus(null);
+      const newCompleted = completedRounds + 1;
+      setCompletedRounds(newCompleted);
+      const isLongBreak = newCompleted % focusRounds.longBreakEvery === 0;
+      const nextPhase: Phase = isLongBreak ? "long-break" : "short-break";
+      const nextMinutes = isLongBreak ? focusRounds.longBreakMinutes : focusRounds.shortBreakMinutes;
+      setPhase(nextPhase);
+      setSeconds(nextMinutes * 60);
       window.setTimeout(() => setRunning(true), 400);
     } else {
       setPhase("focus");
       setSeconds(focusMinutes * 60);
+      if (activeFocus) setActiveFocus({ ...activeFocus });
     }
-  }, [seconds, running, phase, focusMinutes, addFocusSession]);
+  }, [seconds, running, phase, focusMinutes, addFocusSession, completedRounds, focusRounds, setActiveFocus, activeFocus]);
 
   function toggleNoise(kind: NoiseKind) {
     if (noiseKind === kind) {
@@ -156,7 +171,7 @@ export function FocusView() {
 
   return (
     <div className="stack">
-      <section className={`card focus-face${phase === "break" && mode === "countdown" ? " focus-break" : ""}`}>
+      <section className={`card focus-face${isBreak && mode === "countdown" ? " focus-break" : ""}`}>
         <div className="segmented" style={{ width: "min(220px, 100%)", marginBottom: 4 }} role="tablist" aria-label="计时模式">
           <button className={mode === "countdown" ? "segment active" : "segment"} role="tab" aria-selected={mode === "countdown"} onClick={() => switchMode("countdown")}>
             番茄倒计时
@@ -169,32 +184,32 @@ export function FocusView() {
         <p className="eyebrow">
           {mode === "countup"
             ? upRunning ? "计时中" : "正计时"
-            : phase === "break" ? "休息一下" : running ? "专注中" : "专注计时"}
+            : isBreak ? (phase === "long-break" ? "长休息" : "休息一下") : running ? "专注中" : "专注计时"}
         </p>
         <ProgressRing
           percent={percent}
           size={216}
           stroke={13}
-          color={phase === "break" && mode === "countdown" ? "var(--good)" : "var(--accent)"}
+          color={isBreak && mode === "countdown" ? "var(--good)" : "var(--accent)"}
         >
           <div className="focus-time">
             {mode === "countup" ? formatTime(upSeconds) : (
               <>
-                {phase === "break" && <Coffee size={22} style={{ marginBottom: 4 }} />}
+                {isBreak && <Coffee size={22} style={{ marginBottom: 4 }} />}
                 {formatTime(seconds)}
               </>
             )}
             <small>
               {mode === "countup"
                 ? upRunning ? "按自己的节奏来" : "开始后随时可以结束"
-                : phase === "break" ? "刚完成一个专注回合" : running ? "保持节奏" : "准备开始"}
+                : isBreak ? "刚完成一个专注回合" : running ? "保持节奏" : "准备开始"}
             </small>
           </div>
         </ProgressRing>
 
         {mode === "countdown" && phase === "focus" && (
           <div className="focus-presets">
-            {PRESETS.map((item) => (
+            {[25, 15, 5].map((item) => (
               <button
                 key={item}
                 className={item === focusMinutes ? "chip active" : "chip"}
@@ -210,7 +225,7 @@ export function FocusView() {
             </div>
           </div>
         )}
-        {mode === "countdown" && phase === "break" && (
+        {mode === "countdown" && isBreak && (
           <p className="muted" style={{ fontSize: 13 }}>建议离开屏幕，看看远处，喝口水</p>
         )}
 
@@ -224,7 +239,7 @@ export function FocusView() {
                 <Square size={15} /> 完成并记录
               </button>
             </>
-          ) : phase === "break" ? (
+          ) : isBreak ? (
             <>
               <button className="ghost-btn" onClick={() => setRunning(!running)}>
                 {running ? "暂停休息" : "继续休息"}
@@ -305,6 +320,52 @@ export function FocusView() {
           <span className="step-value">目标 {focusGoalMinutes} 分钟/天</span>
           <button onClick={() => adjustGoal(30)} aria-label="增加目标 30 分钟"><Plus size={15} /></button>
         </div>
+      </section>
+
+      <section className="card">
+        <div className="row" style={{ marginBottom: 10 }}>
+          <h2>回合循环</h2>
+          <span className="muted" style={{ fontSize: 12.5 }}>
+            每完成 {focusRounds.longBreakEvery} 个回合后长休息
+          </span>
+        </div>
+        <div className="rounds-grid">
+          <label className="field-row">
+            <span>专注时长</span>
+            <div className="step-control compact">
+              <button onClick={() => setFocusMinutes(focusMinutes - 5)} aria-label="减少"><Minus size={13} /></button>
+              <span className="step-value">{focusMinutes} 分</span>
+              <button onClick={() => setFocusMinutes(focusMinutes + 5)} aria-label="增加"><Plus size={13} /></button>
+            </div>
+          </label>
+          <label className="field-row">
+            <span>短休息</span>
+            <div className="step-control compact">
+              <button onClick={() => setFocusRounds({ ...focusRounds, shortBreakMinutes: Math.max(0, focusRounds.shortBreakMinutes - 1) })} aria-label="减少"><Minus size={13} /></button>
+              <span className="step-value">{focusRounds.shortBreakMinutes} 分</span>
+              <button onClick={() => setFocusRounds({ ...focusRounds, shortBreakMinutes: focusRounds.shortBreakMinutes + 1 })} aria-label="增加"><Plus size={13} /></button>
+            </div>
+          </label>
+          <label className="field-row">
+            <span>长休息</span>
+            <div className="step-control compact">
+              <button onClick={() => setFocusRounds({ ...focusRounds, longBreakMinutes: Math.max(0, focusRounds.longBreakMinutes - 5) })} aria-label="减少"><Minus size={13} /></button>
+              <span className="step-value">{focusRounds.longBreakMinutes} 分</span>
+              <button onClick={() => setFocusRounds({ ...focusRounds, longBreakMinutes: focusRounds.longBreakMinutes + 5 })} aria-label="增加"><Plus size={13} /></button>
+            </div>
+          </label>
+          <label className="field-row">
+            <span>长休息间隔</span>
+            <div className="step-control compact">
+              <button onClick={() => setFocusRounds({ ...focusRounds, longBreakEvery: Math.max(1, focusRounds.longBreakEvery - 1) })} aria-label="减少"><Minus size={13} /></button>
+              <span className="step-value">{focusRounds.longBreakEvery} 回合</span>
+              <button onClick={() => setFocusRounds({ ...focusRounds, longBreakEvery: focusRounds.longBreakEvery + 1 })} aria-label="增加"><Plus size={13} /></button>
+            </div>
+          </label>
+        </div>
+        <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>
+          已完成 {completedRounds} 个专注回合 · 借鉴自 Super Productivity 的自动休息循环
+        </p>
       </section>
 
       <section className="card">
