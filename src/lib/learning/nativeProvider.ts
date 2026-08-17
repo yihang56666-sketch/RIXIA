@@ -16,8 +16,12 @@ import type { TimestampNote } from "../../types";
 
 const REQUEST_TIMEOUT_MS = 8000;
 
+/**
+ * 由 bootstrap 注入的 JS 桥接口。request 返回 Promise<data>；
+ * 失败时 reject 一个 ProviderError 形状的对象 {code, message, retryable, externalUrl?}。
+ */
 interface NativeBridge {
-  request(method: string, payload: unknown): Promise<string>;
+  request(method: string, payload: unknown): Promise<unknown>;
 }
 
 declare global {
@@ -42,22 +46,20 @@ export function createNativeLearningProvider(): LearningProvider {
     if (!bridge) {
       throw new ProviderErrorImpl("unavailable", "原生桥不可用", { retryable: false });
     }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timer = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new ProviderErrorImpl("network", "原生桥请求超时", { retryable: true }));
+      }, REQUEST_TIMEOUT_MS);
+    });
     try {
-      const raw = await Promise.race([
-        bridge.request(method, payload),
-        new Promise<never>((_, reject) => {
-          controller.signal.addEventListener("abort", () => {
-            reject(new ProviderErrorImpl("network", "原生桥请求超时", { retryable: true }));
-          });
-        }),
-      ]);
-      clearTimeout(timer);
-      return parseBridgeResponse<T>(raw);
+      // Bootstrap 已把响应解析为 data 或 reject ProviderError 对象。
+      // 我们直接 await，不再二次 JSON.parse。
+      return await Promise.race<T>([bridge.request(method, payload) as Promise<T>, timer]);
     } catch (err) {
-      clearTimeout(timer);
       if (isProviderError(err)) throw err;
+      if (err instanceof Error && err.name === "ProviderError") throw err;
+      // Promise<never> rejection (timeout) 已经是 ProviderError，被 isProviderError 捕获。
+      // 这里只兜底网络层抛出的非 ProviderError 异常。
       throw new ProviderErrorImpl(
         "network",
         err instanceof Error ? err.message : "原生桥请求失败",
@@ -117,28 +119,6 @@ export function createNativeLearningProvider(): LearningProvider {
       return callBridge<TimestampNote>("saveTimestampNote", note);
     },
   };
-}
-
-function parseBridgeResponse<T>(raw: string): T {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new ProviderErrorImpl("network", "原生桥返回了无法解析的响应", { retryable: true });
-  }
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new ProviderErrorImpl("network", "原生桥返回了非对象响应", { retryable: true });
-  }
-  const obj = parsed as { ok?: boolean; data?: unknown; error?: { code?: string; message?: string; retryable?: boolean } };
-  if (obj.ok === true) return obj.data as T;
-  if (obj.ok === false && obj.error) {
-    throw new ProviderErrorImpl(
-      (obj.error.code as ProviderError["code"]) ?? "unavailable",
-      obj.error.message ?? "原生桥返回错误",
-      { retryable: obj.error.retryable ?? false },
-    ) satisfies ProviderError as ProviderError;
-  }
-  throw new ProviderErrorImpl("network", "原生桥响应缺少 ok 字段", { retryable: true });
 }
 
 export { createId };

@@ -29,16 +29,13 @@ describe("LearningProvider selection", () => {
 
   it("uses native provider when window.rixiaNativeLearning is present", async () => {
     const fakeBridge = {
-      request: vi.fn().mockResolvedValue(JSON.stringify({
-        ok: true,
-        data: {
-          canSearch: true,
-          canOpenPlayer: true,
-          canReadProgress: true,
-          canSaveTimestampNote: true,
-          source: "native",
-        },
-      })),
+      request: vi.fn().mockResolvedValue({
+        canSearch: true,
+        canOpenPlayer: true,
+        canReadProgress: true,
+        canSaveTimestampNote: true,
+        source: "native",
+      }),
     };
     window.rixiaNativeLearning = fakeBridge;
     const provider = createLearningProvider(makeStore);
@@ -210,11 +207,5 @@ describe("Native provider timeout handling", () => {
     expect(caps.source).toBe("native");
   });
 });
-
-declare global {
-  interface Window {
-    rixiaNativeLearning?: { request: (method: string, payload: unknown) => Promise<string> };
-  }
-}
 
 export type { TimestampNote };
