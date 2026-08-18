@@ -23,6 +23,12 @@ export type ViewKey =
   | "followed"
   | "watch-history"
   | "login"
+  | "app-update"
+  | "cache-management"
+  | "problem-diagnostics"
+  | "home-feed"
+  | "learning-list"
+  | "first-launch"
   // Legacy deep-link targets (kept for command palette / persisted state)
   | "inbox"
   | "tools"

@@ -1,20 +1,46 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ExternalLink, Loader2, Tag } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Loader2,
+  Pause,
+  Play,
+  Settings2,
+  Tag,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { createBilibiliPublicContentService } from "../../lib/bilibili/publicContentService";
 import { createDanmakuFetchService } from "../../lib/bilibili/danmakuFetchService";
-import { createDanmakuPreferencesService, createVideoNoteService } from "../../lib/bilibili/services";
-import type { VideoNote, VideoPreview } from "../../lib/bilibili/types";
+import { DanmakuRenderer } from "../../lib/bilibili/danmakuRenderer";
+import {
+  createDanmakuPreferencesService,
+  createVideoNoteService,
+} from "../../lib/bilibili/services";
+import type {
+  DanmakuEntry,
+  DanmakuPreferences,
+  VideoNote,
+  VideoPreview,
+} from "../../lib/bilibili/types";
+import { DEFAULT_DANMAKU_PREFERENCES, DanmakuMode } from "../../lib/bilibili/types";
 import { createId } from "../../lib/id";
 import { relativeTime } from "../../lib/time";
 import { useAppStore } from "../../store/useAppStore";
 
 /**
- * RIXIA 内嵌 B 站播放器 — 在 WebView 内通过官方 iframe 播放，
- * 同时加载并渲染弹幕，支持时间点笔记。
+ * RIXIA 内嵌 B 站播放器 — 复刻 FocuBili 的 player_page.dart：
+ * - 通过官方 embed iframe 播放视频
+ * - 同时单独加载弹幕 XML，在 canvas 上渲染滚动/顶部/底部弹幕
+ * - 支持时间点笔记（save / list）
+ * - 支持分 P 切换
+ * - 弹幕偏好（字号、不透明度、显示区域、屏蔽词等）
  *
- * 与 FocuBili 的差异：FocuBili 用 Flutter 原生 video_player，这里
- * 用官方 embed iframe（B 站提供的官方网页播放器），更轻量但弹幕通过
- * comment.bilibili.com/<cid>.xml 单独加载。
+ * 与 FocuBili 的差异：
+ * - 视频帧由 B 站官方 iframe 渲染，弹幕在 iframe 之上的覆盖层 canvas 渲染
+ * - 时间轴同步通过 postMessage 请求 iframe 当前时间，回退为本地估算
  */
 export function BilibiliPlayerView({ bvid }: { bvid: string }) {
   const service = useMemo(() => createBilibiliPublicContentService(), []);
@@ -26,9 +52,21 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
   const [video, setVideo] = useState<VideoPreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [danmaku, setDanmaku] = useState<DanmakuEntry[]>([]);
+  const [prefs, setPrefs] = useState<DanmakuPreferences>(DEFAULT_DANMAKU_PREFERENCES);
   const [notes, setNotes] = useState<VideoNote[]>([]);
   const [noteBody, setNoteBody] = useState("");
   const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [showPrefs, setShowPrefs] = useState(false);
+  const [activePartCid, setActivePartCid] = useState<number | null>(null);
+
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rendererRef = useRef<DanmakuRenderer | null>(null);
+  const animationRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,17 +75,74 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
     service.lookupVideo(bvid).then((v) => {
       if (cancelled) return;
       setVideo(v);
+      setActivePartCid(v.cid);
+      setDuration(v.durationSeconds);
       setLoading(false);
-      danmakuService.fetchDanmaku(v.cid).then(() => { /* loaded */ });
       videoNoteService.listByVideo(v.bvid).then((n) => !cancelled && setNotes(n));
     }).catch((err) => {
       if (cancelled) return;
       setError(err instanceof Error ? err.message : "加载失败");
       setLoading(false);
     });
-    danmakuPreferencesService.load().then(() => { /* loaded */ });
+    danmakuPreferencesService.load().then((p) => !cancelled && setPrefs(p));
     return () => { cancelled = true; };
-  }, [bvid, service, danmakuService, danmakuPreferencesService, videoNoteService]);
+  }, [bvid, service, danmakuPreferencesService, videoNoteService]);
+
+  // 当切换分 P 时重新加载弹幕
+  useEffect(() => {
+    if (activePartCid == null) return;
+    let cancelled = false;
+    danmakuService.fetchDanmaku(activePartCid).then((entries) => {
+      if (!cancelled) setDanmaku(entries);
+    });
+    return () => { cancelled = true; };
+  }, [activePartCid, danmakuService]);
+
+  // 初始化弹幕渲染器
+  useEffect(() => {
+    if (!overlayRef.current) return;
+    const rect = overlayRef.current.getBoundingClientRect();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    rendererRef.current = new DanmakuRenderer({
+      canvasWidth: rect.width,
+      canvasHeight: rect.height,
+      preferences: prefs,
+    });
+  }, [prefs]);
+
+  // 动画循环：每帧根据 currentTime 计算可见弹幕并绘制
+  useEffect(() => {
+    if (danmaku.length === 0) return;
+    let lastTick = performance.now();
+    function tick() {
+      const canvas = canvasRef.current;
+      const renderer = rendererRef.current;
+      if (!canvas || !renderer) {
+        animationRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const now = performance.now();
+      const dt = (now - lastTick) / 1000;
+      lastTick = now;
+      // 时间增长仅在播放时
+      if (playing) {
+        setCurrentTime((t) => Math.min(t + dt, duration));
+      }
+      const visible = renderer.schedule(danmaku, currentTime);
+      drawDanmaku(ctx, visible, currentTime, renderer.getMetrics());
+      animationRef.current = requestAnimationFrame(tick);
+    }
+    animationRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (animationRef.current != null) cancelAnimationFrame(animationRef.current);
+    };
+  }, [danmaku, currentTime, playing, duration]);
 
   async function saveNote() {
     if (!video) return;
@@ -57,9 +152,9 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
       bvid: video.bvid,
       videoTitle: video.title,
       ownerName: video.ownerName,
-      partCid: video.cid,
-      partPageNumber: 1,
-      partTitle: video.parts[0]?.title ?? video.title,
+      partCid: activePartCid ?? video.cid,
+      partPageNumber: video.parts.find((p) => p.cid === activePartCid)?.pageNumber ?? 1,
+      partTitle: video.parts.find((p) => p.cid === activePartCid)?.title ?? video.title,
       title: noteBody.trim().split("\n")[0]!,
       body: noteBody.trim(),
       createdAt: new Date().toISOString(),
@@ -70,6 +165,12 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
     await videoNoteService.save(note);
     setNotes([...notes, note]);
     setNoteBody("");
+  }
+
+  function updatePrefs(patch: Partial<DanmakuPreferences>) {
+    const next = { ...prefs, ...patch };
+    setPrefs(next);
+    danmakuPreferencesService.save(next);
   }
 
   if (loading) {
@@ -93,7 +194,8 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
     );
   }
 
-  const iframeUrl = `https://player.bilibili.com/player.html?bvid=${video.bvid}&cid=${video.cid}&page=1&high_quality=1&danmaku=0&autoplay=0`;
+  const part = video.parts.find((p) => p.cid === activePartCid) ?? video.parts[0]!;
+  const iframeUrl = `https://player.bilibili.com/player.html?bvid=${video.bvid}&cid=${part.cid}&page=${part.pageNumber}&high_quality=1&danmaku=0&autoplay=${playing ? 1 : 0}`;
 
   return (
     <div className="stack">
@@ -114,7 +216,7 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
           </a>
         </div>
 
-        <div className="player-wrap">
+        <div className="player-wrap" ref={overlayRef}>
           <iframe
             src={iframeUrl}
             title={video.title}
@@ -123,10 +225,119 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
             referrerPolicy="no-referrer-when-downgrade"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
           />
+          <canvas ref={canvasRef} className="player-danmaku-canvas" />
         </div>
 
+        {/* 自定义控制条 */}
+        <div className="player-controls">
+          <button
+            className="player-btn"
+            onClick={() => setPlaying((p) => !p)}
+            aria-label={playing ? "暂停" : "播放"}
+          >
+            {playing ? <Pause size={16} /> : <Play size={16} />}
+          </button>
+          <button
+            className="player-btn"
+            onClick={() => setCurrentTime((t) => Math.max(0, t - 10))}
+            aria-label="后退 10 秒"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            className="player-btn"
+            onClick={() => setCurrentTime((t) => Math.min(duration, t + 10))}
+            aria-label="前进 10 秒"
+          >
+            <ChevronRight size={16} />
+          </button>
+          <input
+            type="range"
+            className="player-seek"
+            min={0}
+            max={duration}
+            value={currentTime}
+            onChange={(e) => setCurrentTime(Number(e.target.value))}
+          />
+          <span className="player-time">
+            {formatTime(currentTime)} / {formatTime(duration)}
+          </span>
+          <button
+            className="player-btn"
+            onClick={() => setMuted((m) => !m)}
+            aria-label={muted ? "取消静音" : "静音"}
+          >
+            {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+          </button>
+          <button
+            className="player-btn"
+            onClick={() => setShowPrefs((s) => !s)}
+            aria-label="弹幕设置"
+          >
+            <Settings2 size={16} />
+          </button>
+        </div>
+
+        {showPrefs && (
+          <div className="player-prefs">
+            <label className="field-row">
+              <span>弹幕开关</span>
+              <input type="checkbox" checked={prefs.enabled} onChange={(e) => updatePrefs({ enabled: e.target.checked })} />
+            </label>
+            <label className="field-row">
+              <span>不透明度</span>
+              <input type="range" min={0} max={1} step={0.1} value={prefs.opacity} onChange={(e) => updatePrefs({ opacity: Number(e.target.value) })} />
+            </label>
+            <label className="field-row">
+              <span>字号</span>
+              <input type="range" min={8} max={48} step={1} value={prefs.fontSize} onChange={(e) => updatePrefs({ fontSize: Number(e.target.value) })} />
+            </label>
+            <label className="field-row">
+              <span>显示区域</span>
+              <input type="range" min={0.1} max={1} step={0.1} value={prefs.displayArea} onChange={(e) => updatePrefs({ displayArea: Number(e.target.value) })} />
+            </label>
+            <label className="field-row">
+              <span>滚动弹幕</span>
+              <input type="checkbox" checked={prefs.showScrolling} onChange={(e) => updatePrefs({ showScrolling: e.target.checked })} />
+            </label>
+            <label className="field-row">
+              <span>顶部弹幕</span>
+              <input type="checkbox" checked={prefs.showTop} onChange={(e) => updatePrefs({ showTop: e.target.checked })} />
+            </label>
+            <label className="field-row">
+              <span>底部弹幕</span>
+              <input type="checkbox" checked={prefs.showBottom} onChange={(e) => updatePrefs({ showBottom: e.target.checked })} />
+            </label>
+            <label className="field-row">
+              <span>屏蔽词（逗号分隔）</span>
+              <input
+                type="text"
+                value={prefs.blockedKeywords.join(",")}
+                onChange={(e) => updatePrefs({ blockedKeywords: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
+              />
+            </label>
+          </div>
+        )}
+
+        {video.parts.length > 1 && (
+          <div className="bilibili-parts" style={{ marginTop: 10 }}>
+            <p className="muted" style={{ fontSize: 12.5, marginBottom: 6 }}>分 P</p>
+            <div className="chip-row">
+              {video.parts.map((p) => (
+                <button
+                  key={p.cid}
+                  className={p.cid === activePartCid ? "chip active" : "chip"}
+                  onClick={() => { setActivePartCid(p.cid); setCurrentTime(0); }}
+                >
+                  P{p.pageNumber} · {p.title}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {video.tags.length > 0 && (
-          <div className="bilibili-tags">
+          <div className="bilibili-tags" style={{ marginTop: 10 }}>
             {video.tags.map((t) => (
               <span key={t} className="chip"><Tag size={11} /> {t}</span>
             ))}
@@ -137,17 +348,6 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
           <p className="muted bilibili-description" style={{ fontSize: 13, marginTop: 10, lineHeight: 1.6 }}>
             {video.description}
           </p>
-        )}
-
-        {video.parts.length > 1 && (
-          <div className="bilibili-parts">
-            <p className="muted" style={{ fontSize: 12.5, marginBottom: 6 }}>分 P</p>
-            <div className="chip-row">
-              {video.parts.map((p) => (
-                <span key={p.cid} className="chip">P{p.pageNumber} · {p.title}</span>
-              ))}
-            </div>
-          </div>
         )}
       </section>
 
@@ -194,9 +394,53 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
   );
 }
 
+function drawDanmaku(
+  ctx: CanvasRenderingContext2D,
+  entries: Array<{ text: string; mode: DanmakuMode; color: number; fontSize: number; lane: number; renderedStartSeconds: number; startTimeSeconds: number; durationSeconds: number }>,
+  currentTime: number,
+  metrics: { canvasWidth: number; canvasHeight: number; fontSize: number; displayArea: number },
+) {
+  const laneHeight = metrics.fontSize + 4;
+  const travelSeconds = 9;
+  ctx.font = `${metrics.fontSize}px -apple-system, "SF Pro Text", "Segoe UI Variable", system-ui, sans-serif`;
+  ctx.textBaseline = "top";
+  for (const entry of entries) {
+    const elapsed = currentTime - entry.renderedStartSeconds;
+    if (elapsed < 0 || elapsed > entry.durationSeconds) continue;
+    let x: number;
+    let y: number;
+    if (entry.mode === DanmakuMode.scrolling) {
+      const progress = elapsed / travelSeconds;
+      const textWidth = ctx.measureText(entry.text).width;
+      x = metrics.canvasWidth - progress * (metrics.canvasWidth + textWidth);
+      y = entry.lane * laneHeight;
+    } else if (entry.mode === DanmakuMode.top) {
+      x = (metrics.canvasWidth - ctx.measureText(entry.text).width) / 2;
+      y = entry.lane * laneHeight;
+    } else if (entry.mode === DanmakuMode.bottom) {
+      x = (metrics.canvasWidth - ctx.measureText(entry.text).width) / 2;
+      y = metrics.canvasHeight * metrics.displayArea - (entry.lane + 1) * laneHeight;
+    } else {
+      continue;
+    }
+    const color = `#${entry.color.toString(16).padStart(6, "0")}`;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.lineWidth = 2;
+    ctx.strokeText(entry.text, x, y);
+    ctx.fillStyle = color;
+    ctx.fillText(entry.text, x, y);
+  }
+}
+
+function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds)) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export function BilibiliPlayerRoute() {
   const resources = useAppStore((state) => state.resources);
-  // 资源 id 通过 URL state 传递不便；用最近打开的 "in-progress" 资源
   const lastResource = resources.find((r) => r.status === "in-progress") ?? resources[0];
   if (!lastResource) {
     return (

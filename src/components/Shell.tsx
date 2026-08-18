@@ -1,15 +1,20 @@
 import {
   CalendarDays,
+  Database,
   Heart,
+  HelpCircle,
   History,
+  Home,
   LayoutGrid,
   Library,
+  ListChecks,
   LogIn,
   Play,
   Plus,
   Search,
   Settings as SettingsIcon,
   Timer,
+  TrendingUp,
   UserCheck,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -31,12 +36,20 @@ const MAIN_NAV: Array<{ view: ViewKey; label: string; icon: typeof CalendarDays 
 const TAB_NAV = MAIN_NAV;
 
 const BILIBILI_NAV: Array<{ view: ViewKey; label: string; icon: typeof CalendarDays }> = [
+  { view: "home-feed", label: "B 站发现", icon: Home },
   { view: "search", label: "搜索 B 站", icon: Search },
   { view: "bilibili-player", label: "看课播放", icon: Play },
+  { view: "learning-list", label: "学习清单", icon: ListChecks },
   { view: "favorites", label: "我的收藏", icon: Heart },
   { view: "followed", label: "关注 UP", icon: UserCheck },
   { view: "watch-history", label: "观看历史", icon: History },
   { view: "login", label: "登录 B 站", icon: LogIn },
+];
+
+const SYSTEM_NAV: Array<{ view: ViewKey; label: string; icon: typeof CalendarDays }> = [
+  { view: "app-update", label: "应用更新", icon: TrendingUp },
+  { view: "cache-management", label: "缓存管理", icon: Database },
+  { view: "problem-diagnostics", label: "问题诊断", icon: HelpCircle },
 ];
 
 function SideItem({ view, label, Icon }: { view: ViewKey; label: string; Icon: typeof CalendarDays }) {
@@ -95,6 +108,12 @@ export function Shell({ children }: { children: ReactNode }) {
         <p className="side-section-title">B 站</p>
         <nav className="side-nav" aria-label="B 站导航">
           {BILIBILI_NAV.map((item) => (
+            <SideItem key={item.view} view={item.view} label={item.label} Icon={item.icon} />
+          ))}
+        </nav>
+        <p className="side-section-title">系统</p>
+        <nav className="side-nav" aria-label="系统导航">
+          {SYSTEM_NAV.map((item) => (
             <SideItem key={item.view} view={item.view} label={item.label} Icon={item.icon} />
           ))}
         </nav>

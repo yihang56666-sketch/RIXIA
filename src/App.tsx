@@ -21,6 +21,14 @@ import {
 } from "./features/bilibili/BilibiliAccountViews";
 import { BilibiliPlayerRoute } from "./features/bilibili/BilibiliPlayerView";
 import { BilibiliSearchView } from "./features/bilibili/BilibiliSearchView";
+import {
+  AppUpdatePage,
+  CacheManagementPage,
+  ProblemDiagnosticsPage,
+} from "./features/bilibili/SystemPages";
+import { FirstLaunchGate } from "./features/bilibili/FirstLaunchGate";
+import { HomeFeedView } from "./features/bilibili/HomeFeedView";
+import { LearningListView } from "./features/bilibili/LearningListView";
 import { useAppStore } from "./store/useAppStore";
 import { THEMES } from "./catalog";
 
@@ -43,8 +51,9 @@ export default function App() {
       style={backgroundImage ? { backgroundImage: `url(${backgroundImage})` } : undefined}
     >
       <div className="app-overlay" />
-      <Shell>
-        {view === "today" && <TodayView />}
+      <FirstLaunchGate>
+        <Shell>
+          {view === "today" && <TodayView />}
         {view === "plan" && <PlanView />}
         {view === "library" && <LibraryView />}
         {view === "search" && <BilibiliSearchView />}
@@ -53,6 +62,11 @@ export default function App() {
         {view === "followed" && <BilibiliFollowedView />}
         {view === "watch-history" && <BilibiliWatchHistoryView />}
         {view === "login" && <BilibiliLoginView />}
+        {view === "app-update" && <AppUpdatePage />}
+        {view === "cache-management" && <CacheManagementPage />}
+        {view === "problem-diagnostics" && <ProblemDiagnosticsPage />}
+        {view === "home-feed" && <HomeFeedView />}
+        {view === "learning-list" && <LearningListView />}
         {view === "inbox" && <InboxView />}
         {view === "kaoyan" && <KaoyanView />}
         {view === "tools" && <ToolsView />}
@@ -64,6 +78,7 @@ export default function App() {
         {view === "videos" && <VideosView />}
         {view === "settings" && <SettingsView />}
       </Shell>
+      </FirstLaunchGate>
     </div>
   );
 }
