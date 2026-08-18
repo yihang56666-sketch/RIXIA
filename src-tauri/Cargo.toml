@@ -1,0 +1,25 @@
+[package]
+name = "rixia-desktop"
+version = "0.3.0"
+description = "RIXIA desktop shell (Tauri)"
+authors = ["RIXIA"]
+edition = "2021"
+rust-version = "1.70"
+
+[lib]
+name = "rixia_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-deep-link = "2"
+tauri-plugin-http = "2"
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

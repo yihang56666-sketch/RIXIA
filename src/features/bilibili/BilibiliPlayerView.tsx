@@ -26,6 +26,8 @@ import type {
   VideoPreview,
 } from "../../lib/bilibili/types";
 import { DEFAULT_DANMAKU_PREFERENCES, DanmakuMode } from "../../lib/bilibili/types";
+import { BilibiliIframeBridge } from "../../lib/bilibili/iframeBridge";
+import { GestureCoordinator } from "../../lib/bilibili/gestureCoordinator";
 import { createId } from "../../lib/id";
 import { relativeTime } from "../../lib/time";
 import { useAppStore } from "../../store/useAppStore";
@@ -64,9 +66,13 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
   const [activePartCid, setActivePartCid] = useState<number | null>(null);
 
   const overlayRef = useRef<HTMLDivElement | null>(null);
+  const gestureRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const rendererRef = useRef<DanmakuRenderer | null>(null);
   const animationRef = useRef<number | null>(null);
+  const bridgeRef = useRef<BilibiliIframeBridge | null>(null);
+  const gestureRefCoordinator = useRef<GestureCoordinator | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,10 +119,68 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
     });
   }, [prefs]);
 
-  // 动画循环：每帧根据 currentTime 计算可见弹幕并绘制
+  // 启动 iframe postMessage 桥，用真实播放器时间同步弹幕
+  useEffect(() => {
+    if (!iframeRef.current) return;
+    const bridge = new BilibiliIframeBridge({
+      iframe: iframeRef.current,
+      onTime: (t) => setCurrentTime(t),
+      onDuration: (d) => setDuration(d),
+      onStateChange: (s) => setPlaying(s === "playing"),
+    });
+    bridgeRef.current = bridge;
+    bridge.start();
+    return () => {
+      bridge.stop();
+      bridgeRef.current = null;
+    };
+  }, [video?.bvid, activePartCid]);
+
+  // 启动手势协调器
+  useEffect(() => {
+    if (!gestureRef.current) return;
+    const coord = new GestureCoordinator({
+      element: gestureRef.current,
+      onSeek: (delta) => {
+        const current = bridgeRef.current?.getCurrentTime() ?? currentTime;
+        const target = Math.max(0, Math.min(duration, current + delta));
+        bridgeRef.current?.seek(target);
+        setCurrentTime(target);
+      },
+      onSeekAbsolute: (time) => {
+        bridgeRef.current?.seek(time);
+        setCurrentTime(time);
+      },
+      onTogglePlay: () => {
+        if (playing) {
+          bridgeRef.current?.pause();
+          setPlaying(false);
+        } else {
+          bridgeRef.current?.play();
+          setPlaying(true);
+        }
+      },
+      onVolume: (delta) => {
+        const next = Math.max(0, Math.min(1, (muted ? 0 : 0.8) + delta));
+        bridgeRef.current?.setVolume(next);
+        setMuted(next === 0);
+      },
+      onTap: () => {
+        setShowPrefs(false);
+      },
+      getCurrentTime: () => bridgeRef.current?.getCurrentTime() ?? currentTime,
+      getDuration: () => duration,
+    });
+    gestureRefCoordinator.current = coord;
+    return () => {
+      coord.destroy();
+      gestureRefCoordinator.current = null;
+    };
+  }, [currentTime, duration, playing, muted]);
+
+  // 动画循环：每帧根据 currentTime（来自 iframe 桥）渲染弹幕
   useEffect(() => {
     if (danmaku.length === 0) return;
-    let lastTick = performance.now();
     function tick() {
       const canvas = canvasRef.current;
       const renderer = rendererRef.current;
@@ -127,22 +191,17 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const now = performance.now();
-      const dt = (now - lastTick) / 1000;
-      lastTick = now;
-      // 时间增长仅在播放时
-      if (playing) {
-        setCurrentTime((t) => Math.min(t + dt, duration));
-      }
-      const visible = renderer.schedule(danmaku, currentTime);
-      drawDanmaku(ctx, visible, currentTime, renderer.getMetrics());
+      // currentTime 由 iframe 桥驱动；这里直接读取 bridge 的精确值
+      const t = bridgeRef.current?.getCurrentTime() ?? currentTime;
+      const visible = renderer.schedule(danmaku, t);
+      drawDanmaku(ctx, visible, t, renderer.getMetrics());
       animationRef.current = requestAnimationFrame(tick);
     }
     animationRef.current = requestAnimationFrame(tick);
     return () => {
       if (animationRef.current != null) cancelAnimationFrame(animationRef.current);
     };
-  }, [danmaku, currentTime, playing, duration]);
+  }, [danmaku, currentTime]);
 
   async function saveNote() {
     if (!video) return;
@@ -218,6 +277,7 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
 
         <div className="player-wrap" ref={overlayRef}>
           <iframe
+            ref={iframeRef}
             src={iframeUrl}
             title={video.title}
             className="player-frame"
@@ -226,27 +286,44 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
           />
           <canvas ref={canvasRef} className="player-danmaku-canvas" />
+          <div ref={gestureRef} className="player-gesture-overlay" />
         </div>
 
         {/* 自定义控制条 */}
         <div className="player-controls">
           <button
             className="player-btn"
-            onClick={() => setPlaying((p) => !p)}
+            onClick={() => {
+              if (playing) {
+                bridgeRef.current?.pause();
+                setPlaying(false);
+              } else {
+                bridgeRef.current?.play();
+                setPlaying(true);
+              }
+            }}
             aria-label={playing ? "暂停" : "播放"}
           >
             {playing ? <Pause size={16} /> : <Play size={16} />}
           </button>
           <button
             className="player-btn"
-            onClick={() => setCurrentTime((t) => Math.max(0, t - 10))}
+            onClick={() => {
+              const t = Math.max(0, currentTime - 10);
+              bridgeRef.current?.seek(t);
+              setCurrentTime(t);
+            }}
             aria-label="后退 10 秒"
           >
             <ChevronLeft size={16} />
           </button>
           <button
             className="player-btn"
-            onClick={() => setCurrentTime((t) => Math.min(duration, t + 10))}
+            onClick={() => {
+              const t = Math.min(duration, currentTime + 10);
+              bridgeRef.current?.seek(t);
+              setCurrentTime(t);
+            }}
             aria-label="前进 10 秒"
           >
             <ChevronRight size={16} />
@@ -257,14 +334,24 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
             min={0}
             max={duration}
             value={currentTime}
-            onChange={(e) => setCurrentTime(Number(e.target.value))}
+            onChange={(e) => {
+              const t = Number(e.target.value);
+              bridgeRef.current?.seek(t);
+              setCurrentTime(t);
+            }}
           />
           <span className="player-time">
             {formatTime(currentTime)} / {formatTime(duration)}
           </span>
           <button
             className="player-btn"
-            onClick={() => setMuted((m) => !m)}
+            onClick={() => {
+              setMuted((m) => {
+                const next = !m;
+                bridgeRef.current?.setVolume(next ? 0 : 0.8);
+                return next;
+              });
+            }}
             aria-label={muted ? "取消静音" : "静音"}
           >
             {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}

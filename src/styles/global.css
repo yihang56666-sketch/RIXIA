@@ -2601,3 +2601,17 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   line-height: 1.7;
 }
 .first-launch-agree { font-size: 15px; padding: 10px 22px; }
+
+/* ---------- Player gesture overlay ---------- */
+
+.player-gesture-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+}
+.player-gesture-overlay:active {
+  background: rgba(0, 0, 0, 0.05);
+}

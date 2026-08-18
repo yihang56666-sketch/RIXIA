@@ -38,6 +38,7 @@ import {
   UserSearchType,
   BilibiliLookupError,
 } from "./types";
+import { createJsonRequest } from "./httpAdapter";
 
 const API_HOST = "api.bilibili.com";
 const SUGGEST_HOST = "s.search.bilibili.com";
@@ -45,10 +46,6 @@ const VIDEO_INFO_PATH = "/x/web-interface/view";
 const VIDEO_TAGS_PATH = "/x/tag/archive/tags";
 const VIDEO_SEARCH_PATH = "/x/web-interface/wbi/search/type";
 const SEARCH_SUGGEST_PATH = "/main/suggest";
-const DESKTOP_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-  "AppleWebKit/537.36 (KHTML, like Gecko) " +
-  "Chrome/126.0.0.0 Safari/537.36";
 const BVID_PATTERN = /BV[0-9A-Za-z]{10}/;
 
 const TRAILING_PUNCTUATION = ".,!?;:\"'，。！？；：、）)]}》】」』";
@@ -150,18 +147,7 @@ function buildUrl(host: string, path: string, query: Record<string, string>): st
 }
 
 async function defaultRequestJson(url: string): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": DESKTOP_USER_AGENT,
-      Referer: "https://www.bilibili.com/",
-      Accept: "application/json, text/plain, */*",
-    },
-    credentials: "omit",
-  });
-  if (!response.ok) {
-    throw new BilibiliLookupError(`视频详情接口暂时不可用（HTTP ${response.status}）。`);
-  }
-  return response.text();
+  return createJsonRequest()(url);
 }
 
 function searchOrderValue(order: VideoSearchOrder): string {

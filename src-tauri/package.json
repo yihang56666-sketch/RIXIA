@@ -1,0 +1,20 @@
+{
+  "name": "rixia-desktop",
+  "version": "0.3.0",
+  "description": "RIXIA desktop shell (Tauri) - wraps the web build as a native Windows app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tauri build",
+    "dev": "tauri dev"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-deep-link": "^2.0.0",
+    "@tauri-apps/plugin-http": "^2.0.0",
+    "@tauri-apps/plugin-shell": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

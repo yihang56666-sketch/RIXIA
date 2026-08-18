@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "RIXIA",
+  "version": "0.3.0",
+  "identifier": "com.rixia.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "RIXIA",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 720,
+        "minHeight": 540,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob:; media-src 'self' https: blob:; connect-src 'self' https: http: ws: wss:; frame-src 'self' https://player.bilibili.com https://www.bilibili.com; font-src 'self' https://fonts.gstatic.com data:"
+    },
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis"],
+    "icon": [
+      "../public/icon.png"
+    ],
+    "category": "Productivity",
+    "shortDescription": "RIXIA — 个人节奏工作台",
+    "longDescription": "本地优先的个人节奏与学习工作台，集成 B 站学习播放能力。",
+    "publisher": "RIXIA",
+    "copyright": "© 2026 RIXIA",
+    "windows": {
+      "wix": {
+        "language": ["zh-CN", "en-US"]
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["bilibili", "rixia"]
+      }
+    },
+    "shell": {
+      "open": true
+    }
+  }
+}
