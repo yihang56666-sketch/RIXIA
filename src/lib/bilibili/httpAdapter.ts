@@ -52,7 +52,8 @@ export function isNativeEnvironment(): boolean {
  * 创建一个跨环境的 JSON 请求函数。
  * 在 Tauri 桌面环境用 @tauri-apps/plugin-http（CORS-free），
  * 在 Capacitor 原生环境用 CapacitorHttp，
- * 在浏览器用 fetch（受 CORS 限制）。
+ * 在浏览器开发模式用 Vite 代理（/bili-api → https://api.bilibili.com），
+ * 在浏览器生产模式用 fetch（受 CORS 限制，需要用户自行部署反代）。
  */
 export function createJsonRequest(): JsonRequest {
   return async (url: string) => {
@@ -93,10 +94,10 @@ export function createJsonRequest(): JsonRequest {
         ? response.data
         : JSON.stringify(response.data);
     }
-    // 浏览器/PWA 模式
-    const fetchResponse = await fetch(url, {
+    // 浏览器开发模式：用 Vite 代理绕过 CORS
+    const proxiedUrl = proxyUrl(url);
+    const fetchResponse = await fetch(proxiedUrl, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
         Referer: "https://www.bilibili.com/",
         Accept: "application/json",
       },
@@ -107,6 +108,31 @@ export function createJsonRequest(): JsonRequest {
     }
     return fetchResponse.text();
   };
+}
+
+/**
+ * 在开发模式下把 B 站 API URL 转换为 Vite 代理路径。
+ * 生产模式下直接返回原始 URL（用户需要自行部署反代或使用 Tauri/Capacitor）。
+ */
+function proxyUrl(url: string): string {
+  // 只在 localhost 开发环境下代理
+  const isDev = typeof window !== "undefined" &&
+    (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
+  if (!isDev) return url;
+
+  if (url.startsWith("https://api.bilibili.com")) {
+    return url.replace("https://api.bilibili.com", "/bili-api");
+  }
+  if (url.startsWith("https://s.search.bilibili.com")) {
+    return url.replace("https://s.search.bilibili.com", "/bili-suggest");
+  }
+  if (url.startsWith("https://comment.bilibili.com")) {
+    return url.replace("https://comment.bilibili.com", "/bili-comment");
+  }
+  if (url.startsWith("https://passport.bilibili.com")) {
+    return url.replace("https://passport.bilibili.com", "/bili-passport");
+  }
+  return url;
 }
 
 /**
