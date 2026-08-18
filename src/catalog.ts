@@ -41,6 +41,8 @@ export const VIEW_TITLES: Record<ViewKey, string> = {
   "problem-diagnostics": "问题诊断",
   "home-feed": "B 站首页",
   "learning-list": "学习列表",
+  "focus-statistics": "专注统计",
+  "focus-dashboard": "专注台",
   "first-launch": "首次启动",
   inbox: "收集箱",
   tools: "工具",

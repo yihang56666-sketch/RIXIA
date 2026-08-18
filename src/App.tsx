@@ -27,6 +27,8 @@ import {
   ProblemDiagnosticsPage,
 } from "./features/bilibili/SystemPages";
 import { FirstLaunchGate } from "./features/bilibili/FirstLaunchGate";
+import { FocusDashboard } from "./features/bilibili/FocusDashboard";
+import { FocusStatisticsView } from "./features/bilibili/FocusStatisticsView";
 import { HomeFeedView } from "./features/bilibili/HomeFeedView";
 import { LearningListView } from "./features/bilibili/LearningListView";
 import { useAppStore } from "./store/useAppStore";
@@ -67,6 +69,8 @@ export default function App() {
         {view === "problem-diagnostics" && <ProblemDiagnosticsPage />}
         {view === "home-feed" && <HomeFeedView />}
         {view === "learning-list" && <LearningListView />}
+        {view === "focus-dashboard" && <FocusDashboard onOpenStatistics={() => useAppStore.getState().setView("focus-statistics")} />}
+        {view === "focus-statistics" && <FocusStatisticsView />}
         {view === "inbox" && <InboxView />}
         {view === "kaoyan" && <KaoyanView />}
         {view === "tools" && <ToolsView />}

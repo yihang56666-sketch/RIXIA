@@ -28,6 +28,8 @@ export type ViewKey =
   | "problem-diagnostics"
   | "home-feed"
   | "learning-list"
+  | "focus-statistics"
+  | "focus-dashboard"
   | "first-launch"
   // Legacy deep-link targets (kept for command palette / persisted state)
   | "inbox"
