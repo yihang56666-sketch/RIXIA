@@ -2615,3 +2615,135 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
 .player-gesture-overlay:active {
   background: rgba(0, 0, 0, 0.05);
 }
+
+/* ---------- Video Note Composer ---------- */
+
+.note-composer {
+  display: grid;
+  gap: 8px;
+}
+.note-composer.compact { gap: 6px; }
+.note-composer.borderless { gap: 4px; }
+
+.note-composer-header-compact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+.note-composer-header-regular {
+  display: grid;
+  gap: 4px;
+}
+.note-composer-title-label {
+  font-weight: 800;
+  font-size: 16px;
+}
+.note-composer-recorded-time {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.note-part-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.note-composer-position {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.note-composer-position-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.note-composer-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.note-composer-divider {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 2px 0;
+}
+.note-title-field.borderless {
+  border: 0;
+  padding: 6px 0;
+  font-weight: 900;
+  font-size: 18px;
+  background: transparent;
+}
+.note-body-field.borderless {
+  border: 0;
+  padding: 6px 0;
+  background: transparent;
+  line-height: 1.45;
+}
+.note-composer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.note-composer-options {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.note-frame-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 13px;
+  cursor: pointer;
+  background: var(--content-surface);
+  transition: border-color 0.18s, background 0.18s;
+}
+.note-frame-chip.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.note-frame-chip input {
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+.note-composer-commit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.note-frame-preview {
+  margin-top: 8px;
+}
+.note-frame-error {
+  margin-top: 8px;
+  padding: 20px;
+  text-align: center;
+  background: var(--surface-soft);
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text-3);
+}
