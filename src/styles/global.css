@@ -2844,3 +2844,35 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   min-height: 2px;
   transition: height 0.3s var(--ease-out);
 }
+
+/* ---------- Focus Dialogs ---------- */
+
+.focus-completion {
+  text-align: center;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  padding: 24px;
+}
+.focus-completion-icon {
+  display: grid;
+  place-items: center;
+  margin-bottom: 4px;
+}
+.focus-completion-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin: 8px 0;
+}
+.focus-completion-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.focus-interruption { padding: 20px; }
+.focus-custom-duration { padding: 20px; }
+.focus-dnd-guide { padding: 20px; text-align: center; }
