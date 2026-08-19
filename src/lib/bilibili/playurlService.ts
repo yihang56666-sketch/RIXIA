@@ -115,7 +115,7 @@ export function parsePlayUrl(text: string): PlayUrlResult {
     throw new Error("playurl 接口返回了非对象响应");
   }
   const root = decoded as Record<string, unknown>;
-  const code = readInteger(root.code);
+  const code = readSignedInteger(root.code);
   if (code !== 0) {
     const message = readText(root.message);
     throw new Error(message ? `${message}（错误码：${code}）` : `playurl 失败（错误码：${code}）`);
@@ -185,6 +185,12 @@ function readInteger(value: unknown): number {
   const n = Number.parseInt(String(value ?? ""), 10);
   if (Number.isNaN(n)) return 0;
   return Math.max(0, Math.min(n, 2 ** 31));
+}
+
+function readSignedInteger(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+  const n = Number.parseInt(String(value ?? ""), 10);
+  return Number.isNaN(n) ? 0 : n;
 }
 
 function readText(value: unknown): string {
