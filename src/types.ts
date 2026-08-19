@@ -17,17 +17,23 @@ export type ViewKey =
   | "library"
   | "focus"
   | "settings"
+  | "preferences"
   | "search"
   | "bilibili-player"
   | "favorites"
   | "followed"
   | "watch-history"
+  | "subscribed-collections"
+  | "creator-profile"
+  | "collection-detail"
   | "login"
   | "app-update"
   | "cache-management"
   | "problem-diagnostics"
+  | "android-permissions"
   | "home-feed"
   | "learning-list"
+  | "video-notes"
   | "focus-statistics"
   | "focus-dashboard"
   | "first-launch"
@@ -180,6 +186,11 @@ export interface AppState {
   focusGoalMinutes: number;
   focusRounds: FocusRounds;
   activeFocus: ActiveFocus | null;
+  activeBilibiliBvid: string | null;
+  activeBilibiliCreator: { mid: number; name: string; avatarUrl: string; sign: string; officialDescription: string } | null;
+  activeBilibiliCollection: {
+    id: number; title: string; coverUrl: string; description: string; ownerMid: number; ownerName: string; ownerAvatarUrl: string; videoCount: number; viewCount: number;
+  } | null;
   resources: CourseResource[];
   timestampNotes: TimestampNote[];
   journals: JournalEntry[];
