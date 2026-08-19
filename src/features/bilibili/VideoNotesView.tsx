@@ -12,7 +12,7 @@ export function formatVideoNotePosition(seconds: number): string {
 
 export function VideoNotesView() {
   const service = useMemo(() => createVideoNoteService(), []);
-  const openBilibiliVideo = useAppStore((state) => state.openBilibiliVideo);
+  const openBilibiliVideoAt = useAppStore((state) => state.openBilibiliVideoAt);
   const [notes, setNotes] = useState<VideoNote[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -87,7 +87,7 @@ export function VideoNotesView() {
                   </span>
                 </div>
                 <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
-                  <button className="icon-button" onClick={() => openBilibiliVideo(note.bvid, note.videoTitle)} aria-label="打开视频" title="打开视频">
+                  <button className="icon-button" onClick={() => openBilibiliVideoAt(note.bvid, note.videoTitle, note.partCid, note.positionSeconds)} aria-label="打开视频" title="打开视频">
                     <Play size={15} />
                   </button>
                   <button className="delete-icon" onClick={() => void removeNote(note)} aria-label="删除时间点笔记" title="删除时间点笔记">

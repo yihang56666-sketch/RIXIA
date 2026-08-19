@@ -54,7 +54,11 @@ describe("VideoNotesView", () => {
     expect(screen.getByText("没有匹配的时间点笔记")).toBeInTheDocument();
     fireEvent.change(screen.getByRole("textbox", { name: "搜索时间点笔记" }), { target: { value: "矩阵" } });
     fireEvent.click(screen.getByRole("button", { name: "打开视频" }));
-    await waitFor(() => expect(useAppStore.getState().view).toBe("bilibili-player"));
+    await waitFor(() => {
+      const state = useAppStore.getState();
+      expect(state.view).toBe("bilibili-player");
+      expect(state.activeBilibiliPlaybackTarget).toEqual({ cid: 101, seconds: 90 });
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "删除时间点笔记" }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith("note-1"));

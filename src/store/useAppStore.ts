@@ -64,6 +64,10 @@ interface AppActions {
   addFocusSession: (minutes: number, resourceId?: string) => void;
   setFocusGoalMinutes: (minutes: number) => void;
   addResource: (input: string, title?: string) => CourseResource | null;
+  openBilibiliVideo: (bvid: string, title?: string) => void;
+  openBilibiliVideoAt: (bvid: string, title: string | undefined, cid: number, seconds: number) => void;
+  openBilibiliCreator: (creator: AppState["activeBilibiliCreator"] extends infer T ? Exclude<T, null> : never) => void;
+  openBilibiliCollection: (collection: AppState["activeBilibiliCollection"] extends infer T ? Exclude<T, null> : never) => void;
   removeResource: (id: string) => void;
   updateResourceProgress: (id: string, seconds: number, durationSeconds?: number) => void;
   setResourceStatus: (id: string, status: ResourceStatus) => void;
@@ -84,10 +88,12 @@ const initialState: Omit<
   AppState,
   | keyof AppActions
 > = {
-  theme: "porcelain",
+  theme: "system",
   density: "standard",
   backgroundImage: null,
-  view: "today",
+  view: "focus-dashboard",
+  activeBilibiliCreator: null,
+  activeBilibiliCollection: null,
   enabledTools: defaultTools,
   inbox: [],
   tasks: [],
@@ -101,6 +107,8 @@ const initialState: Omit<
   focusGoalMinutes: 120,
   focusRounds: { workMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, longBreakEvery: 4 },
   activeFocus: null,
+  activeBilibiliBvid: null,
+  activeBilibiliPlaybackTarget: null,
   resources: [],
   timestampNotes: [],
   journals: [],
@@ -326,6 +334,23 @@ export const useAppStore = create<AppState & AppActions>()(
         set((state) => ({ resources: [item, ...state.resources] }));
         return item;
       },
+      openBilibiliVideo: (bvid, title) => {
+        get().addResource(bvid, title);
+        set({ activeBilibiliBvid: bvid, activeBilibiliPlaybackTarget: null, view: "bilibili-player" });
+      },
+      openBilibiliVideoAt: (bvid, title, cid, seconds) => {
+        get().addResource(bvid, title);
+        set({
+          activeBilibiliBvid: bvid,
+          activeBilibiliPlaybackTarget: {
+            cid: Number.isInteger(cid) && cid > 0 ? cid : 0,
+            seconds: Number.isFinite(seconds) && seconds >= 0 ? seconds : 0,
+          },
+          view: "bilibili-player",
+        });
+      },
+      openBilibiliCreator: (creator) => set({ activeBilibiliCreator: creator, view: "creator-profile" }),
+      openBilibiliCollection: (collection) => set({ activeBilibiliCollection: collection, view: "collection-detail" }),
       removeResource: (id) => set((state) => ({
         resources: state.resources.filter((item) => item.id !== id),
         timestampNotes: state.timestampNotes.filter((item) => item.resourceId !== id),

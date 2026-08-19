@@ -70,7 +70,7 @@ import { createMediaSessionService } from "../../lib/bilibili/mediaSessionServic
  * - 视频帧由 B 站官方 iframe 渲染，弹幕在 iframe 之上的覆盖层 canvas 渲染
  * - 时间轴同步通过 postMessage 请求 iframe 当前时间，回退为本地估算
  */
-export function BilibiliPlayerView({ bvid }: { bvid: string }) {
+export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: string; initialPlaybackTarget?: { cid: number; seconds: number } | null }) {
   const service = useMemo(() => createBilibiliPublicContentService(), []);
   const danmakuService = useMemo(() => createDanmakuFetchService(), []);
   const danmakuPreferencesService = useMemo(() => createDanmakuPreferencesService(), []);
@@ -121,6 +121,7 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
   const gestureRefCoordinator = useRef<GestureCoordinator | null>(null);
   const nativePlayerRef = useRef<NativeMediaPlayer | null>(null);
   const resumedPositionRef = useRef(0);
+  const initialTargetAppliedRef = useRef(false);
   const completedFocusPartRef = useRef<string | null>(null);
   const loopRestartInFlightRef = useRef(false);
   const sleepDeadlineRef = useRef<number | null>(null);
@@ -134,8 +135,16 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
     service.lookupVideo(bvid).then((v) => {
       if (cancelled) return;
       setVideo(v);
-      setActivePartCid(v.cid);
+      const targetPart = initialPlaybackTarget && v.parts.some((part) => part.cid === initialPlaybackTarget.cid)
+        ? initialPlaybackTarget.cid
+        : v.cid;
+      setActivePartCid(targetPart);
       setDuration(v.durationSeconds);
+      if (initialPlaybackTarget && targetPart === initialPlaybackTarget.cid && !initialTargetAppliedRef.current) {
+        initialTargetAppliedRef.current = true;
+        resumedPositionRef.current = initialPlaybackTarget.seconds;
+        setCurrentTime(initialPlaybackTarget.seconds);
+      }
       setLoading(false);
       videoNoteService.listByVideo(v.bvid).then((n) => !cancelled && setNotes(n));
     }).catch((err) => {
@@ -145,7 +154,7 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
     });
     danmakuPreferencesService.load().then((p) => !cancelled && setPrefs(p));
     return () => { cancelled = true; };
-  }, [bvid, service, danmakuPreferencesService, videoNoteService]);
+  }, [bvid, service, danmakuPreferencesService, videoNoteService, initialPlaybackTarget]);
 
   // 当切换分 P 时重新加载弹幕
   useEffect(() => {
@@ -204,10 +213,15 @@ export function BilibiliPlayerView({ bvid }: { bvid: string }) {
   useEffect(() => {
     if (!video || activePartCid == null) return;
     const saved = playbackProgressStore.load(video.bvid, activePartCid);
-    const position = saved?.positionSeconds ?? 0;
+    const isInitialTargetPart = Boolean(
+      initialPlaybackTarget &&
+      initialTargetAppliedRef.current &&
+      activePartCid === initialPlaybackTarget.cid,
+    );
+    const position = isInitialTargetPart ? initialPlaybackTarget!.seconds : (saved?.positionSeconds ?? 0);
     resumedPositionRef.current = position;
     setCurrentTime(position);
-  }, [activePartCid, playbackProgressStore, video?.bvid]);
+  }, [activePartCid, initialPlaybackTarget, playbackProgressStore, video?.bvid]);
 
   useEffect(() => {
     if (!video || activePartCid == null || duration <= 0) return;
@@ -1104,6 +1118,7 @@ function formatTime(seconds: number): string {
 export function BilibiliPlayerRoute() {
   const resources = useAppStore((state) => state.resources);
   const activeBilibiliBvid = useAppStore((state) => state.activeBilibiliBvid);
+  const activeBilibiliPlaybackTarget = useAppStore((state) => state.activeBilibiliPlaybackTarget);
   const selectedBvid = activeBilibiliBvid ?? resources.find((r) => r.status === "in-progress")?.bvid ?? resources[0]?.bvid;
   if (!selectedBvid) {
     return (
@@ -1114,5 +1129,5 @@ export function BilibiliPlayerRoute() {
       </div>
     );
   }
-  return <BilibiliPlayerView bvid={selectedBvid} key={selectedBvid} />;
+  return <BilibiliPlayerView bvid={selectedBvid} initialPlaybackTarget={activeBilibiliPlaybackTarget} key={`${selectedBvid}:${activeBilibiliPlaybackTarget?.cid ?? 0}:${activeBilibiliPlaybackTarget?.seconds ?? 0}`} />;
 }

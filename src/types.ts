@@ -187,6 +187,7 @@ export interface AppState {
   focusRounds: FocusRounds;
   activeFocus: ActiveFocus | null;
   activeBilibiliBvid: string | null;
+  activeBilibiliPlaybackTarget: { cid: number; seconds: number } | null;
   activeBilibiliCreator: { mid: number; name: string; avatarUrl: string; sign: string; officialDescription: string } | null;
   activeBilibiliCollection: {
     id: number; title: string; coverUrl: string; description: string; ownerMid: number; ownerName: string; ownerAvatarUrl: string; videoCount: number; viewCount: number;
