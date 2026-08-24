@@ -18,6 +18,8 @@ import type {
   SubscribedCollection,
 } from "./types";
 import { AccountDataLoadStatus } from "./types";
+import { createJsonRequest, getCapacitorHttp, isNativeEnvironment, requestJsonWithHeaders, type HeaderedJsonResponse } from "./httpAdapter";
+import { normalizeBiliImageUrl, normalizeBiliThumbnailUrl } from "./imageUrl";
 
 // ============ QR Login ============
 
@@ -37,6 +39,8 @@ export interface BilibiliQrLoginPollResult {
   status: BilibiliQrLoginStatus;
   message: string;
   cookieHeader: string;
+  /** 确认登录时从 poll 响应解析出的账号 UID（可能缺失）。 */
+  mid?: number;
 }
 
 export class BilibiliQrLoginError extends Error {
@@ -52,13 +56,12 @@ export interface BilibiliQrLoginService {
 }
 
 export function createBilibiliQrLoginService(): BilibiliQrLoginService {
+  const requestJson = createJsonRequest();
   return {
     async generate() {
-      const response = await fetch(
+      const text = await requestJson(
         "https://passport.bilibili.com/x/passport-login/web/qrcode/generate",
-        { credentials: "include", headers: { Accept: "application/json" } },
       );
-      const text = await response.text();
       const data = readSuccessfulData(text);
       const url = readText(data.url);
       const key = readText(data.qrcode_key);
@@ -74,12 +77,8 @@ export function createBilibiliQrLoginService(): BilibiliQrLoginService {
       }
       const url = new URL("https://passport.bilibili.com/x/passport-login/web/qrcode/poll");
       url.searchParams.set("qrcode_key", normalized);
-      const response = await fetch(url.toString(), {
-        credentials: "include",
-        headers: { Accept: "application/json" },
-      });
-      const text = await response.text();
-      const data = readSuccessfulData(text);
+      const response = await requestJsonWithHeaders(url.toString());
+      const data = readSuccessfulData(response.body);
       const code = readInteger(data.code);
       let status: BilibiliQrLoginStatus;
       let message: string;
@@ -100,10 +99,51 @@ export function createBilibiliQrLoginService(): BilibiliQrLoginService {
           status = BilibiliQrLoginStatus.waiting;
           message = "等待扫描";
       }
-      // Cookie 已由浏览器自动存入；返回一个标志让调用方知道已登录。
-      return { status, message, cookieHeader: status === BilibiliQrLoginStatus.confirmed ? "confirmed" : "" };
+      // 确认登录时从响应头提取真实 Cookie（本地代理会把 passport 的
+      // Set-Cookie 合入 x-bili-set-cookie；原生环境读 set-cookie）。
+      // 提取不到时返回空串，调用方回退到 "confirmed" 标记（原生 Cookie Jar 模式）。
+      const cookieHeader =
+        status === BilibiliQrLoginStatus.confirmed ? extractLoginCookieHeader(response, data) : "";
+      const mid = readInteger(data.mid);
+      return { status, message, cookieHeader, mid: mid > 0 ? mid : undefined };
     },
-  };
+  }
+}
+
+/** 具备登录效力的 B 站 Cookie 字段，其余（过期时间/路径等）全部丢弃。 */
+const LOGIN_COOKIE_FIELDS = /(SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5|buvid3|buvid4)=([^;\s,]+)/g;
+
+function extractLoginCookieHeader(
+  response: HeaderedJsonResponse,
+  data: Record<string, unknown>,
+): string {
+  const raw = response.header("x-bili-set-cookie") ?? response.header("set-cookie") ?? "";
+  const pairs: string[] = [];
+  const seen = new Set<string>();
+  for (const match of raw.matchAll(LOGIN_COOKIE_FIELDS)) {
+    const name = match[1];
+    if (!seen.has(name)) {
+      seen.add(name);
+      pairs.push(`${match[1]}=${match[2]}`);
+    }
+  }
+  if (pairs.length > 0) return pairs.join("; ");
+  // 部分环境读不到响应头时，尝试从 poll 成功后返回的 url 参数补齐 UID 信息。
+  const redirectUrl = readText(data.url);
+  if (redirectUrl) {
+    try {
+      const parsed = new URL(redirectUrl);
+      const dede = parsed.searchParams.get("DedeUserID");
+      const ckMd5 = parsed.searchParams.get("DedeUserID__ckMd5");
+      const fallback: string[] = [];
+      if (dede) fallback.push(`DedeUserID=${dede}`);
+      if (ckMd5) fallback.push(`DedeUserID__ckMd5=${ckMd5}`);
+      if (fallback.length > 0) return fallback.join("; ");
+    } catch {
+      // url 无效时忽略，交给调用方按未捕获处理。
+    }
+  }
+  return "";
 }
 
 function readSuccessfulData(text: string): Record<string, unknown> {
@@ -258,11 +298,11 @@ export function createBilibiliAuthService(
 const ACCOUNT_API_HOST = "api.bilibili.com";
 
 export interface BilibiliAccountDataService {
+  loadCurrentUser(): Promise<Pick<BilibiliAuthState, "mid" | "userName" | "avatarUrl"> | null>;
   listFavoriteFolders(): Promise<AccountDataPage<FavoriteFolder>>;
   listFavoriteVideos(mediaId: number, page: number): Promise<AccountDataPage<FavoriteVideo>>;
   listFollowedCreators(page: number): Promise<AccountDataPage<FollowedCreator>>;
   listSubscribedCollections(page: number): Promise<AccountDataPage<SubscribedCollection>>;
-  listWatchHistory(page: number): Promise<AccountDataPage<import("./types").WatchHistoryEntry>>;
 }
 
 export function createBilibiliAccountDataService(
@@ -274,14 +314,40 @@ export function createBilibiliAccountDataService(
       throw signedOutError();
     }
     const cookieHeader = cookieStore.getCookieHeader();
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      Referer: "https://www.bilibili.com/",
+      Origin: "https://www.bilibili.com",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    };
+    // QR 确认只保存标记；真实 Cookie 由浏览器 / 原生网络栈的 Cookie Jar 持有。
+    if (cookieHeader && cookieHeader !== "confirmed") {
+      headers.Cookie = cookieHeader;
+    }
+    // Capacitor WebView 通常也使用 localhost 作为应用 origin，但原生请求
+    // 必须保留真实 API 地址，不能误改写到仅供 Vite 开发服务器使用的代理。
+    const useLocalProxy = isLocalBrowser() && !isNativeEnvironment();
+    if (useLocalProxy) {
+      if (cookieHeader && cookieHeader !== "confirmed") {
+        headers["X-Beid-Cookie"] = cookieHeader;
+      }
+      delete headers.Cookie;
+      url = url.replace(`https://${ACCOUNT_API_HOST}`, "/bili-api");
+    }
+    const capacitorHttp = getCapacitorHttp();
+    if (isNativeEnvironment() && capacitorHttp) {
+      const response = await capacitorHttp.request({ url, method: "GET", headers });
+      if (response.status === 401 || response.status === 403) {
+        throw expiredError();
+      }
+      if (!response.status || response.status < 200 || response.status >= 300) {
+        throw networkError(`HTTP ${response.status}`);
+      }
+      return typeof response.data === "string" ? response.data : JSON.stringify(response.data);
+    }
     const response = await fetch(url, {
       credentials: "include",
-      headers: {
-        Accept: "application/json",
-        Cookie: cookieHeader,
-        Referer: "https://www.bilibili.com/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-      },
+      headers,
     });
     if (response.status === 401 || response.status === 403) {
       throw expiredError();
@@ -302,11 +368,66 @@ export function createBilibiliAccountDataService(
     return new AccountDataError(AccountDataLoadStatus.networkError, message);
   }
 
+  // FocuBili 的账号数据接口都要求以本人 mid 作为查询参数（up_mid / vmid）。
+  // Cookie 手动导入等场景可能还没有 mid，这里先通过 nav 接口补齐并回写会话。
+  // mid 恰好等于 2^31 视为无效：早前版本的 readInteger 把超出 2^31 的新账号
+  // mid 全部钳位成了这个值，必须重新解析真实 mid。
+  async function resolveMid(): Promise<number> {
+    const current = auth.currentState();
+    if (current.signedIn && current.mid && current.mid > 0 && current.mid !== 2 ** 31) {
+      return current.mid;
+    }
+    try {
+      const text = await authenticatedFetch(`https://${ACCOUNT_API_HOST}/x/web-interface/nav`);
+      const profile = parseCurrentUser(text);
+      if (profile?.mid) {
+        auth.signIn(cookieStore.getCookieHeader(), profile);
+        return profile.mid;
+      }
+    } catch (err) {
+      if (err instanceof AccountDataError) throw err;
+      // nav 解析失败时交给各调用方按"账号信息缺失"提示。
+    }
+    return 0;
+  }
+
+  function missingAccountPage<T>(page: number): AccountDataPage<T> {
+    return {
+      status: AccountDataLoadStatus.unavailable,
+      items: [],
+      page,
+      hasMore: false,
+      message: "账号信息缺失，请重新登录后再试。",
+    };
+  }
+
   return {
+    async loadCurrentUser() {
+      try {
+        const text = await authenticatedFetch(`https://${ACCOUNT_API_HOST}/x/web-interface/nav`);
+        const profile = parseCurrentUser(text);
+        if (profile) return profile;
+        throw classifyCurrentUserResponse(text);
+      } catch (err) {
+        if (err instanceof AccountDataError) throw err;
+        throw networkError(err instanceof Error ? err.message : "账号信息请求失败，请稍后重试。" );
+      }
+    },
     async listFavoriteFolders() {
       try {
+        const mid = await resolveMid();
+        if (mid <= 0) return missingAccountPage<FavoriteFolder>(1);
+        try {
+          const detailed = await authenticatedFetch(
+            `https://${ACCOUNT_API_HOST}/x/v3/fav/folder/created/list?up_mid=${mid}&pn=1&ps=50&platform=web`,
+          );
+          const page = parseFavoriteFolders(detailed);
+          if (page.status === AccountDataLoadStatus.success && page.items.length > 0) return page;
+        } catch {
+          // created/list 在部分账号下会失败，回退到不含封面的 list-all。
+        }
         const text = await authenticatedFetch(
-          `https://${ACCOUNT_API_HOST}/x/v3/fav/folder/created/list-all`,
+          `https://${ACCOUNT_API_HOST}/x/v3/fav/folder/created/list-all?up_mid=${mid}`,
         );
         return parseFavoriteFolders(text);
       } catch (err) {
@@ -316,7 +437,7 @@ export function createBilibiliAccountDataService(
     async listFavoriteVideos(mediaId, page) {
       try {
         const text = await authenticatedFetch(
-          `https://${ACCOUNT_API_HOST}/x/v3/fav/resource/list?media_id=${mediaId}&pn=${page}&ps=20`,
+          `https://${ACCOUNT_API_HOST}/x/v3/fav/resource/list?media_id=${mediaId}&platform=web&pn=${page}&ps=20&order=mtime&type=0&tid=0`,
         );
         return parseFavoriteVideos(text, page);
       } catch (err) {
@@ -325,8 +446,10 @@ export function createBilibiliAccountDataService(
     },
     async listFollowedCreators(page) {
       try {
+        const mid = await resolveMid();
+        if (mid <= 0) return missingAccountPage<FollowedCreator>(page);
         const text = await authenticatedFetch(
-          `https://${ACCOUNT_API_HOST}/x/relation/followings?pn=${page}&ps=20&order=desc`,
+          `https://${ACCOUNT_API_HOST}/x/relation/followings?vmid=${mid}&pn=${page}&ps=50&order=desc`,
         );
         return parseFollowedCreators(text, page);
       } catch (err) {
@@ -335,25 +458,66 @@ export function createBilibiliAccountDataService(
     },
     async listSubscribedCollections(page) {
       try {
+        const mid = await resolveMid();
+        if (mid <= 0) return missingAccountPage<SubscribedCollection>(page);
         const text = await authenticatedFetch(
-          `https://${ACCOUNT_API_HOST}/x/v3/fav/folder/created/list?pn=${page}&ps=20`,
+          `https://${ACCOUNT_API_HOST}/x/v3/fav/folder/collected/list?up_mid=${mid}&pn=${page}&ps=20&platform=web`,
         );
         return parseSubscribedCollections(text, page);
       } catch (err) {
         return toAccountDataPage<SubscribedCollection>(err);
       }
     },
-    async listWatchHistory(page) {
-      try {
-        const text = await authenticatedFetch(
-          `https://${ACCOUNT_API_HOST}/x/v2/history?pn=${page}&ps=20`,
-        );
-        return parseWatchHistory(text, page);
-      } catch (err) {
-        return toAccountDataPage<import("./types").WatchHistoryEntry>(err);
-      }
-    },
   };
+}
+
+function parseCurrentUser(text: string): { mid?: number; userName?: string; avatarUrl?: string } | null {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const root = readObject(decoded);
+  if (readInteger(root.code) !== 0) return null;
+  const data = readObject(root.data);
+  if (data.isLogin === false) return null;
+  const mid = readInteger(data.mid);
+  const userName = readText(data.uname);
+  const avatarUrl = readText(data.face);
+  if (mid <= 0 && !userName && !avatarUrl) return null;
+  return {
+    mid: mid > 0 ? mid : undefined,
+    userName: userName || undefined,
+    avatarUrl: avatarUrl || undefined,
+  };
+}
+
+function classifyCurrentUserResponse(text: string): AccountDataError {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(text);
+  } catch {
+    return new AccountDataError(AccountDataLoadStatus.malformedData, "账号信息返回格式不正确，请稍后重试。");
+  }
+  const root = readObject(decoded);
+  const code = readErrorCode(root.code);
+  if (code === -101) {
+    return new AccountDataError(AccountDataLoadStatus.expired, "登录已过期，请重新登录。");
+  }
+  if (code !== 0) {
+    return new AccountDataError(AccountDataLoadStatus.unavailable, readText(root.message, "暂时无法读取账号信息。"));
+  }
+  const data = readObject(root.data);
+  if (data.isLogin === false) {
+    return new AccountDataError(AccountDataLoadStatus.expired, "登录已过期，请重新登录。");
+  }
+  return new AccountDataError(AccountDataLoadStatus.missingData, "账号信息缺失，请重新登录后再试。");
+}
+
+function isLocalBrowser(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 }
 
 export class AccountDataError extends Error {
@@ -393,23 +557,32 @@ function parseFavoriteFolders(text: string): AccountDataPage<FavoriteFolder> {
     return { status: AccountDataLoadStatus.malformedData, items: [], page: 1, hasMore: false };
   }
   const root = decoded as Record<string, unknown>;
-  const code = readInteger(root.code);
+  const code = readErrorCode(root.code);
   if (code === -101) return { status: AccountDataLoadStatus.expired, items: [], page: 1, hasMore: false, message: "登录已过期" };
   if (code !== 0) return { status: AccountDataLoadStatus.unavailable, items: [], page: 1, hasMore: false, message: readText(root.message) };
   const data = readObject(root.data);
   if (!data || typeof data !== "object") return { status: AccountDataLoadStatus.missingData, items: [], page: 1, hasMore: false };
   const list = Array.isArray(data.list) ? data.list as unknown[] : [];
-  const items: FavoriteFolder[] = list.map((raw) => {
+  const items: FavoriteFolder[] = [];
+  for (const raw of list) {
     const item = readObject(raw);
-    return {
-      mediaId: readInteger(item.id),
+    const mediaId = readInteger(item.id);
+    if (mediaId <= 0) continue;
+    items.push({
+      mediaId,
       title: readText(item.title, "未命名收藏夹"),
-      coverUrl: readText(item.cover),
+      coverUrl: normalizeBiliThumbnailUrl(readText(item.cover || item.cover_url)),
       mediaCount: readInteger(item.media_count),
-      isAvailable: readInteger(item.state) === 0,
-    };
-  });
-  return { status: AccountDataLoadStatus.success, items, page: 1, hasMore: false };
+      isAvailable: readErrorCode(item.state ?? item.status) >= 0,
+    });
+  }
+  return {
+    status: AccountDataLoadStatus.success,
+    items,
+    page: 1,
+    hasMore: false,
+    totalCount: readInteger(data.count) || items.length,
+  };
 }
 
 function parseFavoriteVideos(text: string, page: number): AccountDataPage<FavoriteVideo> {
@@ -418,36 +591,37 @@ function parseFavoriteVideos(text: string, page: number): AccountDataPage<Favori
     return { status: AccountDataLoadStatus.malformedData, items: [], page, hasMore: false };
   }
   const root = decoded as Record<string, unknown>;
-  const code = readInteger(root.code);
+  const code = readErrorCode(root.code);
   if (code === -101) return { status: AccountDataLoadStatus.expired, items: [], page, hasMore: false };
   if (code !== 0) return { status: AccountDataLoadStatus.unavailable, items: [], page, hasMore: false };
   const data = readObject(root.data);
   const medias = Array.isArray(data.medias) ? data.medias as unknown[] : [];
-  const items: FavoriteVideo[] = medias.map((raw) => {
+  const items: FavoriteVideo[] = [];
+  for (const raw of medias) {
     const item = readObject(raw);
-    const bvid = readText(item.bvid, "");
-    const cover = readText(item.cover);
+    const bvid = readText(item.bvid ?? item.bv_id);
+    if (!/^BV[0-9A-Za-z]{10}$/.test(bvid)) continue;
     const upper = readObject(item.upper);
     const cnt = readObject(item.cnt_info);
-    return {
+    items.push({
       bvid,
       title: readText(item.title, "未命名视频"),
-      coverUrl: cover,
+      coverUrl: normalizeBiliThumbnailUrl(readText(item.cover || item.pic)),
       ownerName: readText(upper.name, "未知 UP 主"),
-      durationSeconds: parseDurationSeconds(readText(item.duration, "0:00")),
-      partCount: readInteger(item.page),
+      durationSeconds: readInteger(item.duration),
+      partCount: readInteger(item.page) || 1,
       favoritedAt: parseUnixTime(readInteger(item.fav_time))?.toISOString(),
       playCount: readInteger(cnt.play),
       danmakuCount: readInteger(cnt.danmaku),
-      isAvailable: readInteger(item.attr) === 0,
-    };
-  });
+      isAvailable: readErrorCode(item.attr) === 0,
+    });
+  }
   return {
     status: AccountDataLoadStatus.success,
     items,
     page,
     hasMore: Boolean(data.has_more),
-    totalCount: readInteger(data.total),
+    totalCount: readInteger(readObject(data.info).media_count),
   };
 }
 
@@ -457,29 +631,34 @@ function parseFollowedCreators(text: string, page: number): AccountDataPage<Foll
     return { status: AccountDataLoadStatus.malformedData, items: [], page, hasMore: false };
   }
   const root = decoded as Record<string, unknown>;
-  const code = readInteger(root.code);
+  const code = readErrorCode(root.code);
   if (code === -101) return { status: AccountDataLoadStatus.expired, items: [], page, hasMore: false };
   if (code !== 0) return { status: AccountDataLoadStatus.unavailable, items: [], page, hasMore: false };
   const data = readObject(root.data);
   const list = Array.isArray(data.list) ? data.list as unknown[] : [];
-  const items: FollowedCreator[] = list.map((raw) => {
+  const items: FollowedCreator[] = [];
+  for (const raw of list) {
     const item = readObject(raw);
-    const official = readObject(item.official);
-    return {
-      mid: readInteger(item.mid),
+    const mid = readInteger(item.mid);
+    if (mid <= 0) continue;
+    const official = readObject(item.official_verify);
+    const officialLegacy = readObject(item.official);
+    items.push({
+      mid,
       name: readText(item.uname, "未知 UP 主"),
-      avatarUrl: readText(item.face),
+      avatarUrl: normalizeBiliImageUrl(readText(item.face)),
       sign: readText(item.sign, ""),
-      officialDescription: readText(official.title, ""),
+      officialDescription: readText(official.desc ?? officialLegacy.desc, ""),
       followedAt: parseUnixTime(readInteger(item.mtime))?.toISOString(),
-    };
-  });
+    });
+  }
+  const totalCount = readInteger(data.total);
   return {
     status: AccountDataLoadStatus.success,
     items,
     page,
-    hasMore: Boolean(data.has_more),
-    totalCount: readInteger(data.total),
+    hasMore: totalCount > 0 ? page * 50 < totalCount : items.length === 50,
+    totalCount,
   };
 }
 
@@ -489,26 +668,30 @@ function parseSubscribedCollections(text: string, page: number): AccountDataPage
     return { status: AccountDataLoadStatus.malformedData, items: [], page, hasMore: false };
   }
   const root = decoded as Record<string, unknown>;
-  const code = readInteger(root.code);
+  const code = readErrorCode(root.code);
   if (code === -101) return { status: AccountDataLoadStatus.expired, items: [], page, hasMore: false };
   if (code !== 0) return { status: AccountDataLoadStatus.unavailable, items: [], page, hasMore: false };
   const data = readObject(root.data);
   const list = Array.isArray(data.list) ? data.list as unknown[] : [];
-  const items: SubscribedCollection[] = list.map((raw) => {
+  const items: SubscribedCollection[] = [];
+  for (const raw of list) {
     const item = readObject(raw);
+    const id = readInteger(item.id);
+    // type=21 才是 UGC 合集；type=11 是普通收藏夹，明确排除。
+    if (id <= 0 || readErrorCode(item.type) !== 21) continue;
     const upper = readObject(item.upper);
-    return {
-      id: readInteger(item.id),
+    items.push({
+      id,
       title: readText(item.title, "未命名合集"),
-      coverUrl: readText(item.cover),
+      coverUrl: normalizeBiliThumbnailUrl(readText(item.cover)),
       description: readText(item.intro, ""),
-      ownerMid: readInteger(upper.mid),
+      ownerMid: readInteger(upper.mid ?? item.mid),
       ownerName: readText(upper.name, "未知 UP 主"),
-      ownerAvatarUrl: readText(upper.face),
-      videoCount: readInteger(item.episode_count),
-      viewCount: readInteger(readObject(item.stat).view),
-    };
-  });
+      ownerAvatarUrl: normalizeBiliImageUrl(readText(upper.face)),
+      videoCount: readInteger(item.media_count),
+      viewCount: readInteger(item.view_count),
+    });
+  }
   return {
     status: AccountDataLoadStatus.success,
     items,
@@ -518,59 +701,25 @@ function parseSubscribedCollections(text: string, page: number): AccountDataPage
   };
 }
 
-function parseWatchHistory(text: string, page: number): AccountDataPage<import("./types").WatchHistoryEntry> {
-  const decoded = JSON.parse(text);
-  if (typeof decoded !== "object" || decoded === null) {
-    return { status: AccountDataLoadStatus.malformedData, items: [], page, hasMore: false };
-  }
-  const root = decoded as Record<string, unknown>;
-  const code = readInteger(root.code);
-  if (code === -101) return { status: AccountDataLoadStatus.expired, items: [], page, hasMore: false };
-  if (code !== 0) return { status: AccountDataLoadStatus.unavailable, items: [], page, hasMore: false };
-  const data = readObject(root.data);
-  const list = Array.isArray(data.list) ? data.list as unknown[] : [];
-  const items: import("./types").WatchHistoryEntry[] = list.map((raw) => {
-    const item = readObject(raw);
-    const owner = readObject(item.owner);
-    return {
-      id: `${readText(item.bvid, "")}-${readInteger(item.cid)}`,
-      bvid: readText(item.bvid, ""),
-      cid: readInteger(item.cid),
-      title: readText(item.title, "未命名视频"),
-      ownerName: readText(owner.name, "未知 UP 主"),
-      thumbnailUrl: readText(item.pic),
-      durationSeconds: parseDurationSeconds(readText(item.duration, "0:00")),
-      watchedAt: parseUnixTime(readInteger(item.view_at))?.toISOString() ?? new Date().toISOString(),
-      positionSeconds: readInteger(item.progress),
-      completed: readInteger(item.kjv ?? 0) !== 0,
-    };
-  });
-  return {
-    status: AccountDataLoadStatus.success,
-    items,
-    page,
-    hasMore: Boolean(data.has_more),
-  };
-}
-
-function parseDurationSeconds(text: string): number {
-  const parts = text.split(":").map((p) => Number.parseInt(p.trim(), 10) || 0);
-  if (parts.length === 3) return parts[0]! * 3600 + parts[1]! * 60 + parts[2]!;
-  if (parts.length === 2) return parts[0]! * 60 + parts[1]!;
-  return parts.length === 0 ? 0 : parts[parts.length - 1]!;
-}
-
 function parseUnixTime(value: unknown): Date | null {
   const seconds = readInteger(value);
   if (seconds <= 0) return null;
   return new Date(seconds * 1000);
 }
 
+/** 读取非负整数（计数、mid 等），上限放宽到安全整数——新注册账号的 mid 已超过 2^31。 */
 function readInteger(value: unknown): number {
-  if (typeof value === "number") return Math.max(0, Math.min(Math.trunc(value), 2 ** 31));
+  if (typeof value === "number") return Math.max(0, Math.min(Math.trunc(value), Number.MAX_SAFE_INTEGER));
   const n = Number.parseInt(String(value ?? ""), 10);
   if (Number.isNaN(n)) return 0;
-  return Math.max(0, Math.min(n, 2 ** 31));
+  return Math.max(0, Math.min(n, Number.MAX_SAFE_INTEGER));
+}
+
+/** 读取带符号的接口状态码（-101 登录过期、-400 请求错误等），不能被钳位成 0。 */
+function readErrorCode(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+  const n = Number.parseInt(String(value ?? ""), 10);
+  return Number.isNaN(n) ? 0 : n;
 }
 
 function readText(value: unknown, fallback = ""): string {

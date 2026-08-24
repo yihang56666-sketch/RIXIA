@@ -14,6 +14,7 @@ import type {
   LearningListEntry,
   FocusSession,
   FocusStatistics,
+  LearningListStatus,
 } from "./types";
 import {
   DEFAULT_DANMAKU_PREFERENCES,
@@ -120,12 +121,20 @@ function normalizePlayback(value: unknown): PlaybackPreferences {
   if (typeof value !== "object" || value === null) return { ...DEFAULT_PLAYBACK_PREFERENCES };
   const v = value as Partial<PlaybackPreferences>;
   return {
+    enableDoubleTapSeek: typeof v.enableDoubleTapSeek === "boolean" ? v.enableDoubleTapSeek : true,
+    wifiDefaultQuality: normalizePreferredQuality(v.wifiDefaultQuality ?? v.defaultQuality),
+    mobileDefaultQuality: normalizePreferredQuality(v.mobileDefaultQuality ?? v.defaultQuality),
     autoplayNext: typeof v.autoplayNext === "boolean" ? v.autoplayNext : false,
     resumeFromLastPosition: typeof v.resumeFromLastPosition === "boolean" ? v.resumeFromLastPosition : true,
     defaultQuality: clampInt(v.defaultQuality, DEFAULT_PLAYBACK_PREFERENCES.defaultQuality, 16, 128),
     defaultVolume: clampNumber(v.defaultVolume, DEFAULT_PLAYBACK_PREFERENCES.defaultVolume, 0, 1),
     playbackRate: clampNumber(v.playbackRate, DEFAULT_PLAYBACK_PREFERENCES.playbackRate, 0.5, 3),
   };
+}
+
+function normalizePreferredQuality(value: unknown): number {
+  const valid = [16, 32, 64, 80, 116, 120];
+  return typeof value === "number" && valid.includes(value) ? value : 64;
 }
 
 // ============ Video notes ============
@@ -333,6 +342,8 @@ export interface LearningListService {
   remove(id: string): Promise<boolean>;
   markOpened(id: string): Promise<boolean>;
   markCompleted(id: string): Promise<boolean>;
+  setStatus(id: string, status: LearningListStatus): Promise<boolean>;
+  reorderIncomplete(ids: string[]): Promise<boolean>;
 }
 
 export function createLearningListService(
@@ -363,11 +374,23 @@ export function createLearningListService(
   }
   return {
     async list() {
-      return readAll().sort((a, b) => b.addedAt.localeCompare(a.addedAt));
+      return readAll().sort((a, b) => {
+        const aCompleted = isCompletedLearningEntry(a);
+        const bCompleted = isCompletedLearningEntry(b);
+        if (aCompleted !== bCompleted) return aCompleted ? 1 : -1;
+        if (!aCompleted) {
+          const aOrder = Number.isInteger(a.order) ? a.order! : null;
+          const bOrder = Number.isInteger(b.order) ? b.order! : null;
+          if (aOrder !== null && bOrder !== null && aOrder !== bOrder) return aOrder - bOrder;
+          if (aOrder !== null) return -1;
+          if (bOrder !== null) return 1;
+        }
+        return b.addedAt.localeCompare(a.addedAt);
+      });
     },
     async add(entry) {
       const all = readAll();
-      if (all.some((e) => e.bvid === entry.bvid)) return false;
+      if (all.some((e) => e.bvid === entry.bvid && learningPartCid(e) === learningPartCid(entry))) return false;
       all.unshift(entry);
       return writeAll(all);
     },
@@ -385,10 +408,27 @@ export function createLearningListService(
       return writeAll(next);
     },
     async markOpened(id) {
-      return this.update(id, { lastOpenedAt: new Date().toISOString() });
+      return this.setStatus(id, "learning");
     },
     async markCompleted(id) {
-      return this.update(id, { completedAt: new Date().toISOString() });
+      return this.setStatus(id, "completed");
+    },
+    async setStatus(id, status) {
+      const now = new Date().toISOString();
+      if (status === "completed") return this.update(id, { status, completedAt: now });
+      if (status === "learning") return this.update(id, { status, completedAt: undefined, lastOpenedAt: now });
+      return this.update(id, { status, completedAt: undefined, lastOpenedAt: undefined });
+    },
+    async reorderIncomplete(ids) {
+      const all = readAll();
+      const activeIds = new Set(all.filter((entry) => !isCompletedLearningEntry(entry)).map((entry) => entry.id));
+      const requested = ids.filter((id, index) => activeIds.has(id) && ids.indexOf(id) === index);
+      const missing = all
+        .filter((entry) => !isCompletedLearningEntry(entry) && !requested.includes(entry.id))
+        .sort((left, right) => right.addedAt.localeCompare(left.addedAt))
+        .map((entry) => entry.id);
+      const nextOrder = new Map([...requested, ...missing].map((id, index) => [id, index]));
+      return writeAll(all.map((entry) => isCompletedLearningEntry(entry) ? entry : { ...entry, order: nextOrder.get(entry.id) }));
     },
   };
 }
@@ -397,6 +437,14 @@ function isValidLearningEntry(value: unknown): value is LearningListEntry {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Partial<LearningListEntry>;
   return typeof v.id === "string" && typeof v.bvid === "string";
+}
+
+function learningPartCid(entry: LearningListEntry): number {
+  return Number.isInteger(entry.partCid) && (entry.partCid ?? 0) > 0 ? entry.partCid! : 0;
+}
+
+function isCompletedLearningEntry(entry: LearningListEntry): boolean {
+  return entry.status === "completed" || Boolean(entry.completedAt);
 }
 
 // ============ Focus Session ============

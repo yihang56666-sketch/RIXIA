@@ -1,7 +1,7 @@
 {
-  "name": "rixia-desktop",
+  "name": "beid-desktop",
   "version": "0.3.0",
-  "description": "RIXIA desktop shell (Tauri) - wraps the web build as a native Windows app",
+  "description": "BEID desktop shell (Tauri) - wraps the web build as a native Windows app",
   "private": true,
   "type": "module",
   "scripts": {

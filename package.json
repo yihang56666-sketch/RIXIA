@@ -1,9 +1,9 @@
 {
-  "name": "rixia",
+  "name": "beid",
   "private": true,
   "version": "0.3.0",
   "type": "module",
-  "description": "一个轻量、专注本地记录的个人效率工作台",
+  "description": "融合节奏工作台与专注看课能力的 B 站考研学习客户端",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
@@ -14,12 +14,19 @@
     "mobile:doctor": "node scripts/build-android-debug-apk.mjs --doctor",
     "mobile:sdk:install": "node scripts/setup-android-sdk.mjs --install",
     "mobile:apk": "node scripts/build-android-debug-apk.mjs",
-    "flutter:sync": "node scripts/export-flutter-assets.mjs"
+    "desktop": "node electron/desktop-server.mjs",
+    "desktop:win": "node scripts/build-windows-desktop.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
+    "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.4.1",
+    "@fontsource-variable/material-symbols-rounded": "^5.3.3",
+    "@fontsource/roboto": "^5.3.0",
+    "@types/qrcode": "^1.5.6",
+    "crypto-js": "^4.2.0",
     "lucide-react": "^0.544.0",
+    "qrcode": "^1.5.4",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-markdown": "^10.1.0",
@@ -29,12 +36,68 @@
     "@capacitor/cli": "^8.4.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
+    "@types/crypto-js": "^4.2.2",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.2",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
     "jsdom": "^30.0.1",
     "typescript": "^5.9.2",
     "vite": "^7.1.5",
     "vitest": "^3.2.4"
+  },
+  "author": "BEID",
+  "main": "electron/main.mjs",
+  "build": {
+    "appId": "com.beid.app",
+    "productName": "BEID",
+    "copyright": "© 2026 BEID",
+    "directories": {
+      "output": "release/win"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json",
+      "!node_modules/**"
+    ],
+    "extraResources": [
+      {
+        "from": "dist",
+        "to": "dist"
+      }
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "win": {
+      "icon": "public/beid-icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "BEID",
+      "artifactName": "BEID-0.3.0-windows-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "BEID-0.3.0-windows-portable.${ext}"
+    },
+    "forceCodeSigning": false
   }
 }

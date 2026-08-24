@@ -1,8 +1,8 @@
 /**
- * RIXIA 深链接服务 — TS 移植自 FocuBili 的 bilibili_deep_link_service.dart。
+ * FocuBili 深链接服务 — TS 移植自 FocuBili 的 bilibili_deep_link_service.dart。
  *
  * 处理 bilibili:// 和 https://www.bilibili.com/video/<bvid> 形式的链接，
- * 把它们转换为 RIXIA 内部导航动作（打开播放器、跳转搜索等）。
+ * 把它们转换为 FocuBili 内部导航动作（打开播放器、跳转搜索等）。
  *
  * 浏览器侧通过 window.location.hash + window.popstate 模拟深链接；
  * PWA 安装后由 manifest 处理协议注册（移动端 Capacitor 在 AndroidManifest
@@ -82,7 +82,7 @@ export function createBilibiliDeepLinkService(): BilibiliDeepLinkService {
 }
 
 /**
- * 把 B 站链接规范化为 RIXIA 内部 hash 路由。
+ * 把 B 站链接规范化为 FocuBili 内部 hash 路由。
  * 例如 https://www.bilibili.com/video/BV1GJ411x7h7 → #/video/BV1GJ411x7h7
  */
 export function toInternalHash(input: string): string | null {
@@ -136,7 +136,7 @@ export function registerProtocolHandler(): boolean {
     (navigator as Navigator & { registerProtocolHandler: (scheme: string, url: string, title: string) => void }).registerProtocolHandler(
       "web+bilibili",
       `${window.location.origin}/#/redirect?u=%s`,
-      "RIXIA B 站跳转",
+      "BEID B 站跳转",
     );
     return true;
   } catch {

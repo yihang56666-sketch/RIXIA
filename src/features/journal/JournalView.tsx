@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { BookOpen, Tag } from "lucide-react";
 import { extractTags, extractWikiLinks } from "../../lib/journal";
 import { todayKey } from "../../lib/time";
@@ -24,6 +24,14 @@ export function JournalView({ date }: { date?: string }) {
   const existing = journals.find((entry) => entry.date === targetDate);
   const [body, setBody] = useState(existing?.body ?? "");
   const [editing, setEditing] = useState(!existing);
+
+  // 日期切换（含跨零点）或持久化数据晚于首帧到达时，重新同步编辑器内容；
+  // 否则跨零点保存会把旧内容写进新的一天。
+  useEffect(() => {
+    setBody(existing?.body ?? "");
+    setEditing(!existing);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetDate, existing?.updatedAt]);
 
   const tags = useMemo(() => extractTags(body), [body]);
   const wikiLinks = useMemo(() => extractWikiLinks(body), [body]);

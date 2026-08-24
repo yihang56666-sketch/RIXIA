@@ -203,7 +203,7 @@ export function VideoNoteComposer({
           </label>
           {onJumpToPosition && (
             <button
-              className="ghost-btn compact"
+              className="m3-outlined-btn compact"
               onClick={onJumpToPosition}
               disabled={inputDisabled}
             >
@@ -225,7 +225,7 @@ export function VideoNoteComposer({
             </button>
           )}
           <button
-            className="primary compact"
+            className="m3-filled-btn compact"
             onClick={onSave}
             disabled={inputDisabled}
           >

@@ -6,18 +6,6 @@ export function extractBvid(input: string): string | null {
   return match ? match[0] : null;
 }
 
-/** 哔哩哔哩官方嵌入播放器地址 */
-export function buildPlayerUrl(bvid: string, page = 1): string {
-  const params = new URLSearchParams({
-    bvid,
-    page: String(page),
-    high_quality: "1",
-    danmaku: "0",
-    autoplay: "0",
-  });
-  return `https://player.bilibili.com/player.html?${params.toString()}`;
-}
-
 /** 跳转哔哩哔哩搜索页（发现新内容用） */
 export function buildSearchUrl(keyword: string): string {
   return `https://search.bilibili.com/all?keyword=${encodeURIComponent(keyword)}`;

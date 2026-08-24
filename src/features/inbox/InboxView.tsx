@@ -1,12 +1,14 @@
 import { ArrowRight, Inbox as InboxIcon } from "lucide-react";
 import { QuickAdd } from "../../components/QuickAdd";
 import { relativeTime } from "../../lib/time";
+import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
 
 export function InboxView() {
-  const { inbox, addInbox, removeInbox, convertInboxToTask } = useAppStore();
+  const { inbox, addInbox, removeInbox, convertInboxToTask, setView } = useAppStore();
 
   return (
+    <RixiaWorkspacePage title="收集箱">
     <div className="stack">
       <section className="card">
         <QuickAdd placeholder="输入一个想法或待办" onSubmit={addInbox} />
@@ -34,7 +36,7 @@ export function InboxView() {
                 <p className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>{relativeTime(item.createdAt)}</p>
               </div>
               <div className="inbox-item-actions">
-                <button className="chip" style={{ display: "inline-flex", alignItems: "center", gap: 5 }} onClick={() => convertInboxToTask(item.id)}>
+                <button className="chip" style={{ display: "inline-flex", alignItems: "center", gap: 5 }} onClick={() => { convertInboxToTask(item.id); setView("tasks"); }}>
                   转为任务 <ArrowRight size={13} />
                 </button>
                 <button className="danger" style={{ padding: "4px 10px" }} onClick={() => removeInbox(item.id)}>删除</button>
@@ -44,5 +46,6 @@ export function InboxView() {
         )}
       </section>
     </div>
+    </RixiaWorkspacePage>
   );
 }

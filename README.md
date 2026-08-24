@@ -1,210 +1,152 @@
-# RIXIA
+# BEID
 
-RIXIA is a local-first personal rhythm and productivity workbench. One quiet workspace for capturing thoughts, planning the day, maintaining habits, tracking important dates, completing focused work, and continuing to learn — without depending on a cloud account.
+BEID 是一个本地优先的个人节奏与学习工作台，融合个人效率工具（任务、习惯、笔记、日记、倒计时、番茄专注）与完整的 B 站学习体验（搜索、账号数据、DASH 播放、弹幕、学习清单、时间点笔记）。
 
-Built as a responsive React 19 + TypeScript 5 + Vite 7 web interface, packaged for Android with Capacitor 8, and embedded as the fourth top-level page of [FocuBili](https://github.com/L1Xu4n/FocuBili) on Flutter via a WebView bridge. All user data is persisted locally in the browser/WebView through Zustand persistence (v3 format), so the app works fully offline and does not require a backend.
+基于 React 19 + TypeScript 5 + Vite 7 构建，通过 Capacitor 8 打包 Android 客户端。应用不需要外部服务端、数据库或分析依赖；所有个人数据通过 Zustand 持久化在本地，B 站在线功能走当前 Web 或原生网络路径。
 
-## Design language
+## 设计语言
 
-- **Three-tier material system**: app background → nav surface → content surface. Blur is reserved for navigation, bottom bar, popovers, and modals only — content cards use solid surfaces with 1px borders and 8px radius, so every region no longer looks like a floating glass card.
-- **11 independent skins** + System auto mode: Porcelain, Graphite, Sage, Aurora, Rosewood, Mono, Ocean, Ember, Lavender, Ink, System. Each skin changes not just accent color but background, surface material, shadow, and blur.
-- **Three density levels**: comfortable / standard / compact, adjusting control height and section gap globally.
-- **Motion discipline**: 220ms ease-out for view transitions, 320ms spring for emphasis, `prefers-reduced-motion` caps all animations to 0.01ms. Tabular numerals for timers and percentages.
-- **Touch and pointer aware**: hover feedback only on `@media (hover: hover) and (pointer: fine)`. Touch targets ≥ 44px. Safe-area insets respected.
+- **三层材质体系**：应用背景 → 导航表面 → 内容表面。模糊只用于导航、底部栏、弹层和模态——内容卡片使用实心表面 + 1px 边框 + 8px 圆角。
+- **11 套独立皮肤** + 跟随系统模式。每套皮肤同时改变强调色、背景、表面材质、阴影与模糊。
+- **三档密度**：舒适 / 标准 / 紧凑，全局调整控件高度与分区间距。
+- **动效纪律**：220ms ease-out 视图切换，320ms spring 强调动效；`prefers-reduced-motion` 将所有动画压至 0.01ms。计时器与百分比使用等宽数字。
+- **触屏与指针双感知**：悬停反馈仅在 `@media (hover: hover) and (pointer: fine)` 下生效；触控目标 ≥ 44px；尊重安全区内边距。
 
-## Top-level navigation
+## 顶层导航
 
-Five destinations replace the previous 8-card wall:
+1. **首页（专注台）** — hero 吸附滚动 + 全部专注卡片 + 工作台双栏
+2. **搜索** — B 站搜索（关键词 / BV 直达 / 筛选面板）
+3. **我的** — 账号状态机 + 学习清单 / 观看记录 / 时间点笔记 / 设置入口群
 
-1. **Today** — single next-step action + horizontally scrollable status strip + two-column contextual grid (today's tasks + kaoyan units, continue-learning resources, today's habits, collapsed 7-day review, daily journal)
-2. **Plan** — segmented Tasks / Habits / Kaoyan / Countdowns
-3. **Focus** — Pomodoro countdown + countup stopwatch + ambient noise + wake-lock + configurable work/short-break/long-break cycle
-4. **Library** — segmented Continue / Saved / Notes / Inbox, with embedded iframe player
-5. **Settings** — 11 skins, density, modules, v3 backup, GPL notice
+收集箱不再占用常驻导航位——移动端经悬浮捕获按钮进入，桌面端经 `Ctrl/Cmd+K` 命令面板。
 
-Inbox no longer takes a permanent nav slot — it's reached via floating capture button (mobile) or sidebar entry + Ctrl/Cmd+K (desktop).
+## 日常工作流
 
-## Daily workflow
+- **今日行动仪表盘**：固定优先级的下一步选择器（进行中专注 > 逾期/今日任务 > 最近未完成资源 > 收集箱 > 创建任务）
+- **状态条**：任务、习惯、专注分钟、收集箱、下一个倒计时的紧凑胶囊
+- **收集箱**：零摩擦捕获 → 一键转为今日任务
+- **任务**：到期日、完成切换、内联编辑、删除
+- **每日日记**：每天一条，markdown 渲染（懒加载），`#tag` 提取，`[[wiki 链接]]`
 
-- **Today action dashboard**: fixed-priority next-step picker (active focus > overdue/today task > recent unfinished resource > inbox > create-task)
-- **Status strip**: compact pills for tasks done/total, habits, focus minutes, inbox count, next countdown
-- **Inbox**: frictionless capture → convert to today's task with one tap
-- **Tasks**: due dates, completion toggle, inline edit, delete
-- **Daily journal**: one entry per day, markdown rendered with `react-markdown` (lazy-loaded), `#tag` extraction, `[[wiki-link]]` parsing, header shows today's task/habit/focus summary
+## 个人节奏工具
 
-## Personal rhythm tools
+- **习惯**：三种频率类型（每日 / 每周 N 次 / 每 N 天一次）+ 自定义颜色 + 15 周热力图 + 30 天强度环 + 连续记录
+- **笔记**：本地短备忘，内联编辑
+- **倒计时**：追踪重要日期
+- **专注**：可配置回合循环（工作 / 短休 / 长休 / 长休间隔）、阶段自动衔接、氛围音（白噪 / 雨声 / 海浪）、完成提示音（Web Audio）、计时期间屏幕常亮、7 天分钟数图表、每日目标追踪
 
-- **Habits** with three frequency types (daily / weekly-count N / interval-days N) and per-habit color, 15-week heatmap, 30-day strength ring, current and best streaks
-- **Notes**: short local memos, inline editable
-- **Countdowns**: track dates that matter
-- **Focus**: configurable round cycle (work / short break / long break / long-break-every), auto-transition between phases, ambient noise (white / rain / waves), completion chime (Web Audio), screen wake-lock while running, 7-day minutes chart, daily goal tracker
-- **Library**: collect B站 videos by BV or URL, continue-learning list with progress bar, embedded iframe player with "open in B站" fallback
+## B 站学习集成
 
-## LearningProvider interface
+UI 直接调用内置的 B 站服务：公开搜索与元数据走 Web API 适配器；浏览器播放使用本机 DASH/MSE 管线（sidx 分段索引 seek）；Android 可选用捆绑的 Capacitor Media3 原生插件。账号数据、学习清单、观看历史、进度、弹幕偏好和时间点笔记全部由本项目持有并保存在本机。
 
-Stable abstraction for search/resolve/openPlayer/getProgress/saveTimestampNote:
+## 进阶功能
 
-- **Web provider** (default): uses official B站 embed player + external open + RIXIA-local progress + offline detection
-- **Native provider** (when `window.rixiaNativeLearning` exists, i.e. embedded in FocuBili): forwards requests via the JS channel to FocuBili's `BilibiliService` + SharedPreferences note storage, with 8s timeout and structured error unwrapping. Never forwards login cookies or Authorization headers.
-- UI depends only on the interface; the right provider is picked at runtime based on whether the native bridge is present.
+- **命令面板**（`Ctrl/Cmd + K`）：跨任务、习惯、笔记、倒计时、收集箱、科目搜索；跳转任意视图；切换主题；从搜索创建任务
+- **每周回顾**：今日页对比最近两个 7 天窗口的任务完成、习惯打卡和专注分钟
+- **数据往返**：导出/导入 v3 JSON 备份（含 `validateBackup` 校验）
+- **可安装 PWA**：打包 Service Worker，支持 Windows、Android 和桌面浏览器离线安装
+- **密度切换**：舒适 / 标准 / 紧凑全局生效
 
-## Power features
+## 考研规划器
 
-- **Command palette** (`Ctrl/Cmd + K`): search across tasks, habits, notes, countdowns, inbox, subjects; jump to any view; switch theme; create task from search
-- **Weekly review** on Today compares completed tasks, habit check-ins, and focus minutes against the previous 7 days
-- **Data round-trip**: export/import v3 JSON backup with `validateBackup` validation
-- **Installable PWA**: bundles service worker for offline install on Windows, Android, and desktop browsers
-- **Density toggle**: comfortable / standard / compact affects the whole app
+- 创建科目（自定义颜色）与学习单元（起止日期）
+- 科目与单元可重排序
+- 单个学习日期可标记完成
+- 错题、复习项（间隔重复）、模拟考成绩、单词与考试日期倒数
+- 删除科目时级联清理其单元
 
-## Kaoyan planner
-
-- Create subjects with custom color
-- Create study units with start/end dates
-- Reorder subjects and units to match preferred sequence
-- Mark individual study dates as complete
-- Removing a subject cascades to its units
-
-## Technology
+## 技术
 
 - React 19, React DOM 19
 - TypeScript 5
 - Vite 7
-- Zustand 5 (persisted, v3 with migration from v1/v2)
-- Lucide React icons
-- Capacitor 8 Android runtime
-- Vitest unit tests (119 passing)
-- `react-markdown` for journal rendering (lazy-loaded)
-- webview_flutter 4.x bridge (FocuBili side, GPL-3.0-only derived layer)
+- Zustand 5（持久化，v3 格式，支持 v1/v2 迁移）
+- Lucide React 图标
+- Capacitor 8 Android 运行时（内置 Media3 播放器插件）
+- Vitest 单元测试（88 个测试文件 / 479 个测试）
+- Electron（Windows 桌面打包）
 
-The interface intentionally has no application server, database, authentication flow, or analytics dependency. The main state model lives in `src/store/useAppStore.ts`; feature screens are organized under `src/features`; shared types are in `src/types.ts`; the LearningProvider contract is in `src/lib/learning/`.
+主状态模型位于 `src/store/useAppStore.ts`；功能页面组织在 `src/features` 下；共享的 B 站服务与播放代码位于 `src/lib/bilibili/`。
 
-## Repository layout
+## 仓库布局
 
 ```text
 src/
   components/        Shell, CommandPalette, CaptureButton, QuickAdd, Heatmap,
                     Modal, ProgressRing, Switch, HabitFrequencyEditor
   features/         today, plan, library, inbox, focus, habits, tasks, notes,
-                    countdowns, kaoyan, settings, tools, videos, journal
+                    countdowns, kaoyan, settings, tools, videos, journal,
+                    bilibili（搜索/播放器/账号/专注台/笔记等）
   lib/              time, stats, kaoyan, bilibili, migrations, today, journal,
-                    backgroundImage, chime, noise, wakeLock, id, skinTokens
-                    learning/  types, webProvider, nativeProvider, provider
+                    backgroundImage, chime, noise, wakeLock, id, skinTokens,
+                    habitSchedule, overlayStack
+                    bilibili/  API, account, DASH playback, notes, focus, cache
   store/            useAppStore + tests
-  styles/           global.css (single token-based theme system)
+  styles/           global.css + focubili-m3.css（token 化主题系统）
   test/             setup + skinTokens fixture
-android/            Capacitor Android project
-public/             App icon, manifest, PWA service worker
-scripts/            Android SDK helper, Flutter asset sync, cross-viewport
-                    verifier, FocuBili bridge static check
-docs/               Design notes, inspirations, specs, plans
-release/            Checked-in debug APK for quick install
+android/            Capacitor Android 工程
+electron/           Windows 桌面宿主
+public/             应用图标、manifest、PWA Service Worker
+scripts/            Android SDK 助手、跨视口校验器、构建脚本
+docs/               设计说明、规格、计划
 ```
 
-## Run locally
+## 本地运行
 
-Requirements: Node.js 20+, npm.
+要求：Node.js 20+, npm。
 
 ```bash
 npm install
 npm run dev
 ```
 
-Before submitting changes:
+提交改动前：
 
 ```bash
-npm test            # 119 tests
+npm test            # 479 tests
 npm run typecheck
 npm run build
 ```
 
-Cross-viewport build-integrity check:
+跨视口构建完整性检查：
 
 ```bash
 node scripts/verify-cross-viewport.mjs   # 15 assertions
 ```
 
-## Build the Android debug APK
+## 构建 Windows 桌面包
 
-The Android project targets SDK 36. Install JDK 17+ (21 recommended) and Android SDK Platform 36, Build Tools 36.x, Platform Tools.
+```bash
+npm run desktop:win     # electron-builder NSIS 安装包 + 便携版
+npm run desktop         # 本地启动桌面宿主（开发）
+```
+
+## 构建 Android debug APK
+
+Android 工程目标 SDK 36。需要 JDK 17+（推荐 21）、Android SDK Platform 36、Build Tools 36.x、Platform Tools。
 
 ```bash
 npm run mobile:sync
 cd android
-./gradlew assembleDebug      # use gradlew.bat on Windows
+./gradlew assembleDebug      # Windows 用 gradlew.bat
 ```
 
-The APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. Helper scripts:
+APK 生成于 `android/app/build/outputs/apk/debug/app-debug.apk`。辅助脚本：
 
 ```bash
-npm run mobile:doctor        # diagnose Android toolchain
-npm run mobile:apk            # build debug APK automatically
-npm run mobile:sdk:install   # install SDK into .mobile-toolchain
+npm run mobile:doctor        # 诊断 Android 工具链
+npm run mobile:apk           # 自动构建 debug APK
+npm run mobile:sdk:install   # 安装 SDK 到 .mobile-toolchain
 ```
 
-## FocuBili merged build (Flutter + WebView bridge)
+## 数据与隐私
 
-RIXIA ships inside [FocuBili](https://github.com/L1Xu4n/FocuBili) as the fourth top-level page on the `rixia-merge` branch of the FocuBili checkout (e.g. `../focubili-src`).
+BEID 将应用状态保存在本地 `rixia-v1` 持久化键下（格式版本 3）。正常使用无需账号或网络连接。清除浏览器/WebView 站点数据会删除本地保存的内容，清除前请先导出备份。
 
-The merged build embeds the RIXIA web bundle as Flutter assets and loads it via `webview_flutter`. FocuBili registers a `rixiaNativeLearning` JS channel that RIXIA calls to access B站 search, video lookup, and timestamp-note storage without exposing login cookies or Authorization headers.
+## 项目状态
 
-### Setup
+BEID 当前版本 `0.3.0`：11 套皮肤、三目的地导航、今日行动仪表盘、计划/资料库合并视图、B 站直连搜索与播放、每日日记、习惯频率类型、专注回合、v3 持久化迁移、跨视口完整性。公开播放与本地工作流均有回归测试覆盖。
 
-```bash
-npm run flutter:sync            # build RIXIA and sync to ../focubili-src/assets/rixia
-cd ../focubili-src
-flutter pub get
-flutter build apk --debug       # merged debug APK
-```
+## 许可证
 
-### Native bridge
-
-The bridge is implemented in three files in `../focubili-src/lib/features/workbench/`:
-
-- `workbench_page.dart` — WebView host, registers the channel and injects the bootstrap
-- `rixia_bridge.dart` — Dart-side `RixiaBridge` class, dispatches 6 methods (`capabilities` / `search` / `resolve` / `openPlayer` / `getProgress` / `saveTimestampNote`) to `BilibiliService` + `SharedPreferences`
-- `rixia_bridge_bootstrap.dart` — JS string injected into the WebView defining `window.rixiaNativeLearning.request()` and `__deliver()`
-
-Responses follow a strict `{ok: true, data}` / `{ok: false, error: {code, message, retryable, externalUrl?}}` envelope. The bridge never reads or forwards login cookies or Authorization headers.
-
-### License boundary
-
-RIXIA's web bundle (HTML/CSS/JS) remains independent when used outside FocuBili (PWA, browser, other hosts). The three bridge files above form the FocuBili GPL-3.0-only derived coupling layer. See `THIRD_PARTY_NOTICES.md` in the FocuBili repository for details.
-
-### Verifying the bridge without Flutter SDK
-
-A lightweight static check confirms file structure, method dispatch coverage, JS contract, test coverage, and license boundary without needing Flutter installed:
-
-```bash
-node scripts/verify-focubili-bridge.mjs   # 30+ assertions
-```
-
-For full validation including `dart analyze` and `flutter test`, run in an environment with the Flutter SDK installed:
-
-```bash
-cd ../focubili-src
-dart analyze lib/features/workbench/ test/features/workbench/
-flutter test test/features/workbench/rixia_bridge_test.dart
-```
-
-## Data and privacy
-
-RIXIA stores application state locally under the `rixia-v1` persisted store key (format version 3). No account or network connection is needed for normal use. Clearing the WebView/browser site data removes locally stored content, so export a backup before clearing.
-
-## Open-source design references
-
-The following projects provided data-model and UX inspiration during the v3 redesign. AGPL projects (Joplin / Logseq / SiYuan) were excluded; the rest were used as design references only, not code sources:
-
-- **Loop Habit Tracker** (GPL-3.0) — habit frequency types
-- **Super Productivity** (MIT) — focus round cycle and weekly review
-- **usememos/memos** (MIT) + **AFFiNE** (MIT, frontend) — daily journal, `#tag`, `[[wiki-link]]`
-- **Things 3** (commercial, design philosophy only) — progressive disclosure and zero-friction editing
-
-See `docs/inspirations.md` for the full mapping.
-
-## Project status
-
-RIXIA is at `0.3.0` with the maturity redesign (spec v2) complete: 11 skins, 5-destination nav, Today action dashboard, Plan/Library combined views, LearningProvider + Web fallback, daily journal, habit frequency types, focus rounds, v3 persistence migration, GPL-ounded FocuBili bridge, cross-viewport build integrity. 119 unit tests + 10 bridge contract tests + 12 Dart-side bridge tests.
-
-## License
-
-No open-source license has been declared yet for the RIXIA repository. Until a license is added, all rights remain with the repository owner. The FocuBili merged build (on the `rixia-merge` branch of the FocuBili checkout) is GPL-3.0-only as a derivative of FocuBili.
+仅供个人学习与研究使用，未声明开源许可证。仓库所有权归作者本人。

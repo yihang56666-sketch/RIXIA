@@ -2,6 +2,7 @@ node_modules
 dist
 .npm-cache
 .npm-cache-codex
+.npm-cache-local
 .DS_Store
 *.log
 .vite
@@ -13,7 +14,14 @@ android/app/build
 android/.gradle
 /.git-history-backup/
 
-# Agent harness / playwright scratch
+# 构建产物（发布包不入库）
+release
+
+# Agent / 浏览器调试工具缓存与截图产物
 .mimosa
 .playwright-cli
+.playwright-mcp
+.ms-playwright
+.output
 output
+.readonly-focubili

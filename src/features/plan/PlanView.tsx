@@ -4,6 +4,7 @@ import { TasksView } from "../tasks/TasksView";
 import { HabitsView } from "../habits/HabitsView";
 import { CountdownsView } from "../countdowns/CountdownsView";
 import { KaoyanView } from "../kaoyan/KaoyanView";
+import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 
 type Tab = ViewKey;
 
@@ -23,6 +24,7 @@ export function PlanView() {
   const [tab, setTab] = useState<Tab>("tasks");
 
   return (
+    <RixiaWorkspacePage title="计划">
     <div className="stack">
       <section className="card plan-segmented">
         <div className="segmented" role="tablist" aria-label="计划视图">
@@ -40,10 +42,11 @@ export function PlanView() {
         </div>
       </section>
 
-      {tab === "tasks" && <TasksView />}
-      {tab === "habits" && <HabitsView />}
-      {tab === "kaoyan" && <KaoyanView />}
-      {tab === "countdowns" && <CountdownsView />}
+      {tab === "tasks" && <TasksView embedded />}
+      {tab === "habits" && <HabitsView embedded />}
+      {tab === "kaoyan" && <KaoyanView embedded />}
+      {tab === "countdowns" && <CountdownsView embedded />}
     </div>
+    </RixiaWorkspacePage>
   );
 }

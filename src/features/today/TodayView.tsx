@@ -14,15 +14,16 @@ import {
 import { useMemo, useState } from "react";
 import { ProgressRing } from "../../components/ProgressRing";
 import { buildTodaySummary, chooseNextAction } from "../../lib/today";
-import { habitStreak, lastNDates, todayKey } from "../../lib/time";
+import { frequencyAwareStreak, frequencyAwareStrength, isHabitDueToday } from "../../lib/habitSchedule";
+import { lastNDates, todayKey } from "../../lib/time";
 import {
   focusMinutesByDay,
   habitCheckinsByDay,
-  habitStrength,
   taskCompletionsByDay,
   trendSummary,
 } from "../../lib/stats";
 import { JournalView } from "../journal/JournalView";
+import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
 
 function TrendBadge({ summary }: { summary: ReturnType<typeof trendSummary> }) {
@@ -143,9 +144,11 @@ export function TodayView() {
   }
 
   const doneHabits = habits.filter((h) => h.checkedDates.includes(today));
-  const pendingHabits = habits.filter((h) => !h.checkedDates.includes(today));
+  // 频率感知：每周 N 次未达标 / 间隔日到期才算"今日待办"
+  const pendingHabits = habits.filter((h) => isHabitDueToday(h, today));
 
   return (
+    <RixiaWorkspacePage title="今日节奏">
     <div className="stack">
       <section className="card today-action">
         <div className="today-action-icon">
@@ -273,12 +276,12 @@ export function TodayView() {
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <ProgressRing percent={habitStrength(item.checkedDates, lastNDates(30, today))} size={40} stroke={4}>
+                  <ProgressRing percent={frequencyAwareStrength(item, lastNDates(30, today))} size={40} stroke={4}>
                     <span style={{ fontSize: 10.5, fontVariantNumeric: "tabular-nums" }}>
-                      {habitStrength(item.checkedDates, lastNDates(30, today))}
+                      {frequencyAwareStrength(item, lastNDates(30, today))}
                     </span>
                   </ProgressRing>
-                  <span className="muted" style={{ fontSize: 13 }}>连续 {habitStreak(item.checkedDates)} 天</span>
+                  <span className="muted" style={{ fontSize: 13 }}>连续 {frequencyAwareStreak(item, today)} {item.frequency?.type === "weekly-count" ? "周" : "天"}</span>
                 </div>
               </div>
             ))
@@ -338,5 +341,6 @@ export function TodayView() {
 
       <JournalView />
     </div>
+    </RixiaWorkspacePage>
   );
 }

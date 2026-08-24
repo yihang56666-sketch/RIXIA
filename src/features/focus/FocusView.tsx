@@ -5,8 +5,15 @@ import { playChime } from "../../lib/chime";
 import { NOISE_OPTIONS, setAmbienceVolume, startAmbience, stopAmbience, type NoiseKind } from "../../lib/noise";
 import { focusMinutesByDay } from "../../lib/stats";
 import { formatTime, lastNDates, todayKey, weekdayLabel } from "../../lib/time";
+import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
 import { requestWakeLock } from "../../lib/wakeLock";
+import { Capacitor } from "@capacitor/core";
+import { createFocusNotificationService, nativeFocusNotification } from "../../lib/focusNotifications";
+
+const focusNotificationService = createFocusNotificationService(
+  Capacitor.getPlatform() === "android" ? nativeFocusNotification : undefined,
+);
 
 const COUNTUP_LAP_SECONDS = 30 * 60;
 
@@ -26,89 +33,201 @@ export function FocusView() {
     activeFocus,
     setActiveFocus,
   } = useAppStore();
-  const [mode, setMode] = useState<Mode>("countdown");
-  const [phase, setPhase] = useState<Phase>("focus");
-  const [seconds, setSeconds] = useState(focusMinutes * 60);
-  const [running, setRunning] = useState(false);
-  const [upSeconds, setUpSeconds] = useState(0);
-  const [upRunning, setUpRunning] = useState(false);
-  const [completedRounds, setCompletedRounds] = useState(0);
+  // 计时状态以"锚点时间戳"为唯一真源（endsAt / countupStart），
+  // 并镜像到 store 的 activeFocus —— 切换视图或重启后都能精确恢复，
+  // 后台标签页被节流也不会产生累计漂移。
+  const [mode, setMode] = useState<Mode>(() => activeFocus?.mode ?? "countdown");
+  const [phase, setPhase] = useState<Phase>(() => activeFocus?.phase ?? "focus");
+  const endsAtRef = useRef<number | null>(
+    activeFocus?.mode === "countdown" && typeof activeFocus?.endsAtMs === "number" ? activeFocus.endsAtMs : null,
+  );
+  const countupBaseRef = useRef<number>(
+    activeFocus?.mode === "countup" ? (activeFocus?.countupElapsedMs ?? 0) : 0,
+  );
+  const countupStartRef = useRef<number | null>(
+    activeFocus?.mode === "countup" && activeFocus?.running && typeof activeFocus?.countupStartedAtMs === "number"
+      ? activeFocus.countupStartedAtMs
+      : null,
+  );
+  const startedAtRef = useRef<string>(activeFocus?.startedAt ?? "");
+  const [seconds, setSeconds] = useState<number>(() => {
+    if (activeFocus?.mode !== "countdown") return focusMinutes * 60;
+    if (activeFocus.running && endsAtRef.current != null) {
+      return Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000));
+    }
+    return activeFocus.remainingSeconds ?? focusMinutes * 60;
+  });
+  const [upSeconds, setUpSeconds] = useState<number>(() => {
+    if (activeFocus?.mode !== "countup") return 0;
+    if (activeFocus.running && countupStartRef.current != null) {
+      return Math.floor((countupBaseRef.current + Date.now() - countupStartRef.current) / 1000);
+    }
+    return Math.floor(countupBaseRef.current / 1000);
+  });
+  const [active, setActive] = useState<boolean>(() => Boolean(activeFocus?.running));
+  const [completedRounds, setCompletedRounds] = useState<number>(() => activeFocus?.completedRounds ?? 0);
   const [noiseKind, setNoiseKind] = useState<NoiseKind | null>(null);
   const [noiseVolume, setNoiseVolume] = useState(0.4);
   const releaseWakeLock = useRef<(() => void) | null>(null);
+  const autoStartTimerRef = useRef<number | null>(null);
   const today = todayKey();
+
+  const running = active && mode === "countdown";
+  const upRunning = active && mode === "countup";
+  const activeRef = useRef(active);
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+  function persistSnapshot(options: {
+    mode: Mode;
+    phase: Phase;
+    active: boolean;
+    remainingSeconds: number;
+    completedRounds: number;
+  }) {
+    const startedAt = startedAtRef.current || new Date().toISOString();
+    startedAtRef.current = startedAt;
+    setActiveFocus({
+      startedAt,
+      mode: options.mode,
+      phase: options.phase,
+      running: options.active,
+      endsAtMs: options.active && options.mode === "countdown" ? endsAtRef.current : null,
+      remainingSeconds:
+        options.mode === "countdown" && !options.active ? options.remainingSeconds : undefined,
+      countupStartedAtMs:
+        options.mode === "countup" && options.active ? countupStartRef.current : null,
+      countupElapsedMs:
+        options.mode === "countup"
+          ? (countupStartRef.current != null
+              ? countupBaseRef.current + (Date.now() - countupStartRef.current)
+              : countupBaseRef.current)
+          : 0,
+      completedRounds: options.completedRounds,
+    });
+  }
+
+  function clearPersistedSnapshot() {
+    setActiveFocus(null);
+    startedAtRef.current = "";
+  }
 
   const phaseMinutes =
     phase === "focus" ? focusMinutes
     : phase === "short-break" ? focusRounds.shortBreakMinutes
     : focusRounds.longBreakMinutes;
   const phaseTotal = phaseMinutes * 60;
-  const active = running || upRunning;
   const isBreak = phase !== "focus";
 
+  // 首次挂载不执行"时长变化即重置"，否则会覆盖恢复出来的暂停进度。
+  const mountedRef = useRef(false);
   useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
     if (phase !== "focus" || mode !== "countdown") return;
+    if (activeRef.current) return; // 运行中改时长不打断当前回合（控件已禁用）
+    endsAtRef.current = null;
     setSeconds(focusMinutes * 60);
-    setRunning(false);
   }, [focusMinutes, phase, mode]);
 
+  // 倒计时：锚定 endsAt 计算，不受后台标签页节流影响
   useEffect(() => {
     if (!running) return;
-    const timer = window.setInterval(() => {
-      setSeconds((value) => (value <= 1 ? 0 : value - 1));
-    }, 1000);
+    const sync = () => {
+      if (endsAtRef.current == null) return;
+      setSeconds(Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000)));
+    };
+    sync();
+    const timer = window.setInterval(sync, 250);
     return () => window.clearInterval(timer);
   }, [running]);
 
+  // 正计时：同样锚定开始时间戳
   useEffect(() => {
     if (!upRunning) return;
-    const timer = window.setInterval(() => {
-      setUpSeconds((value) => value + 1);
-    }, 1000);
+    const sync = () => {
+      const elapsedMs = countupBaseRef.current
+        + (countupStartRef.current != null ? Date.now() - countupStartRef.current : 0);
+      setUpSeconds(Math.floor(elapsedMs / 1000));
+    };
+    sync();
+    const timer = window.setInterval(sync, 250);
     return () => window.clearInterval(timer);
   }, [upRunning]);
 
-  // 屏幕常亮：计时运行期间申请，停止时释放
+  // 屏幕常亮：计时运行期间申请，停止时释放。
+  // 浏览器在页面隐藏时会自动释放 sentinel，回到前台且仍在计时则重新申请；
+  // 申请是异步的，期间若已暂停/卸载，拿到句柄后立即释放（避免泄漏常亮）。
   useEffect(() => {
-    if (active) {
+    const acquire = () => {
       void requestWakeLock().then((release) => {
+        if (!release) return;
+        if (!activeRef.current || document.visibilityState !== "visible") {
+          release();
+          return;
+        }
+        releaseWakeLock.current?.();
         releaseWakeLock.current = release;
       });
-    } else {
-      releaseWakeLock.current?.();
-      releaseWakeLock.current = null;
-    }
+    };
+    if (activeRef.current) acquire();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        if (activeRef.current && !releaseWakeLock.current) acquire();
+      } else {
+        // 隐藏时浏览器会自动释放；这里同步清空句柄以便回前台重新申请
+        releaseWakeLock.current = null;
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
       releaseWakeLock.current?.();
       releaseWakeLock.current = null;
     };
-  }, [active]);
+  }, []);
 
   // 离开页面时停止氛围音
   useEffect(() => () => stopAmbience(), []);
 
+  // 卸载时清掉"自动开始休息"的挂起定时器：跳过休息/离开页面后不得自行启动下一回合
+  useEffect(() => () => {
+    if (autoStartTimerRef.current != null) window.clearTimeout(autoStartTimerRef.current);
+  }, []);
+
   // 回合结束：专注 → 记录并自动进入休息；短休息 N 次后进入长休息
   useEffect(() => {
-    if (seconds !== 0 || !running) return;
-    setRunning(false);
+    if (!running || seconds > 0) return;
+    endsAtRef.current = null;
+    setActive(false);
     playChime();
     if (phase === "focus") {
       addFocusSession(focusMinutes);
-      setActiveFocus(null);
+      void focusNotificationService.showFocusCompleted("专注完成", `${focusMinutes} 分钟专注已完成，休息一下吧`);
+      clearPersistedSnapshot();
       const newCompleted = completedRounds + 1;
       setCompletedRounds(newCompleted);
       const isLongBreak = newCompleted % focusRounds.longBreakEvery === 0;
       const nextPhase: Phase = isLongBreak ? "long-break" : "short-break";
-      const nextMinutes = isLongBreak ? focusRounds.longBreakMinutes : focusRounds.shortBreakMinutes;
+      const nextSeconds = (isLongBreak ? focusRounds.longBreakMinutes : focusRounds.shortBreakMinutes) * 60;
       setPhase(nextPhase);
-      setSeconds(nextMinutes * 60);
-      window.setTimeout(() => setRunning(true), 400);
+      setSeconds(nextSeconds);
+      if (nextSeconds > 0) {
+        autoStartTimerRef.current = window.setTimeout(() => {
+          autoStartTimerRef.current = null;
+          endsAtRef.current = Date.now() + nextSeconds * 1000;
+          setActive(true);
+          persistSnapshot({ mode, phase: nextPhase, active: true, remainingSeconds: nextSeconds, completedRounds: newCompleted });
+        }, 400);
+      }
     } else {
       setPhase("focus");
       setSeconds(focusMinutes * 60);
-      if (activeFocus) setActiveFocus({ ...activeFocus });
+      clearPersistedSnapshot();
     }
-  }, [seconds, running, phase, focusMinutes, addFocusSession, completedRounds, focusRounds, setActiveFocus, activeFocus]);
+  }, [seconds, running, phase, mode, focusMinutes, addFocusSession, completedRounds, focusRounds]);
 
   function toggleNoise(kind: NoiseKind) {
     if (noiseKind === kind) {
@@ -120,6 +239,11 @@ export function FocusView() {
     }
   }
 
+  function stopNoise() {
+    stopAmbience();
+    setNoiseKind(null);
+  }
+
   function changeNoiseVolume(value: number) {
     const clamped = Math.max(0, Math.min(1, value));
     setNoiseVolume(clamped);
@@ -128,19 +252,68 @@ export function FocusView() {
 
   function switchMode(next: Mode) {
     if (next === mode) return;
-    setRunning(false);
-    setUpRunning(false);
+    if (autoStartTimerRef.current != null) {
+      window.clearTimeout(autoStartTimerRef.current);
+      autoStartTimerRef.current = null;
+    }
+    endsAtRef.current = null;
+    countupStartRef.current = null;
+    countupBaseRef.current = 0;
+    setActive(false);
     setPhase("focus");
     setSeconds(focusMinutes * 60);
+    setUpSeconds(0);
     setMode(next);
+    clearPersistedSnapshot();
   }
 
+  function toggleCountdown() {
+    if (running) {
+      const remaining = endsAtRef.current != null
+        ? Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000))
+        : seconds;
+      endsAtRef.current = null;
+      setActive(false);
+      setSeconds(remaining);
+      persistSnapshot({ mode, phase, active: false, remainingSeconds: remaining, completedRounds });
+    } else {
+      endsAtRef.current = Date.now() + Math.max(1, seconds) * 1000;
+      setActive(true);
+      persistSnapshot({ mode, phase, active: true, remainingSeconds: seconds, completedRounds });
+    }
+  }
+
+  function toggleCountUp() {
+    if (upRunning) {
+      countupBaseRef.current += countupStartRef.current != null ? Date.now() - countupStartRef.current : 0;
+      countupStartRef.current = null;
+      setActive(false);
+      persistSnapshot({ mode, phase, active: false, remainingSeconds: seconds, completedRounds });
+    } else {
+      countupStartRef.current = Date.now();
+      setActive(true);
+      persistSnapshot({ mode, phase, active: true, remainingSeconds: seconds, completedRounds });
+    }
+  }
+
+  const finishingCountUpRef = useRef(false);
+
   function finishCountUp() {
-    setUpRunning(false);
-    playChime();
-    const minutes = Math.floor(upSeconds / 60);
-    if (minutes > 0) addFocusSession(minutes);
+    // 双击防抖：一次点击只记录一个回合
+    if (finishingCountUpRef.current) return;
+    finishingCountUpRef.current = true;
+    const totalMs = countupBaseRef.current
+      + (countupStartRef.current != null ? Date.now() - countupStartRef.current : 0);
+    countupStartRef.current = null;
+    countupBaseRef.current = 0;
+    setActive(false);
     setUpSeconds(0);
+    playChime();
+    const minutes = Math.floor(totalMs / 60000);
+    if (minutes > 0) addFocusSession(minutes);
+    if (minutes > 0) void focusNotificationService.showFocusCompleted("专注完成", `${minutes} 分钟专注已记录`);
+    clearPersistedSnapshot();
+    finishingCountUpRef.current = false;
   }
 
   const percent =
@@ -164,12 +337,20 @@ export function FocusView() {
   }
 
   function reset() {
-    setRunning(false);
+    // 跳过休息 / 重置：同时取消挂起的自动开始，避免下一回合自己跑起来
+    if (autoStartTimerRef.current != null) {
+      window.clearTimeout(autoStartTimerRef.current);
+      autoStartTimerRef.current = null;
+    }
+    endsAtRef.current = null;
+    setActive(false);
     setPhase("focus");
     setSeconds(focusMinutes * 60);
+    clearPersistedSnapshot();
   }
 
   return (
+    <RixiaWorkspacePage title="专注计时">
     <div className="stack">
       <section className={`card focus-face${isBreak && mode === "countdown" ? " focus-break" : ""}`}>
         <div className="segmented" style={{ width: "min(220px, 100%)", marginBottom: 4 }} role="tablist" aria-label="计时模式">
@@ -214,14 +395,15 @@ export function FocusView() {
                 key={item}
                 className={item === focusMinutes ? "chip active" : "chip"}
                 onClick={() => setFocusMinutes(item)}
+                disabled={running}
               >
                 {item} 分钟
               </button>
             ))}
             <div className="step-control">
-              <button onClick={() => adjust(-5)} aria-label="减少 5 分钟"><Minus size={15} /></button>
+              <button onClick={() => adjust(-5)} aria-label="减少 5 分钟" disabled={running}><Minus size={15} /></button>
               <span className="step-value">{focusMinutes} 分钟</span>
-              <button onClick={() => adjust(5)} aria-label="增加 5 分钟"><Plus size={15} /></button>
+              <button onClick={() => adjust(5)} aria-label="增加 5 分钟" disabled={running}><Plus size={15} /></button>
             </div>
           </div>
         )}
@@ -232,7 +414,7 @@ export function FocusView() {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
           {mode === "countup" ? (
             <>
-              <button className="primary compact" style={{ minWidth: 110 }} onClick={() => setUpRunning(!upRunning)}>
+              <button className="primary compact" style={{ minWidth: 110 }} onClick={toggleCountUp}>
                 {upRunning ? "暂停" : upSeconds === 0 ? "开始计时" : "继续"}
               </button>
               <button className="ghost-btn" onClick={finishCountUp} disabled={upSeconds === 0} title="结束并计入专注记录（满 1 分钟）">
@@ -241,7 +423,7 @@ export function FocusView() {
             </>
           ) : isBreak ? (
             <>
-              <button className="ghost-btn" onClick={() => setRunning(!running)}>
+              <button className="ghost-btn" onClick={toggleCountdown}>
                 {running ? "暂停休息" : "继续休息"}
               </button>
               <button className="primary compact" onClick={reset}>
@@ -250,7 +432,7 @@ export function FocusView() {
             </>
           ) : (
             <>
-              <button className="primary compact" style={{ minWidth: 120 }} onClick={() => setRunning(!running)}>
+              <button className="primary compact" style={{ minWidth: 120 }} onClick={toggleCountdown}>
                 {running ? "暂停" : seconds === phaseTotal ? "开始专注" : "继续"}
               </button>
               <button className="ghost-btn" onClick={reset} aria-label="重置计时">
@@ -270,7 +452,7 @@ export function FocusView() {
           <Volume2 size={17} color="var(--text-3)" />
         </div>
         <div className="noise-row">
-          <button className="chip" onClick={() => toggleNoise("white")} style={{ order: 1 }}>
+          <button className="chip" onClick={stopNoise} style={{ order: 1 }}>
             停止
           </button>
           {NOISE_OPTIONS.map((option) => (
@@ -333,9 +515,9 @@ export function FocusView() {
           <label className="field-row">
             <span>专注时长</span>
             <div className="step-control compact">
-              <button onClick={() => setFocusMinutes(focusMinutes - 5)} aria-label="减少"><Minus size={13} /></button>
+              <button onClick={() => adjust(-5)} aria-label="减少" disabled={running}><Minus size={13} /></button>
               <span className="step-value">{focusMinutes} 分</span>
-              <button onClick={() => setFocusMinutes(focusMinutes + 5)} aria-label="增加"><Plus size={13} /></button>
+              <button onClick={() => adjust(5)} aria-label="增加" disabled={running}><Plus size={13} /></button>
             </div>
           </label>
           <label className="field-row">
@@ -388,5 +570,6 @@ export function FocusView() {
         </div>
       </section>
     </div>
+    </RixiaWorkspacePage>
   );
 }

@@ -4,8 +4,9 @@ import { HabitFrequencyEditor } from "../../components/HabitFrequencyEditor";
 import { Heatmap } from "../../components/Heatmap";
 import { ProgressRing } from "../../components/ProgressRing";
 import { QuickAdd } from "../../components/QuickAdd";
-import { bestStreak, habitStreak, lastNDates, todayKey } from "../../lib/time";
-import { habitStrength } from "../../lib/stats";
+import { bestStreak, lastNDates, todayKey } from "../../lib/time";
+import { frequencyAwareStreak, frequencyAwareStrength, isHabitDueToday } from "../../lib/habitSchedule";
+import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
 import type { HabitFrequency, HabitItem } from "../../types";
 
@@ -16,14 +17,18 @@ function frequencyLabel(frequency: HabitFrequency | undefined): string {
   return `每 ${frequency.interval} 天 1 次`;
 }
 
+function streakUnit(frequency: HabitFrequency | undefined): string {
+  return frequency?.type === "weekly-count" ? "周" : "天";
+}
+
 function HabitCard({ habit, today }: { habit: HabitItem; today: string }) {
   const { toggleHabitToday, removeHabit } = useAppStore();
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const checked = habit.checkedDates.includes(today);
-  const streak = habitStreak(habit.checkedDates, today);
+  const streak = frequencyAwareStreak(habit, today);
   const best = bestStreak(habit.checkedDates);
-  const strength = habitStrength(habit.checkedDates, lastNDates(30, today));
+  const strength = frequencyAwareStrength(habit, lastNDates(30, today));
   const weekDates = lastNDates(7, today);
   const accent = habit.color ?? "var(--accent)";
 
@@ -58,7 +63,7 @@ function HabitCard({ habit, today }: { habit: HabitItem; today: string }) {
             style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
             title={`最长连续 ${best} 天`}
           >
-            <Flame size={13} /> {streak} 天
+            <Flame size={13} /> {streak} {streakUnit(habit.frequency)}
           </span>
           <button className="icon-button" onClick={() => setEditing(true)} aria-label="编辑频率" title="编辑频率">
             <Pencil size={14} />
@@ -90,12 +95,16 @@ function HabitCard({ habit, today }: { habit: HabitItem; today: string }) {
   );
 }
 
-export function HabitsView() {
+export function HabitsView({ embedded = false }: { embedded?: boolean } = {}) {
   const { habits, addHabit, toggleHabitToday } = useAppStore();
   const today = todayKey();
+  const dueHabits = habits.filter((item) => isHabitDueToday(item, today));
   const checkedCount = habits.filter((item) => item.checkedDates.includes(today)).length;
+  // 今日待打卡：频率感知（每周 N 次未达标 / 间隔日到期才提醒）
+  const pendingDueCount = dueHabits.length;
 
   return (
+    <RixiaWorkspacePage title="习惯打卡" embedded={embedded}>
     <div className="stack">
       <section className="card">
         <QuickAdd placeholder="添加一个每天想坚持的习惯" onSubmit={addHabit} />
@@ -106,13 +115,19 @@ export function HabitsView() {
           <div>
             <h2>今日打卡</h2>
             <p className="muted" style={{ fontSize: 13, marginTop: 3 }}>
-              {habits.length ? `今天已完成 ${checkedCount} / ${habits.length} 个习惯` : "从一个小习惯开始"}
+              {habits.length
+                ? pendingDueCount > 0
+                  ? `今天还有 ${pendingDueCount} 个习惯待打卡 · 已完成 ${checkedCount} / ${habits.length}`
+                  : `今天的打卡已完成 (${checkedCount} / ${habits.length})`
+                : "从一个小习惯开始"}
             </p>
           </div>
-          {habits.length > 0 && (
+          {pendingDueCount > 0 && (
             <button
               className="ghost-btn"
-              onClick={() => habits.filter((item) => !item.checkedDates.includes(today)).forEach((item) => toggleHabitToday(item.id))}
+              onClick={() => dueHabits.forEach((item) => {
+                if (!item.checkedDates.includes(today)) toggleHabitToday(item.id);
+              })}
             >
               全部打卡
             </button>
@@ -125,5 +140,6 @@ export function HabitsView() {
         )}
       </section>
     </div>
+    </RixiaWorkspacePage>
   );
 }

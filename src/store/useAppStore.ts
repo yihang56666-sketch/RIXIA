@@ -1,9 +1,10 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { extractBvid } from "../lib/bilibili";
 import { migratePersistedState, validateBackup } from "../lib/migrations";
 import { createId } from "../lib/id";
 import { todayKey } from "../lib/time";
+import { nextReviewDue, nextReviewStage } from "../lib/kaoyan";
 import type {
   ActiveFocus,
   AppState,
@@ -17,14 +18,18 @@ import type {
   HabitItem,
   InboxItem,
   JournalEntry,
+  KaoyanWord,
+  MockExam,
   NoteItem,
   ResourceStatus,
+  ReviewItem,
   StudySubject,
   StudyUnit,
   TaskItem,
   TimestampNote,
   ToolKey,
   ViewKey,
+  WrongQuestion,
 } from "../types";
 
 interface AppActions {
@@ -59,6 +64,16 @@ interface AppActions {
   removeStudyUnit: (id: string) => void;
   moveStudyUnit: (id: string, direction: -1 | 1) => void;
   toggleStudyDate: (id: string, date: string) => void;
+  addWrongQuestion: (input: { title: string; subjectId?: string; note?: string; tags: string[] }) => void;
+  removeWrongQuestion: (id: string) => void;
+  addReviewItem: (title: string, subjectId?: string) => void;
+  removeReviewItem: (id: string) => void;
+  reviewReviewItem: (id: string, remembered: boolean) => void;
+  addMockExam: (input: { date: string; subject: string; paperName: string; score: number; total: number }) => void;
+  removeMockExam: (id: string) => void;
+  addWord: (word: string, meaning: string) => void;
+  removeWord: (id: string) => void;
+  setKaoyanExamDate: (date: string | null) => void;
   setFocusMinutes: (minutes: number) => void;
   setFocusRounds: (rounds: FocusRounds) => void;
   addFocusSession: (minutes: number, resourceId?: string) => void;
@@ -68,6 +83,10 @@ interface AppActions {
   openBilibiliVideoAt: (bvid: string, title: string | undefined, cid: number, seconds: number) => void;
   openBilibiliCreator: (creator: AppState["activeBilibiliCreator"] extends infer T ? Exclude<T, null> : never) => void;
   openBilibiliCollection: (collection: AppState["activeBilibiliCollection"] extends infer T ? Exclude<T, null> : never) => void;
+  openBilibiliFavoriteFolder: (folder: AppState["activeBilibiliFavoriteFolder"] extends infer T ? Exclude<T, null> : never) => void;
+  openLogin: (autoOfficial?: boolean) => void;
+  openBilibiliSearch: (query: string) => void;
+  consumePendingBilibiliSearch: () => void;
   removeResource: (id: string) => void;
   updateResourceProgress: (id: string, seconds: number, durationSeconds?: number) => void;
   setResourceStatus: (id: string, status: ResourceStatus) => void;
@@ -84,6 +103,31 @@ interface AppActions {
 
 const defaultTools: ToolKey[] = ["tasks", "habits", "notes", "countdowns", "focus", "videos"];
 
+/** 配额超限等写入异常不应炸掉调用方（否则每个 store action 都会抛错）。 */
+const safeStorage: StateStorage = {
+  getItem: (name) => {
+    try {
+      return localStorage.getItem(name);
+    } catch {
+      return null;
+    }
+  },
+  setItem: (name, value) => {
+    try {
+      localStorage.setItem(name, value);
+    } catch {
+      // QuotaExceededError 等：保留内存态，等待下次成功写入。
+    }
+  },
+  removeItem: (name) => {
+    try {
+      localStorage.removeItem(name);
+    } catch {
+      // ignore
+    }
+  },
+};
+
 const initialState: Omit<
   AppState,
   | keyof AppActions
@@ -94,6 +138,9 @@ const initialState: Omit<
   view: "focus-dashboard",
   activeBilibiliCreator: null,
   activeBilibiliCollection: null,
+  activeBilibiliFavoriteFolder: null,
+  loginAutoOfficial: false,
+  pendingBilibiliSearch: null,
   enabledTools: defaultTools,
   inbox: [],
   tasks: [],
@@ -102,6 +149,11 @@ const initialState: Omit<
   countdowns: [],
   subjects: [],
   studyUnits: [],
+  wrongQuestions: [],
+  reviewItems: [],
+  mockExams: [],
+  kaoyanWords: [],
+  kaoyanExamDate: null,
   focusMinutes: 25,
   focusSessions: [],
   focusGoalMinutes: 120,
@@ -139,8 +191,10 @@ export const useAppStore = create<AppState & AppActions>()(
       convertInboxToTask: (id) => {
         const item = get().inbox.find((entry) => entry.id === id);
         if (!item) return;
-        get().addTask(item.text, todayKey());
+        // 先移除收集项再建任务：双击/重复触发时第二次找不到条目直接返回，
+        // 不会创建两条相同任务。
         get().removeInbox(id);
+        get().addTask(item.text, todayKey());
       },
       addTask: (title, due = todayKey()) => {
         const value = title.trim();
@@ -249,6 +303,12 @@ export const useAppStore = create<AppState & AppActions>()(
       removeSubject: (id) => set((state) => ({
         subjects: state.subjects.filter((item) => item.id !== id),
         studyUnits: state.studyUnits.filter((item) => item.subjectId !== id),
+        wrongQuestions: state.wrongQuestions.map((item) =>
+          item.subjectId === id ? { ...item, subjectId: undefined } : item,
+        ),
+        reviewItems: state.reviewItems.map((item) =>
+          item.subjectId === id ? { ...item, subjectId: undefined } : item,
+        ),
       })),
       moveSubject: (id, direction) => set((state) => {
         const index = state.subjects.findIndex((item) => item.id === id);
@@ -296,6 +356,123 @@ export const useAppStore = create<AppState & AppActions>()(
           return { ...item, completedDates };
         }),
       })),
+      addWrongQuestion: ({ title, subjectId, note, tags }) => {
+        const trimmed = title.trim();
+        if (!trimmed) return;
+        const today = todayKey();
+        const question: WrongQuestion = {
+          id: createId(),
+          subjectId,
+          title: trimmed,
+          note: note?.trim() || undefined,
+          tags,
+          wrongCount: 1,
+          createdAt: new Date().toISOString(),
+        };
+        const review: ReviewItem = {
+          id: createId(),
+          sourceType: "wrong-question",
+          sourceId: question.id,
+          subjectId,
+          title: trimmed,
+          dueDate: nextReviewDue(today, 0),
+          stage: 0,
+          history: [],
+          createdAt: new Date().toISOString(),
+        };
+        set((state) => ({
+          wrongQuestions: [question, ...state.wrongQuestions],
+          reviewItems: [review, ...state.reviewItems],
+        }));
+      },
+      removeWrongQuestion: (id) => set((state) => ({
+        wrongQuestions: state.wrongQuestions.filter((item) => item.id !== id),
+        reviewItems: state.reviewItems.filter((item) => item.sourceId !== id),
+      })),
+      addReviewItem: (title, subjectId) => {
+        const trimmed = title.trim();
+        if (!trimmed) return;
+        const duplicate = get().reviewItems.some((item) =>
+          item.sourceType === "custom"
+          && item.title === trimmed
+          && (item.subjectId ?? "") === (subjectId ?? "")
+          && item.history.length === 0
+        );
+        if (duplicate) return;
+        const review: ReviewItem = {
+          id: createId(),
+          sourceType: "custom",
+          subjectId,
+          title: trimmed,
+          dueDate: nextReviewDue(todayKey(), 0),
+          stage: 0,
+          history: [],
+          createdAt: new Date().toISOString(),
+        };
+        set((state) => ({ reviewItems: [review, ...state.reviewItems] }));
+      },
+      removeReviewItem: (id) => set((state) => ({
+        reviewItems: state.reviewItems.filter((item) => item.id !== id),
+      })),
+      reviewReviewItem: (id, remembered) => set((state) => ({
+        reviewItems: state.reviewItems.map((item) => {
+          if (item.id !== id) return item;
+          const today = todayKey();
+          const stage = nextReviewStage(item.stage, remembered);
+          return {
+            ...item,
+            stage,
+            dueDate: nextReviewDue(today, stage),
+            history: [...item.history, { date: today, remembered }],
+          };
+        }),
+      })),
+      addMockExam: ({ date, subject, paperName, score, total }) => {
+        const trimmedSubject = subject.trim();
+        if (!date || !trimmedSubject || !Number.isFinite(score) || !Number.isFinite(total) || total <= 0) return;
+        const exam: MockExam = {
+          id: createId(),
+          date,
+          subject: trimmedSubject,
+          paperName: paperName.trim() || "未命名试卷",
+          score: Math.max(0, Math.min(Math.round(score), Math.round(total))),
+          total: Math.round(total),
+          createdAt: new Date().toISOString(),
+        };
+        set((state) => ({ mockExams: [...state.mockExams, exam] }));
+      },
+      removeMockExam: (id) => set((state) => ({
+        mockExams: state.mockExams.filter((item) => item.id !== id),
+      })),
+      addWord: (word, meaning) => {
+        const trimmed = word.trim();
+        if (!trimmed) return;
+        const entry: KaoyanWord = {
+          id: createId(),
+          word: trimmed,
+          meaning: meaning.trim() || "释义待补充",
+          createdAt: new Date().toISOString(),
+        };
+        const review: ReviewItem = {
+          id: createId(),
+          sourceType: "word",
+          sourceId: entry.id,
+          title: trimmed,
+          dueDate: nextReviewDue(todayKey(), 0),
+          stage: 0,
+          history: [],
+          createdAt: new Date().toISOString(),
+        };
+        set((state) => ({
+          kaoyanWords: [entry, ...state.kaoyanWords],
+          reviewItems: [review, ...state.reviewItems],
+        }));
+      },
+      removeWord: (id) => set((state) => ({
+        kaoyanWords: state.kaoyanWords.filter((item) => item.id !== id),
+        reviewItems: state.reviewItems.filter((item) => item.sourceId !== id),
+      })),
+      setKaoyanExamDate: (date) => set({ kaoyanExamDate: date }),
       setFocusMinutes: (minutes) => set({ focusMinutes: Math.max(1, Math.min(120, minutes)) }),
       addFocusSession: (minutes, resourceId) => {
         if (minutes <= 0) return;
@@ -351,6 +528,13 @@ export const useAppStore = create<AppState & AppActions>()(
       },
       openBilibiliCreator: (creator) => set({ activeBilibiliCreator: creator, view: "creator-profile" }),
       openBilibiliCollection: (collection) => set({ activeBilibiliCollection: collection, view: "collection-detail" }),
+      openBilibiliFavoriteFolder: (folder) => set({ activeBilibiliFavoriteFolder: folder, view: "favorite-videos" }),
+      openLogin: (autoOfficial = false) => set({ view: "login", loginAutoOfficial: autoOfficial }),
+      openBilibiliSearch: (query) => {
+        const value = query.trim();
+        set({ pendingBilibiliSearch: value || null, view: "search" });
+      },
+      consumePendingBilibiliSearch: () => set({ pendingBilibiliSearch: null }),
       removeResource: (id) => set((state) => ({
         resources: state.resources.filter((item) => item.id !== id),
         timestampNotes: state.timestampNotes.filter((item) => item.resourceId !== id),
@@ -428,9 +612,16 @@ export const useAppStore = create<AppState & AppActions>()(
           countdowns: data.countdowns,
           subjects: data.subjects,
           studyUnits: data.studyUnits,
+          wrongQuestions: data.wrongQuestions,
+          reviewItems: data.reviewItems,
+          mockExams: data.mockExams,
+          kaoyanWords: data.kaoyanWords,
+          kaoyanExamDate: data.kaoyanExamDate,
           focusSessions: data.focusSessions,
+          focusMinutes: data.focusMinutes,
           focusGoalMinutes: data.focusGoalMinutes,
           focusRounds: data.focusRounds,
+          backgroundImage: data.backgroundImage ?? null,
           resources: data.resources,
           timestampNotes: data.timestampNotes,
           journals: data.journals,
@@ -450,9 +641,16 @@ export const useAppStore = create<AppState & AppActions>()(
           countdowns: state.countdowns,
           subjects: state.subjects,
           studyUnits: state.studyUnits,
+          wrongQuestions: state.wrongQuestions,
+          reviewItems: state.reviewItems,
+          mockExams: state.mockExams,
+          kaoyanWords: state.kaoyanWords,
+          kaoyanExamDate: state.kaoyanExamDate,
           focusSessions: state.focusSessions,
+          focusMinutes: state.focusMinutes,
           focusGoalMinutes: state.focusGoalMinutes,
           focusRounds: state.focusRounds,
+          backgroundImage: state.backgroundImage,
           resources: state.resources,
           timestampNotes: state.timestampNotes,
           journals: state.journals,
@@ -463,7 +661,18 @@ export const useAppStore = create<AppState & AppActions>()(
     {
       name: "rixia-v1",
       version: 3,
+      storage: createJSONStorage(() => safeStorage),
       migrate: (persisted, version) => migratePersistedState(persisted, version) as unknown as AppState & AppActions,
     },
   ),
 );
+
+// 多标签页同步：其他标签页写入持久化状态时，本标签页重新水合，
+// 避免"整份快照互相覆盖"造成的静默数据丢失。
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key === "rixia-v1" || event.key === null) {
+      void useAppStore.persist.rehydrate();
+    }
+  });
+}

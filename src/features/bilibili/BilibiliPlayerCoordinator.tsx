@@ -6,7 +6,7 @@
 // playback resume plan, enhancement controller, chapter widgets,
 // interactive video overlay, playback completion overlay, danmaku rendering)
 // is implemented in BilibiliPlayerView.tsx which already uses:
-// - BilibiliIframeBridge (postMessage sync)
+// - DashPlayer / Android Media3 adapter (playback sync)
 // - GestureCoordinator (double-tap seek, swipe volume)
 // - DanmakuRenderer (canvas danmaku)
 // - VideoNoteComposer (notes workspace)

@@ -30,6 +30,8 @@
  */
 
 import type { JsonRequest } from "./types";
+import { createJsonRequest } from "./httpAdapter";
+import { signBiliWbiUrl } from "./wbiSign";
 
 export interface DashStream {
   video: DashTrack[];
@@ -64,9 +66,6 @@ export interface PlayurlService {
 const API_HOST = "api.bilibili.com";
 const PLAYURL_PATH = "/x/player/playurl";
 
-const DESKTOP_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
-
 export function createPlayurlService(
   requestJson: JsonRequest = defaultRequestJson,
 ): PlayurlService {
@@ -82,26 +81,22 @@ export function createPlayurlService(
         fnver: "0",
         fourk: "1",
       });
-      const url = `https://${API_HOST}${PLAYURL_PATH}?${params.toString()}`;
-      const text = await requestJson(url);
+      const query = Object.fromEntries(params.entries());
+      let text: string;
+      try {
+        const signed = await signBiliWbiUrl(API_HOST, "/x/player/wbi/playurl", query, requestJson);
+        text = await requestJson(signed);
+      } catch (error) {
+        if (error instanceof Error && /HTTP 412/.test(error.message)) throw error;
+        text = await requestJson(`https://${API_HOST}${PLAYURL_PATH}?${params.toString()}`);
+      }
       return parsePlayUrl(text);
     },
   };
 }
 
 async function defaultRequestJson(url: string): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": DESKTOP_USER_AGENT,
-      Referer: "https://www.bilibili.com/",
-      Accept: "application/json",
-    },
-    credentials: "omit",
-  });
-  if (!response.ok) {
-    throw new Error(`playurl 接口请求失败：HTTP ${response.status}`);
-  }
-  return response.text();
+  return createJsonRequest()(url);
 }
 
 export function parsePlayUrl(text: string): PlayUrlResult {
@@ -137,10 +132,14 @@ export function parsePlayUrl(text: string): PlayUrlResult {
     const dash = dashRaw as Record<string, unknown>;
     const videos = Array.isArray(dash.video) ? (dash.video as unknown[]) : [];
     const audios = Array.isArray(dash.audio) ? (dash.audio as unknown[]) : [];
+    // 注意：DASH 的 duration 字段单位是秒，timelength 才是毫秒。
+    const dashDurationSeconds = Number(dash.duration);
     result.dash = {
       video: videos.map(parseDashTrack).filter((t): t is DashTrack => t != null),
       audio: audios.map(parseDashTrack).filter((t): t is DashTrack => t != null),
-      durationMs: readInteger(dash.duration) || result.timelengthMs,
+      durationMs: (Number.isFinite(dashDurationSeconds) && dashDurationSeconds > 0
+        ? Math.round(dashDurationSeconds * 1000)
+        : 0) || result.timelengthMs,
       quality: readInteger(dash.video instanceof Array && dash.video[0] ? (dash.video[0] as Record<string, unknown>).id : 0),
       acceptQuality: result.acceptQuality,
     };

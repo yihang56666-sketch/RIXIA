@@ -16,6 +16,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { THEMES, VIEW_TITLES } from "../catalog";
 import { dueLabel, todayKey } from "../lib/time";
+import { useOverlayInteraction } from "../lib/overlayStack";
 import { useAppStore } from "../store/useAppStore";
 import type { ViewKey } from "../types";
 
@@ -44,6 +45,9 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const activeItemRef = useRef<HTMLButtonElement | null>(null);
+
+  useOverlayInteraction(open, onClose);
 
   useEffect(() => {
     if (open) {
@@ -105,7 +109,6 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         label: task.title,
         hint: `任务 · ${due.text}${task.done ? " · 已完成" : ""}`,
         run: () => {
-          if (!task.done) store.toggleTask(task.id);
           store.setView("tasks");
         },
       });
@@ -179,6 +182,11 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     setActiveIndex(0);
   }, [query]);
 
+  // 键盘高亮项始终滚动进可视区域。
+  useEffect(() => {
+    activeItemRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [activeIndex, items.length]);
+
   if (!open) return null;
 
   function runItem(item: PaletteItem) {
@@ -186,6 +194,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     onClose();
   }
 
+  // 挂在整个浮层上（事件冒泡），焦点移出输入框后方向键 / 回车仍然可用；
+  // Escape 由全局浮层栈统一派发给栈顶浮层处理。
   function handleKeyDown(event: React.KeyboardEvent) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -197,13 +207,11 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       event.preventDefault();
       const item = items[activeIndex];
       if (item) runItem(item);
-    } else if (event.key === "Escape") {
-      onClose();
     }
   }
 
   return (
-    <div className="palette-overlay" onClick={onClose} role="presentation">
+    <div className="palette-overlay" onClick={onClose} role="presentation" onKeyDown={handleKeyDown}>
       <section
         className="card palette-card"
         role="dialog"
@@ -219,7 +227,6 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             value={query}
             placeholder="搜索任务、习惯、笔记… 或直接创建"
             onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={handleKeyDown}
           />
           <kbd className="palette-kbd">Esc</kbd>
         </div>
@@ -230,6 +237,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             {items.map((item, index) => (
               <li key={item.key}>
                 <button
+                  ref={index === activeIndex ? activeItemRef : undefined}
                   role="option"
                   aria-selected={index === activeIndex}
                   className={index === activeIndex ? "palette-item active" : "palette-item"}
@@ -247,7 +255,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         <p className="palette-foot">
           <span><kbd className="palette-kbd">↑</kbd><kbd className="palette-kbd">↓</kbd> 选择</span>
           <span><kbd className="palette-kbd">Enter</kbd> 执行</span>
-          <span className="muted">RIXIA 命令面板</span>
+          <span className="muted">BEID 命令面板</span>
         </p>
       </section>
     </div>

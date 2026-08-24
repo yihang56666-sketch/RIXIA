@@ -1,13 +1,15 @@
 import { TOOLS, TOOL_ICONS } from "../../catalog";
+import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
 
 export function ToolsView() {
   const { enabledTools, setView } = useAppStore();
 
   return (
+    <RixiaWorkspacePage title="工具">
     <div className="stack">
       <section className="card">
-        <p className="muted">按需使用工具，保持工作台简洁。可在设置中调整首页显示的模块。</p>
+        <p className="muted">按需使用工具，保持工作台简洁。可在「外观、密度与备份」里选择要显示的工具。</p>
       </section>
       <div className="grid">
         {TOOLS.filter((tool) => enabledTools.includes(tool.key)).map((tool) => {
@@ -29,5 +31,6 @@ export function ToolsView() {
         })}
       </div>
     </div>
+    </RixiaWorkspacePage>
   );
 }

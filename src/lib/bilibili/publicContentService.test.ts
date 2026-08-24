@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { CreatorVideoOrder } from "./extendedModels";
 import {
   createBilibiliPublicContentService,
   extractBvid,
 } from "./publicContentService";
+import { clearWbiKeyCache } from "./wbiSign";
 import { BilibiliLookupError, VideoDurationRange, VideoPublishedRange, VideoSearchOrder } from "./types";
 
 const SAMPLE_VIDEO_INFO = JSON.stringify({
@@ -65,7 +67,8 @@ const SAMPLE_VIDEO_SEARCH = JSON.stringify({
         play: 12345,
         video_review: 678,
         pubdate: 1700000000,
-        tag: "12 集",
+        tag: "线性代数,考研",
+        episode_count_text: "共 12 集",
       },
     ],
   },
@@ -100,6 +103,46 @@ const SAMPLE_SUGGEST = JSON.stringify({
       { name: "考研英语" },
     ],
   },
+});
+
+const SAMPLE_CREATOR_CARD = JSON.stringify({
+  code: 0,
+  data: {
+    card: { mid: 999, name: "考研老师", face: "//i0.hdslb.com/bfs/face/def.jpg", sign: "教数学的", Official: { desc: "教育认证" } },
+    follower: 100000,
+    archive_count: 200,
+    article_count: 3,
+    like_num: 500000,
+  },
+});
+
+const SAMPLE_CREATOR_VIDEOS = JSON.stringify({
+  code: 0,
+  data: {
+    list: { vlist: [{ bvid: "BV1GJ411x7h7", title: "高数强化", pic: "//i0.hdslb.com/bfs/archive/abc.jpg", length: "10:00", author: "考研老师", play: 12345, video_review: 678, created: 1700000000, aid: 12345 }] },
+    page: { count: 1 },
+  },
+});
+
+const SAMPLE_COLLECTION_VIDEOS = JSON.stringify({
+  code: 0,
+  data: {
+    archives: [{ bvid: "BV1GJ411x7h7", title: "高数强化", cover: "//i0.hdslb.com/bfs/archive/abc.jpg", duration: 600, stat: { view: 12345 }, pubdate: 1700000000 }],
+    meta: { total: 1 },
+  },
+});
+
+const SAMPLE_CREATOR_COLLECTIONS = JSON.stringify({
+  code: 0,
+  data: {
+    items_lists: { seasons_list: [{ season_id: 123, title: "线性代数", cover: "//i0.hdslb.com/bfs/archive/abc.jpg", description: "系统课程", total: 2, stat: { view: 8 }, archives: [] }] },
+    has_more: false,
+  },
+});
+
+const SAMPLE_WBI_NAV = JSON.stringify({
+  code: 0,
+  data: { wbi_img: { img_url: "https://i0.hdslb.com/bfs/wbi/abcdefghijklmnopqrstuvwxyz0123456789abcdef.png", sub_url: "https://i0.hdslb.com/bfs/wbi/qrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRST.png" } },
 });
 
 describe("extractBvid", () => {
@@ -148,6 +191,51 @@ describe("BilibiliPublicContentService", () => {
     expect(v.thumbnailUrl).toContain("@320w_200h_1c.webp");
   });
 
+  it("starts the optional tag request while video metadata is still loading", async () => {
+    let releaseVideoInfo!: (value: string) => void;
+    let tagRequestStarted = false;
+    const service = createBilibiliPublicContentService((url) => {
+      if (url.includes("/x/web-interface/nav")) {
+        return Promise.resolve(SAMPLE_WBI_NAV);
+      }
+      if (url.includes("/x/web-interface/wbi/view") || url.includes("/x/web-interface/view")) {
+        return new Promise<string>((resolve) => {
+          releaseVideoInfo = resolve;
+        });
+      }
+      if (url.includes("/x/tag/archive/tags")) {
+        tagRequestStarted = true;
+        return Promise.resolve(SAMPLE_VIDEO_TAGS);
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const lookup = service.lookupVideo("BV1GJ411x7h7");
+    await Promise.resolve();
+    expect(tagRequestStarted).toBe(true);
+    for (let i = 0; i < 10 && typeof releaseVideoInfo !== "function"; i += 1) {
+      await Promise.resolve();
+    }
+
+    releaseVideoInfo(SAMPLE_VIDEO_INFO);
+    await expect(lookup).resolves.toMatchObject({ tags: ["考研", "数学", "高等数学"] });
+  });
+
+  it("lookupVideo prefers the WBI view endpoint when keys are available", async () => {
+    clearWbiKeyCache();
+    const requested: string[] = [];
+    const service = createBilibiliPublicContentService(async (url) => {
+      requested.push(url);
+      if (url.includes("/x/web-interface/nav")) return SAMPLE_WBI_NAV;
+      if (url.includes("/x/web-interface/wbi/view")) return SAMPLE_VIDEO_INFO;
+      if (url.includes("/x/tag/archive/tags")) return SAMPLE_VIDEO_TAGS;
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    const video = await service.lookupVideo("BV1GJ411x7h7");
+    expect(video.bvid).toBe("BV1GJ411x7h7");
+    expect(requested.some((url) => url.includes("/x/web-interface/wbi/view") && url.includes("w_rid="))).toBe(true);
+  });
+
   it("lookupVideo rejects malformed BV", async () => {
     const service = makeService({});
     await expect(service.lookupVideo("not a bv")).rejects.toBeInstanceOf(BilibiliLookupError);
@@ -175,7 +263,7 @@ describe("BilibiliPublicContentService", () => {
     expect(page.results[0]!.ownerName).toBe("考研老师");
     expect(page.results[0]!.durationSeconds).toBe(600);
     expect(page.results[0]!.playCount).toBe(12345);
-    expect(page.results[0]!.episodeCountText).toBe("12 集");
+    expect(page.results[0]!.episodeCountText).toBe("共 12 集");
     expect(page.totalPages).toBe(3);
   });  it("searchVideos rejects empty keyword", async () => {
     const service = makeService({});
@@ -200,8 +288,144 @@ describe("BilibiliPublicContentService", () => {
     expect(suggestions).toEqual(["考研数学", "考研英语"]);
   });
 
+  it("suggestKeywords parses the current nested result tags returned by Bilibili", async () => {
+    const service = makeService({
+      "/main/suggest": JSON.stringify({
+        code: 0,
+        result: { tag: [{ value: "高等数学" }, { value: "线性代数" }] },
+      }),
+    });
+
+    expect(await service.suggestKeywords("高数")).toEqual(["高等数学", "线性代数"]);
+  });
+
   it("suggestKeywords returns empty for blank input", async () => {
     const service = makeService({});
     expect(await service.suggestKeywords("  ")).toEqual([]);
+  });
+
+  it("loads a creator profile and paged uploads", async () => {
+    const service = makeService({
+      "/x/web-interface/card": SAMPLE_CREATOR_CARD,
+      "/x/space/arc/search": SAMPLE_CREATOR_VIDEOS,
+    });
+    const profile = await service.loadCreatorProfile(999);
+    const videos = await service.listCreatorVideos(999, 1);
+    expect(profile.name).toBe("考研老师");
+    expect(profile.followerCount).toBe(100000);
+    expect(videos.items[0]!.bvid).toBe("BV1GJ411x7h7");
+    expect(videos.items[0]!.durationSeconds).toBe(600);
+    expect(videos.items[0]!.stats.viewCount).toBe(12345);
+    expect(videos.items[0]!.stats.danmakuCount).toBe(678);
+    expect(videos.hasMore).toBe(false);
+  });
+
+  it("sends the creator video keyword and selected sort order to the public endpoint", async () => {
+    let requestedUrl = "";
+    const service = createBilibiliPublicContentService((url) => {
+      requestedUrl = url;
+      return Promise.resolve(SAMPLE_CREATOR_VIDEOS);
+    });
+
+    await service.listCreatorVideos(999, 1, { keyword: "线性代数", order: CreatorVideoOrder.mostPlayed });
+
+    expect(requestedUrl).toContain("keyword=%E7%BA%BF%E6%80%A7%E4%BB%A3%E6%95%B0");
+    expect(requestedUrl).toContain("order=click");
+  });
+
+  it("loads videos from a UGC collection", async () => {
+    const service = makeService({ "/x/polymer/web-space/seasons_archives_list": SAMPLE_COLLECTION_VIDEOS });
+    const page = await service.listCollectionVideos(999, 123, 1);
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]!.title).toBe("高数强化");
+    expect(page.items[0]!.stats.viewCount).toBe(12345);
+  });
+
+  it("loads UGC collections created by a creator", async () => {
+    const service = makeService({ "/x/polymer/web-space/seasons_series_list": SAMPLE_CREATOR_COLLECTIONS });
+    const page = await service.listCreatorCollections(999, 1);
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]!.id).toBe(123);
+    expect(page.items[0]!.title).toBe("线性代数");
+    expect(page.items[0]!.totalCount).toBe(2);
+  });
+
+  it("explains remaining upload risk control after both endpoints fail", async () => {
+    const service = createBilibiliPublicContentService((url) => {
+      if (url.includes("/x/web-interface/nav")) return Promise.resolve(SAMPLE_WBI_NAV);
+      return Promise.resolve(JSON.stringify({ code: -352, message: "风控校验失败" }));
+    });
+    await expect(service.listCreatorVideos(999, 1)).rejects.toThrow(/请确认已经登录/);
+  });
+
+  it("retries WBI after a 412 from the legacy space endpoint", async () => {
+    const requested: string[] = [];
+    const service = createBilibiliPublicContentService((url) => {
+      requested.push(url);
+      if (url.includes("/x/space/wbi/arc/search")) return Promise.resolve(SAMPLE_CREATOR_VIDEOS);
+      if (url.includes("/x/web-interface/nav")) return Promise.resolve(SAMPLE_WBI_NAV);
+      return Promise.reject(new Error("HTTP 412"));
+    });
+    const page = await service.listCreatorVideos(999, 1);
+    expect(requested.some((url) => url.includes("w_rid="))).toBe(true);
+    expect(page.items[0]!.bvid).toBe("BV1GJ411x7h7");
+  });
+
+  it("uses the public WBI key even when nav reports the account as signed out", async () => {
+    const requested: string[] = [];
+    const unsignedNav = JSON.stringify({
+      code: -101,
+      message: "账号未登录",
+      data: { wbi_img: { img_url: "https://i0.hdslb.com/bfs/wbi/abcdefghijklmnopqrstuvwxyz0123456789abcdef.png", sub_url: "https://i0.hdslb.com/bfs/wbi/qrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRST.png" } },
+    });
+    const service = createBilibiliPublicContentService((url) => {
+      requested.push(url);
+      if (url.includes("/x/space/wbi/arc/search")) return Promise.resolve(SAMPLE_CREATOR_VIDEOS);
+      if (url.includes("/x/web-interface/nav")) return Promise.resolve(unsignedNav);
+      return Promise.resolve(JSON.stringify({ code: -352, message: "-352" }));
+    });
+    const page = await service.listCreatorVideos(999, 1);
+    expect(requested.some((url) => url.includes("w_rid="))).toBe(true);
+    expect(page.items[0]!.bvid).toBe("BV1GJ411x7h7");
+  });
+
+  it("falls back to a signed WBI upload request after space rate limiting", async () => {
+    const requested: string[] = [];
+    const service = createBilibiliPublicContentService((url) => {
+      requested.push(url);
+      if (url.includes("/x/space/wbi/arc/search")) return Promise.resolve(SAMPLE_CREATOR_VIDEOS);
+      if (url.includes("/x/web-interface/nav")) return Promise.resolve(SAMPLE_WBI_NAV);
+      return Promise.resolve(JSON.stringify({ code: -799, message: "请求过于频繁" }));
+    });
+    const page = await service.listCreatorVideos(999, 1);
+    expect(requested.length).toBeGreaterThanOrEqual(3);
+    expect(requested.some((url) => url.includes("w_rid="))).toBe(true);
+    expect(page.items[0]!.bvid).toBe("BV1GJ411x7h7");
+  });
+
+  it("retries creator collections with browser context after risk control", async () => {
+    let calls = 0;
+    const service = createBilibiliPublicContentService((url) => {
+      calls += 1;
+      if (calls === 1) return Promise.resolve(JSON.stringify({ code: -352, message: "-352" }));
+      expect(url).toContain("platform=web");
+      return Promise.resolve(SAMPLE_CREATOR_COLLECTIONS);
+    });
+    const page = await service.listCreatorCollections(999, 1);
+    expect(page.items[0]!.id).toBe(123);
+    expect(calls).toBe(2);
+  });
+
+  it("retries collection videos with browser context after risk control", async () => {
+    let calls = 0;
+    const service = createBilibiliPublicContentService((url) => {
+      calls += 1;
+      if (calls === 1) return Promise.resolve(JSON.stringify({ code: -352, message: "-352" }));
+      expect(url).toContain("platform=web");
+      return Promise.resolve(SAMPLE_COLLECTION_VIDEOS);
+    });
+    const page = await service.listCollectionVideos(999, 123, 1);
+    expect(page.items[0]!.bvid).toBe("BV1GJ411x7h7");
+    expect(calls).toBe(2);
   });
 });

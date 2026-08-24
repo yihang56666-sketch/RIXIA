@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPlayerUrl, buildSearchUrl, extractBvid } from "./bilibili";
+import { buildSearchUrl, extractBvid } from "./bilibili";
 
 describe("extractBvid", () => {
   it("extracts a bare bvid", () => {
@@ -18,15 +18,6 @@ describe("extractBvid", () => {
     expect(extractBvid("https://www.bilibili.com/video/av170001")).toBeNull();
     expect(extractBvid("BV123")).toBeNull();
     expect(extractBvid("")).toBeNull();
-  });
-});
-
-describe("buildPlayerUrl", () => {
-  it("builds the official embed player url", () => {
-    expect(buildPlayerUrl("BV1GJ411x7h7")).toBe(
-      "https://player.bilibili.com/player.html?bvid=BV1GJ411x7h7&page=1&high_quality=1&danmaku=0&autoplay=0",
-    );
-    expect(buildPlayerUrl("BV1GJ411x7h7", 3)).toContain("page=3");
   });
 });
 

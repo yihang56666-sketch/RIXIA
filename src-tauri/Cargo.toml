@@ -1,13 +1,13 @@
 [package]
-name = "rixia-desktop"
+name = "beid-desktop"
 version = "0.3.0"
-description = "RIXIA desktop shell (Tauri)"
-authors = ["RIXIA"]
+description = "BEID desktop shell (Tauri)"
+authors = ["BEID"]
 edition = "2021"
 rust-version = "1.70"
 
 [lib]
-name = "rixia_desktop_lib"
+name = "beid_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -279,7 +279,17 @@ async function ensureCommandLineTools(archive) {
 
   safeRemove(cmdlineRoot)
   mkdirSync(path.dirname(cmdlineRoot), { recursive: true })
-  renameSync(extractedTools, cmdlineRoot)
+  if (isWindows) {
+    await run('powershell.exe', [
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      `Move-Item -LiteralPath ${powerShellQuote(extractedTools)} -Destination ${powerShellQuote(cmdlineRoot)}`,
+    ])
+  } else {
+    renameSync(extractedTools, cmdlineRoot)
+  }
   safeRemove(extractRoot)
 }
 

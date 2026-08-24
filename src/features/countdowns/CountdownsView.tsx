@@ -1,9 +1,10 @@
 import { FormEvent, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { daysUntil, formatShortDate, todayKey } from "../../lib/time";
+import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
 
-export function CountdownsView() {
+export function CountdownsView({ embedded = false }: { embedded?: boolean } = {}) {
   const { countdowns, addCountdown, removeCountdown } = useAppStore();
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
@@ -17,6 +18,7 @@ export function CountdownsView() {
   }
 
   return (
+    <RixiaWorkspacePage title="倒计时" embedded={embedded}>
     <div className="stack">
       <section className="card">
         <form className="stack" onSubmit={handleSubmit} style={{ gap: 10 }}>
@@ -56,5 +58,6 @@ export function CountdownsView() {
         </div>
       )}
     </div>
+    </RixiaWorkspacePage>
   );
 }

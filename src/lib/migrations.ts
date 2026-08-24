@@ -11,12 +11,15 @@ import type {
   JournalEntry,
   NoteItem,
   ResourceStatus,
+  ReviewItem,
   TaskItem,
   ThemeName,
   TimestampNote,
   ToolKey,
+  MockExam,
+  WrongQuestion,
 } from "../types";
-import { THEME_MIGRATION } from "../catalog";
+import { THEME_MIGRATION, VIEW_TITLES } from "../catalog";
 
 const NEW_THEME_KEYS = new Set<ThemeName>([
   "porcelain", "graphite", "sage", "aurora", "rosewood",
@@ -95,7 +98,47 @@ function migrateActiveFocus(input: unknown): ActiveFocus | null {
   if (!startedAt) return null;
   const resourceId = typeof input.resourceId === "string" ? input.resourceId : undefined;
   const episodeId = typeof input.episodeId === "string" ? input.episodeId : undefined;
-  return { startedAt, mode, resourceId, episodeId };
+  const phase = input.phase === "short-break" || input.phase === "long-break"
+    ? input.phase
+    : "focus";
+  return {
+    startedAt,
+    mode,
+    resourceId,
+    episodeId,
+    phase,
+    running: typeof input.running === "boolean" ? input.running : undefined,
+    endsAtMs: typeof input.endsAtMs === "number" ? input.endsAtMs : null,
+    remainingSeconds:
+      typeof input.remainingSeconds === "number" && Number.isFinite(input.remainingSeconds) && input.remainingSeconds >= 0
+        ? Math.round(input.remainingSeconds)
+        : undefined,
+    countupStartedAtMs: typeof input.countupStartedAtMs === "number" ? input.countupStartedAtMs : null,
+    countupElapsedMs:
+      typeof input.countupElapsedMs === "number" && Number.isFinite(input.countupElapsedMs) && input.countupElapsedMs >= 0
+        ? Math.round(input.countupElapsedMs)
+        : 0,
+    completedRounds:
+      typeof input.completedRounds === "number" && Number.isInteger(input.completedRounds) && input.completedRounds > 0
+        ? input.completedRounds
+        : 0,
+  };
+}
+
+const LEGACY_VIEW_REDIRECTS: Record<string, AppState["view"]> = {
+  "watch-history": "local-watch-history",
+  "app-update": "about",
+};
+
+function normalizeView(input: unknown): AppState["view"] {
+  if (typeof input !== "string") return "focus-dashboard";
+  const redirected = LEGACY_VIEW_REDIRECTS[input];
+  if (redirected) return redirected;
+  // 未知的 view（损坏的快照或未来重命名的键）回退到默认首页，避免白屏。
+  if (Object.prototype.hasOwnProperty.call(VIEW_TITLES, input)) {
+    return input as AppState["view"];
+  }
+  return "focus-dashboard";
 }
 
 function migrateToolList(input: unknown): ToolKey[] {
@@ -163,6 +206,69 @@ function migrateJournal(input: unknown): JournalEntry | null {
   return { date, body, updatedAt };
 }
 
+function migrateWrongQuestion(input: unknown): WrongQuestion | null {
+  if (!isObject(input)) return null;
+  const id = typeof input.id === "string" ? input.id : "";
+  const title = typeof input.title === "string" ? input.title : "";
+  const createdAt = typeof input.createdAt === "string" ? input.createdAt : "";
+  if (!id || !title || !createdAt) return null;
+  const wrongCount = typeof input.wrongCount === "number" && Number.isFinite(input.wrongCount)
+    ? Math.max(1, Math.round(input.wrongCount))
+    : 1;
+  return {
+    id,
+    title,
+    note: typeof input.note === "string" ? input.note : undefined,
+    tags: asArray<unknown>(input.tags, []).filter((tag): tag is string => typeof tag === "string"),
+    wrongCount,
+    createdAt,
+    subjectId: typeof input.subjectId === "string" ? input.subjectId : undefined,
+  };
+}
+
+function migrateReviewItem(input: unknown): ReviewItem | null {
+  if (!isObject(input)) return null;
+  const id = typeof input.id === "string" ? input.id : "";
+  const title = typeof input.title === "string" ? input.title : "";
+  const dueDate = typeof input.dueDate === "string" ? input.dueDate : "";
+  const createdAt = typeof input.createdAt === "string" ? input.createdAt : "";
+  const sourceType = input.sourceType === "wrong-question" || input.sourceType === "word" ? input.sourceType : "custom";
+  if (!id || !title || !dueDate || !createdAt) return null;
+  const stage = typeof input.stage === "number" && Number.isFinite(input.stage)
+    ? Math.max(0, Math.min(5, Math.round(input.stage)))
+    : 0;
+  const history = asArray<unknown>(input.history, [])
+    .filter(isObject)
+    .filter((entry) => typeof entry.date === "string" && typeof entry.remembered === "boolean")
+    .map((entry) => ({ date: entry.date as string, remembered: entry.remembered as boolean }));
+  return {
+    id,
+    sourceType,
+    title,
+    dueDate,
+    stage,
+    history,
+    createdAt,
+    sourceId: typeof input.sourceId === "string" ? input.sourceId : undefined,
+    subjectId: typeof input.subjectId === "string" ? input.subjectId : undefined,
+  };
+}
+
+function migrateMockExam(input: unknown): MockExam | null {
+  if (!isObject(input)) return null;
+  const id = typeof input.id === "string" ? input.id : "";
+  const date = typeof input.date === "string" ? input.date : "";
+  const subject = typeof input.subject === "string" ? input.subject : "";
+  const paperName = typeof input.paperName === "string" ? input.paperName : "";
+  const createdAt = typeof input.createdAt === "string" ? input.createdAt : "";
+  const total = typeof input.total === "number" && Number.isFinite(input.total) ? Math.max(1, Math.round(input.total)) : 0;
+  if (!id || !date || !subject.trim() || !paperName || !createdAt || total <= 0) return null;
+  const score = typeof input.score === "number" && Number.isFinite(input.score)
+    ? Math.max(0, Math.min(total, Math.round(input.score)))
+    : 0;
+  return { id, date, subject, paperName, score, total, createdAt };
+}
+
 function migrateIdItem<T extends { id: string; createdAt: string }>(
   input: unknown,
   build: (obj: Record<string, unknown>) => T | null,
@@ -180,7 +286,7 @@ function migrateIdItem<T extends { id: string; createdAt: string }>(
 export function migratePersistedState(
   input: unknown,
   _version: number,
-): Partial<AppState> & { version: 3 } {
+): Partial<AppState> {
   const state = isObject(input) ? input : {};
   const theme = migrateTheme(state.theme);
   const density: AppState["density"] =
@@ -259,12 +365,11 @@ export function migratePersistedState(
   const activeFocus = migrateActiveFocus(state.activeFocus);
 
   return {
-    version: 3,
     theme,
     density,
     backgroundImage:
       typeof state.backgroundImage === "string" ? state.backgroundImage : null,
-    view: typeof state.view === "string" ? (state.view as AppState["view"]) : "today",
+    view: normalizeView(state.view),
     enabledTools: migrateToolList(state.enabledTools),
     inbox,
     tasks,
@@ -300,6 +405,28 @@ export function migratePersistedState(
         createdAt,
       };
     }),
+    wrongQuestions: asArray<unknown>(state.wrongQuestions, [])
+      .map(migrateWrongQuestion)
+      .filter((item): item is WrongQuestion => item !== null),
+    reviewItems: asArray<unknown>(state.reviewItems, [])
+      .map(migrateReviewItem)
+      .filter((item): item is ReviewItem => item !== null),
+    mockExams: asArray<unknown>(state.mockExams, [])
+      .map(migrateMockExam)
+      .filter((item): item is MockExam => item !== null),
+    kaoyanWords: migrateIdItem(state.kaoyanWords, (obj) => {
+      const id = typeof obj.id === "string" ? obj.id : "";
+      const word = typeof obj.word === "string" ? obj.word : "";
+      const createdAt = typeof obj.createdAt === "string" ? obj.createdAt : "";
+      if (!id || !word || !createdAt) return null;
+      return {
+        id,
+        word,
+        meaning: typeof obj.meaning === "string" ? obj.meaning : "",
+        createdAt,
+      };
+    }),
+    kaoyanExamDate: typeof state.kaoyanExamDate === "string" ? state.kaoyanExamDate : null,
     focusMinutes:
       typeof state.focusMinutes === "number" && state.focusMinutes > 0
         ? state.focusMinutes
@@ -350,9 +477,19 @@ export function validateBackup(input: unknown): BackupData {
     countdowns: migrated.countdowns ?? [],
     subjects: migrated.subjects ?? [],
     studyUnits: migrated.studyUnits ?? [],
+    wrongQuestions: migrated.wrongQuestions ?? [],
+    reviewItems: migrated.reviewItems ?? [],
+    mockExams: migrated.mockExams ?? [],
+    kaoyanWords: migrated.kaoyanWords ?? [],
+    kaoyanExamDate: typeof migrated.kaoyanExamDate === "string" ? migrated.kaoyanExamDate : null,
     focusSessions: migrated.focusSessions ?? [],
+    focusMinutes:
+      typeof migrated.focusMinutes === "number" && migrated.focusMinutes > 0
+        ? migrated.focusMinutes
+        : 25,
     focusGoalMinutes: migrated.focusGoalMinutes ?? 120,
     focusRounds: migrated.focusRounds ?? { workMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, longBreakEvery: 4 },
+    backgroundImage: typeof migrated.backgroundImage === "string" ? migrated.backgroundImage : null,
     resources: migrated.resources ?? [],
     timestampNotes: migrated.timestampNotes ?? [],
     journals: migrated.journals ?? [],

@@ -1,5 +1,5 @@
-/* RIXIA Service Worker：应用外壳缓存，离线可安装（Windows / Android / 桌面 PWA） */
-const CACHE = "rixia-shell-v1";
+/* BEID Service Worker：应用外壳缓存，离线可安装（Windows / Android / 桌面 PWA） */
+const CACHE = "beid-shell-v2";
 const PRECACHE = ["/", "/index.html", "/manifest.webmanifest", "/favicon.png", "/favicon.svg"];
 
 self.addEventListener("install", (event) => {

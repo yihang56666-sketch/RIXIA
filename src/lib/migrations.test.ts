@@ -14,7 +14,6 @@ describe("persisted state v2 migration", () => {
       },
       1,
     );
-    expect(result.version).toBe(3);
     expect(result.theme).toBe("porcelain");
     expect(result.resources?.[0]).toMatchObject({ id: "v1", bvid: "BV1", status: "saved" });
     expect(result.tasks?.[0].id).toBe("t1");

@@ -1,16 +1,17 @@
 {
-  "name": "RIXIA · 个人节奏",
-  "short_name": "RIXIA",
-  "description": "一个轻量、专注本地记录的个人效率工作台",
+  "name": "BEID · 专注备考工作台",
+  "short_name": "BEID",
+  "description": "融合节奏工作台与专注看课能力的 B 站考研学习客户端",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#f3ede2",
-  "theme_color": "#f3ede2",
+  "background_color": "#ffffff",
+  "theme_color": "#1677ff",
   "lang": "zh-CN",
   "icons": [
-    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/beid-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/beid-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]

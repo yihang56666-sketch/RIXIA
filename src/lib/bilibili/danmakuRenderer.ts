@@ -65,16 +65,28 @@ export class DanmakuRenderer {
 
     const window = 0.5;
     const out: DanmakuRenderEntry[] = [];
+    let lastAcceptedText = "";
+    let lastAcceptedStart = -Infinity;
     for (const entry of entries) {
       if (entry.startTimeSeconds > currentTimeSeconds + window) break;
       if (entry.startTimeSeconds + entry.durationSeconds < currentTimeSeconds - window) continue;
       if (this.isBlocked(entry)) continue;
+      // 合并同时出现的相同弹幕（对齐 Dart mergeRepeated）
+      if (
+        this.preferences.mergeRepeated &&
+        entry.text === lastAcceptedText &&
+        Math.abs(entry.startTimeSeconds - lastAcceptedStart) < 1
+      ) {
+        continue;
+      }
       const lane = this.pickLane(entry, currentTimeSeconds, minimumSpacing, laneCount);
       if (lane < 0) continue;
       const textWidth = this.measureText(entry.text);
       const renderedStart = Math.max(entry.startTimeSeconds, this.lastCommittedStartByLane.get(lane) ?? 0);
       this.lastCommittedStartByLane.set(lane, renderedStart + (entry.durationSeconds || travelSeconds));
       out.push({ ...entry, lane, renderedStartSeconds: renderedStart, textWidth });
+      lastAcceptedText = entry.text;
+      lastAcceptedStart = entry.startTimeSeconds;
     }
     return out;
   }
@@ -128,6 +140,7 @@ export class DanmakuRenderer {
       fontSize: this.fontSize,
       laneCount: this.preferences.laneCount,
       displayArea: this.preferences.displayArea,
+      scrollDurationSeconds: this.preferences.scrollDurationSeconds,
     };
   }
 }
@@ -138,7 +151,7 @@ export function normalizeDanmakuPreferences(value: Partial<DanmakuPreferences> |
     enabled: typeof value.enabled === "boolean" ? value.enabled : DEFAULT_DANMAKU_PREFERENCES.enabled,
     opacity: typeof value.opacity === "number" ? clamp(value.opacity, 0, 1) : DEFAULT_DANMAKU_PREFERENCES.opacity,
     fontSize: typeof value.fontSize === "number" ? clamp(value.fontSize, 8, 48) : DEFAULT_DANMAKU_PREFERENCES.fontSize,
-    laneCount: typeof value.laneCount === "number" ? clampInt(value.laneCount, 1, 30) : DEFAULT_DANMAKU_PREFERENCES.laneCount,
+    laneCount: typeof value.laneCount === "number" ? clampInt(value.laneCount, 1, 24) : DEFAULT_DANMAKU_PREFERENCES.laneCount,
     scrollDurationSeconds: typeof value.scrollDurationSeconds === "number" ? clamp(value.scrollDurationSeconds, 3, 30) : DEFAULT_DANMAKU_PREFERENCES.scrollDurationSeconds,
     displayArea: typeof value.displayArea === "number" ? clamp(value.displayArea, 0.1, 1) : DEFAULT_DANMAKU_PREFERENCES.displayArea,
     strokeWidth: typeof value.strokeWidth === "number" ? clamp(value.strokeWidth, 0, 6) : DEFAULT_DANMAKU_PREFERENCES.strokeWidth,

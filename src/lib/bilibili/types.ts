@@ -188,15 +188,27 @@ export interface VideoNote {
   framePath?: string;
 }
 
+export type LearningListStatus = "not-started" | "learning" | "completed";
+
 /** 学习列表条目 — 对应 FocuBili 的 LearningListEntry。 */
 export interface LearningListEntry {
   id: string;
   bvid: Bvid;
+  /** Current video part. Legacy entries without this field represent the first part. */
+  partCid?: number;
+  partPageNumber?: number;
+  partTitle?: string;
   title: string;
   ownerName: string;
   coverUrl: string;
   durationSeconds: number;
+  /** 当前分 P 已保存的播放位置（秒）。 */
+  positionSeconds?: number;
   addedAt: string;
+  /** User-defined order among unfinished entries. Legacy records use addedAt order. */
+  order?: number;
+  /** Explicit task state; entries saved before this field infer state from timestamps. */
+  status?: LearningListStatus;
   lastOpenedAt?: string;
   completedAt?: string;
   note?: string;
@@ -345,6 +357,9 @@ export const DEFAULT_DANMAKU_PREFERENCES: DanmakuPreferences = {
 
 /** 播放偏好 — 对应 FocuBili 的 PlaybackPreferences。 */
 export interface PlaybackPreferences {
+  enableDoubleTapSeek: boolean;
+  wifiDefaultQuality: number;
+  mobileDefaultQuality: number;
   autoplayNext: boolean;
   resumeFromLastPosition: boolean;
   defaultQuality: number;
@@ -353,6 +368,9 @@ export interface PlaybackPreferences {
 }
 
 export const DEFAULT_PLAYBACK_PREFERENCES: PlaybackPreferences = {
+  enableDoubleTapSeek: true,
+  wifiDefaultQuality: 64,
+  mobileDefaultQuality: 64,
   autoplayNext: false,
   resumeFromLastPosition: true,
   defaultQuality: 80,

@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { useOverlayInteraction } from "../lib/overlayStack";
 
 export function Modal({
   title,
@@ -10,13 +11,7 @@ export function Modal({
   onClose: () => void;
   children: ReactNode;
 }) {
-  useEffect(() => {
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+  useOverlayInteraction(true, onClose);
 
   return (
     <div className="modal-overlay" onClick={onClose} role="presentation">

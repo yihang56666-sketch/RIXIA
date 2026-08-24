@@ -90,13 +90,21 @@ export function startAmbience(kind: NoiseKind, volume: number): void {
         gain.gain.setTargetAtTime(value, ctx.currentTime, 0.1);
       },
       stop: () => {
+        // 每个节点独立 try，保证单个 stop 失败不阻断其余清理；
+        // AudioContext 必须关闭（浏览器有数量上限）。
         try {
           source.stop();
-          lfo?.stop();
-          window.setTimeout(() => void ctx.close(), 200);
         } catch {
           // 已停止则忽略
         }
+        try {
+          lfo?.stop();
+        } catch {
+          // ignore
+        }
+        window.setTimeout(() => {
+          void ctx.close().catch(() => undefined);
+        }, 200);
       },
     };
   } catch {

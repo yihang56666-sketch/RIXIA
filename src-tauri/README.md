@@ -1,11 +1,11 @@
-# RIXIA Desktop (Tauri)
+# FocuBili Desktop (Tauri)
 
-Tauri 2 configuration for packaging RIXIA as a native Windows application.
+Tauri 2 configuration for packaging FocuBili as a native Windows application.
 
 When the app runs in this environment, it can:
 
 - Bypass browser CORS restrictions via @tauri-apps/plugin-http
-- Handle bilibili:// and rixia:// protocol deep links via @tauri-apps/plugin-deep-link
+- Handle bilibili:// and focubili:// protocol deep links via @tauri-apps/plugin-deep-link
 - Play DASH video streams directly via HTML5 video + MSE (no iframe needed)
 - Receive native notifications and use system services
 
@@ -27,7 +27,7 @@ Output: target/release/bundle/msi or nsis installer.
 ## Architecture
 
 The Rust main process (src/main.rs) registers three Tauri plugins:
-- tauri-plugin-deep-link: registers bilibili:// and rixia:// URI schemes
+- tauri-plugin-deep-link: registers bilibili:// and focubili:// URI schemes
 - tauri-plugin-http: provides @tauri-apps/plugin-http for CORS-free HTTP from frontend
 - tauri-plugin-shell: opens external URLs in default browser
 
@@ -38,5 +38,5 @@ without modification; only the transport layer changes.
 
 ## License boundary
 
-Tauri configuration files are part of the RIXIA repository and follow its license.
+Tauri configuration files are part of the FocuBili repository and follow its license.
 Tauri framework itself is MIT/Apache-2.0 dual-licensed.

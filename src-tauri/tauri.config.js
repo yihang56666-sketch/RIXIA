@@ -1,6 +1,6 @@
-// Tauri main process entry — RIXIA desktop shell
+// Tauri main process entry — BEID desktop shell
 // Provides: window creation, deep-link protocol handling, HTTP bridge
-// Author: RIXIA
+// Based on: FocuBili
 
 import { defineConfig } from "@tauri-apps/cli";
 

@@ -1,7 +1,8 @@
-import { ArrowLeft, ExternalLink, MonitorPlay, Play, Search, Trash2 } from "lucide-react";
+import { MonitorPlay, Play, Search, Trash2 } from "lucide-react";
 import { FormEvent, useState } from "react";
-import { buildPlayerUrl, buildSearchUrl, extractBvid } from "../../lib/bilibili";
+import { buildSearchUrl, extractBvid } from "../../lib/bilibili";
 import { relativeTime } from "../../lib/time";
+import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
 import type { CourseResource } from "../../types";
 
@@ -27,11 +28,10 @@ function VideoCard({ video, onOpen }: { video: CourseResource; onOpen: () => voi
 }
 
 export function VideosView() {
-  const { resources, addResource } = useAppStore();
+  const { resources, addResource, openBilibiliVideo } = useAppStore();
   const [input, setInput] = useState("");
   const [title, setTitle] = useState("");
   const [error, setError] = useState("");
-  const [watching, setWatching] = useState<CourseResource | null>(null);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -41,51 +41,17 @@ export function VideosView() {
       return;
     }
     setError("");
-    addResource(input, title);
+    const resource = addResource(input, title);
+    if (!resource) {
+      setError("这个视频已经在看课区了。");
+      return;
+    }
     setInput("");
     setTitle("");
   }
 
-  if (watching) {
-    return (
-      <div className="stack">
-        <button className="back-button" onClick={() => setWatching(null)}>
-          <ArrowLeft size={18} /> 返回看课列表
-        </button>
-        <section className="card" style={{ padding: 12 }}>
-          <div className="player-wrap">
-            <iframe
-              src={buildPlayerUrl(watching.bvid)}
-              title={watching.title}
-              className="player-frame"
-              allowFullScreen
-              referrerPolicy="no-referrer-when-downgrade"
-              sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-            />
-          </div>
-          <div className="row" style={{ marginTop: 12, padding: "0 4px" }}>
-            <div style={{ minWidth: 0 }}>
-              <h3 style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{watching.title}</h3>
-              <p className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>{watching.bvid} · 高清优先 · 弹幕已关闭</p>
-            </div>
-            <a
-              className="ghost-btn"
-              href={`https://www.bilibili.com/video/${watching.bvid}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <ExternalLink size={15} /> 在哔哩哔哩打开
-            </a>
-          </div>
-        </section>
-        <p className="muted" style={{ fontSize: 12.5, textAlign: "center" }}>
-          播放需要联网；看完记得回来打个卡 ✅
-        </p>
-      </div>
-    );
-  }
-
   return (
+    <RixiaWorkspacePage title="看课">
     <div className="stack">
       <section className="card">
         <h2>添加视频</h2>
@@ -125,10 +91,11 @@ export function VideosView() {
       ) : (
         <div className="video-grid">
           {resources.map((video) => (
-            <VideoCard key={video.id} video={video} onOpen={() => setWatching(video)} />
+            <VideoCard key={video.id} video={video} onOpen={() => openBilibiliVideo(video.bvid, video.title)} />
           ))}
         </div>
       )}
     </div>
+    </RixiaWorkspacePage>
   );
 }

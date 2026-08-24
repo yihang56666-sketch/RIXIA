@@ -1,5 +1,5 @@
 /**
- * RIXIA 播放器手势覆盖层 — 复刻 FocuBili 的 player_gesture_coordinator.dart。
+ * BEID 播放器手势覆盖层 — 参考 FocuBili 的 player_gesture_coordinator.dart。
  *
  * 支持的手势：
  * - 单击：显示/隐藏控制条
@@ -11,8 +11,8 @@
  * - 垂直滑动右半屏：音量
  * - 双指捏合：缩放（Web 降级为全屏切换）
  *
- * 实现方式：在 iframe 上方覆盖一层透明 div，监听 pointer 事件。
- * 因为 iframe 是跨域的，事件不会冒泡到外层，覆盖层是必需的。
+ * 实现方式：在本项目的 video 上方覆盖一层透明 div，监听 pointer 事件，
+ * 统一处理触摸设备上的手势，不依赖跨文档通信。
  */
 
 export interface GestureCoordinatorOptions {
@@ -24,6 +24,10 @@ export interface GestureCoordinatorOptions {
   onToggleMute?: () => void;
   onToggleFullscreen?: () => void;
   onTap?: () => void;
+  onLongPress?: () => void;
+  onLongPressEnd?: () => void;
+  onScrubEnd?: () => void;
+  enableDoubleTapSeek?: boolean;
   getCurrentTime?: () => number;
   getDuration?: () => number;
 }
@@ -39,6 +43,7 @@ interface PointerState {
 const DOUBLE_TAP_MS = 280;
 const TAP_THRESHOLD = 8;
 const SWIPE_THRESHOLD = 30;
+const LONG_PRESS_MS = 450;
 
 export class GestureCoordinator {
   private readonly options: GestureCoordinatorOptions;
@@ -48,6 +53,11 @@ export class GestureCoordinator {
   private lastTapX = 0;
   private lastTapY = 0;
   private handlerRemoved = false;
+  private longPressTimer: number | null = null;
+  private longPressActive = false;
+  private scrubbed = false;
+  private scrubBaseTime = 0;
+  private singleTapTimer: number | null = null;
   private boundPointerDown: (e: PointerEvent) => void;
   private boundPointerMove: (e: PointerEvent) => void;
   private boundPointerUp: (e: PointerEvent) => void;
@@ -59,22 +69,61 @@ export class GestureCoordinator {
     this.boundPointerMove = this.onPointerMove.bind(this);
     this.boundPointerUp = this.onPointerUp.bind(this);
     this.element.addEventListener("pointerdown", this.boundPointerDown);
-    this.element.addEventListener("pointermove", this.boundPointerMove);
-    this.element.addEventListener("pointerup", this.boundPointerUp);
-    this.element.addEventListener("pointercancel", this.boundPointerUp);
+    // move/up/cancel 挂在 window 上：鼠标按下后拖出覆盖层再松开时，
+    // 事件仍能送达（触摸有隐式捕获，鼠标没有——旧实现因此永久卡死手势层）。
+    window.addEventListener("pointermove", this.boundPointerMove);
+    window.addEventListener("pointerup", this.boundPointerUp);
+    window.addEventListener("pointercancel", this.boundPointerUp);
   }
 
   destroy(): void {
     if (this.handlerRemoved) return;
     this.handlerRemoved = true;
+    this.cancelLongPressTimer();
+    this.cancelSingleTapTimer();
+    // 中途销毁时释放可能存在的指针捕获。
+    try {
+      this.element.releasePointerCapture?.(0);
+    } catch {
+      // ignore
+    }
     this.element.removeEventListener("pointerdown", this.boundPointerDown);
-    this.element.removeEventListener("pointermove", this.boundPointerMove);
-    this.element.removeEventListener("pointerup", this.boundPointerUp);
-    this.element.removeEventListener("pointercancel", this.boundPointerUp);
+    window.removeEventListener("pointermove", this.boundPointerMove);
+    window.removeEventListener("pointerup", this.boundPointerUp);
+    window.removeEventListener("pointercancel", this.boundPointerUp);
+  }
+
+  private cancelLongPressTimer(): void {
+    if (this.longPressTimer != null) window.clearTimeout(this.longPressTimer);
+    this.longPressTimer = null;
+  }
+
+  private cancelSingleTapTimer(): void {
+    if (this.singleTapTimer != null) window.clearTimeout(this.singleTapTimer);
+    this.singleTapTimer = null;
+  }
+
+  /** 鼠标手势未收到 pointerup 就开始新按下：先干净地结束上一次残留手势。 */
+  private resetStaleGesture(): void {
+    if (!this.state) return;
+    const wasLongPress = this.longPressActive;
+    const wasScrubbing = this.scrubbed;
+    this.longPressActive = false;
+    this.scrubbed = false;
+    this.state = null;
+    this.cancelLongPressTimer();
+    if (wasLongPress) this.options.onLongPressEnd?.();
+    else if (wasScrubbing) this.options.onScrubEnd?.();
   }
 
   private onPointerDown(event: PointerEvent): void {
+    // 鼠标同一时刻只会有一组按下的按键：此时若仍有残留手势状态，
+    // 说明上次 pointerup 在覆盖层外丢失，先重置避免后续点击全部失效。
+    if (this.state && event.pointerType === "mouse") {
+      this.resetStaleGesture();
+    }
     if (!this.state) {
+      this.scrubbed = false;
       this.state = {
         startX: event.clientX,
         startY: event.clientY,
@@ -82,8 +131,23 @@ export class GestureCoordinator {
         moved: false,
         pointers: new Map([[event.pointerId, { x: event.clientX, y: event.clientY }]]),
       };
+      // 显式捕获指针：鼠标拖到覆盖层外也能继续收到 move/up。
+      try {
+        this.element.setPointerCapture?.(event.pointerId);
+      } catch {
+        // ignore
+      }
+      this.cancelLongPressTimer();
+      this.longPressTimer = window.setTimeout(() => {
+        this.longPressTimer = null;
+        if (this.state && !this.state.moved && this.state.pointers.size === 1) {
+          this.longPressActive = true;
+          this.options.onLongPress?.();
+        }
+      }, LONG_PRESS_MS);
     } else {
       this.state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (this.state.pointers.size > 1) this.cancelLongPressTimer();
     }
   }
 
@@ -94,13 +158,19 @@ export class GestureCoordinator {
     const dy = event.clientY - this.state.startY;
     if (Math.abs(dx) > TAP_THRESHOLD || Math.abs(dy) > TAP_THRESHOLD) {
       this.state.moved = true;
+      this.cancelLongPressTimer();
     }
-    // 水平滑动 = 进度拖动
+    // 水平滑动 = 进度拖动（预览值随动，真正的 seek 由 onScrubEnd 提交）
     if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
+      if (!this.scrubbed) {
+        this.scrubbed = true;
+        // 锚定滑动开始时的播放时间，避免实时读取推进中的播放头造成目标漂移。
+        this.scrubBaseTime = this.options.getCurrentTime?.() ?? 0;
+      }
       const width = this.element.clientWidth;
       if (width > 0 && this.options.getDuration && this.options.onSeekAbsolute) {
         const ratio = dx / width;
-        const target = (this.options.getCurrentTime?.() ?? 0) + ratio * (this.options.getDuration() ?? 0);
+        const target = this.scrubBaseTime + ratio * (this.options.getDuration() ?? 0);
         this.options.onSeekAbsolute(Math.max(0, Math.min(this.options.getDuration() ?? 0, target)));
       }
     }
@@ -118,6 +188,20 @@ export class GestureCoordinator {
   private onPointerUp(event: PointerEvent): void {
     if (!this.state) return;
     this.state.pointers.delete(event.pointerId);
+    if (this.longPressActive) {
+      this.longPressActive = false;
+      this.cancelLongPressTimer();
+      this.state = null;
+      this.options.onLongPressEnd?.();
+      return;
+    }
+    if (this.scrubbed && this.state.pointers.size === 0) {
+      this.scrubbed = false;
+      this.cancelLongPressTimer();
+      this.state = null;
+      this.options.onScrubEnd?.();
+      return;
+    }
     if (this.state.pointers.size > 0) return;
     const elapsed = Date.now() - this.state.startTime;
     if (!this.state.moved && elapsed < 500) {
@@ -129,14 +213,17 @@ export class GestureCoordinator {
       const dy = y - this.lastTapY;
       const dt = now - this.lastTap;
       if (dt < DOUBLE_TAP_MS && Math.abs(dx) < TAP_THRESHOLD * 2 && Math.abs(dy) < TAP_THRESHOLD * 2) {
+        this.cancelSingleTapTimer();
         this.handleDoubleTap(x);
         this.lastTap = 0;
       } else {
         this.lastTap = now;
         this.lastTapX = x;
         this.lastTapY = y;
-        // 延迟触发单击，以便区分双击
-        setTimeout(() => {
+        // 延迟触发单击，以便区分双击（销毁时一并清理）
+        this.cancelSingleTapTimer();
+        this.singleTapTimer = window.setTimeout(() => {
+          this.singleTapTimer = null;
           if (this.lastTap === now) {
             this.options.onTap?.();
           }
@@ -147,6 +234,10 @@ export class GestureCoordinator {
   }
 
   private handleDoubleTap(x: number): void {
+    if (this.options.enableDoubleTapSeek === false) {
+      this.options.onTogglePlay?.();
+      return;
+    }
     const width = this.element.clientWidth;
     const third = width / 3;
     if (x < third) {

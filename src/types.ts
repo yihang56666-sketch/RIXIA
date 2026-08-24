@@ -18,26 +18,28 @@ export type ViewKey =
   | "focus"
   | "settings"
   | "preferences"
+  | "personalization"
   | "search"
   | "bilibili-player"
   | "favorites"
+  | "favorite-videos"
   | "followed"
-  | "watch-history"
+  | "local-watch-history"
   | "subscribed-collections"
   | "creator-profile"
   | "collection-detail"
   | "login"
-  | "app-update"
+  | "about"
   | "cache-management"
   | "problem-diagnostics"
   | "android-permissions"
+  | "windows-system-capabilities"
   | "home-feed"
   | "learning-list"
   | "video-notes"
   | "focus-statistics"
   | "focus-dashboard"
-  | "first-launch"
-  // Legacy deep-link targets (kept for command palette / persisted state)
+  // Legacy deep-link targets used by persisted state are normalized during migration.
   | "inbox"
   | "tools"
   | "tasks"
@@ -131,6 +133,49 @@ export interface StudyUnit {
   createdAt: string;
 }
 
+/** 错题本条目：按错误原因打标签，录入后自动进入艾宾浩斯复习队列。 */
+export interface WrongQuestion {
+  id: string;
+  subjectId?: string;
+  title: string;
+  note?: string;
+  tags: string[];
+  wrongCount: number;
+  createdAt: string;
+}
+
+/** 艾宾浩斯复习队列条目：按 1/2/4/7/15/30 天周期安排重看。 */
+export interface ReviewItem {
+  id: string;
+  sourceType: "wrong-question" | "custom" | "word";
+  sourceId?: string;
+  subjectId?: string;
+  title: string;
+  dueDate: string;
+  stage: number;
+  history: { date: string; remembered: boolean }[];
+  createdAt: string;
+}
+
+/** 考研英语词汇本条目：录入后按艾宾浩斯周期进入复习队列。 */
+export interface KaoyanWord {
+  id: string;
+  word: string;
+  meaning: string;
+  createdAt: string;
+}
+
+/** 模考成绩记录。 */
+export interface MockExam {
+  id: string;
+  date: string;
+  subject: string;
+  paperName: string;
+  score: number;
+  total: number;
+  createdAt: string;
+}
+
 export interface FocusSession {
   id: string;
   date: string;
@@ -166,6 +211,19 @@ export interface ActiveFocus {
   mode: "countdown" | "countup";
   resourceId?: string;
   episodeId?: string;
+  /** 回合阶段（倒计时模式）。 */
+  phase?: "focus" | "short-break" | "long-break";
+  /** 计时器是否在运行（跨视图/重启恢复用）。 */
+  running?: boolean;
+  /** 倒计时运行中的绝对结束时间戳（ms）。锚定计时，后台节流不产生漂移。 */
+  endsAtMs?: number | null;
+  /** 暂停时的剩余秒数。 */
+  remainingSeconds?: number;
+  /** 正计时当前段开始时间戳（ms）。 */
+  countupStartedAtMs?: number | null;
+  /** 正计时此前累计毫秒（暂停时定格）。 */
+  countupElapsedMs?: number;
+  completedRounds?: number;
 }
 
 export interface AppState {
@@ -181,6 +239,11 @@ export interface AppState {
   countdowns: CountdownItem[];
   subjects: StudySubject[];
   studyUnits: StudyUnit[];
+  wrongQuestions: WrongQuestion[];
+  reviewItems: ReviewItem[];
+  mockExams: MockExam[];
+  kaoyanWords: KaoyanWord[];
+  kaoyanExamDate: string | null;
   focusMinutes: number;
   focusSessions: FocusSession[];
   focusGoalMinutes: number;
@@ -192,6 +255,9 @@ export interface AppState {
   activeBilibiliCollection: {
     id: number; title: string; coverUrl: string; description: string; ownerMid: number; ownerName: string; ownerAvatarUrl: string; videoCount: number; viewCount: number;
   } | null;
+  activeBilibiliFavoriteFolder: { mediaId: number; title: string; coverUrl: string; mediaCount: number; isAvailable: boolean } | null;
+  loginAutoOfficial: boolean;
+  pendingBilibiliSearch: string | null;
   resources: CourseResource[];
   timestampNotes: TimestampNote[];
   journals: JournalEntry[];
@@ -209,9 +275,16 @@ export interface BackupData {
   countdowns: CountdownItem[];
   subjects: StudySubject[];
   studyUnits: StudyUnit[];
+  wrongQuestions: WrongQuestion[];
+  reviewItems: ReviewItem[];
+  mockExams: MockExam[];
+  kaoyanWords: KaoyanWord[];
+  kaoyanExamDate: string | null;
   focusSessions: FocusSession[];
+  focusMinutes: number;
   focusGoalMinutes: number;
   focusRounds: FocusRounds;
+  backgroundImage?: string | null;
   resources: CourseResource[];
   timestampNotes: TimestampNote[];
   journals: JournalEntry[];

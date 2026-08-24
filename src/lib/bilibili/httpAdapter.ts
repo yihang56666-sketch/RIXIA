@@ -1,8 +1,8 @@
 /**
  * RIXIA HTTP 适配器 — 自动检测运行环境并选择正确的 HTTP 客户端：
  *
- * 1. Capacitor 原生环境（Android/iOS 应用）：用 @capacitor-community/http
- *    插件，绕过浏览器 CORS 限制，可以直接请求 B 站 API 与视频流 URL。
+ * 1. Capacitor 原生环境（Android/iOS 应用）：用 Capacitor 原生 HTTP API
+ *    绕过浏览器 CORS 限制，可以直接请求 B 站 API 与视频流 URL。
  *    这是 FocuBili 之所以能"无 CORS"的根本原因——原生 HTTP 不受同源策略约束。
  *
  * 2. 浏览器 / PWA 环境：用标准 fetch，受 CORS 限制。
@@ -10,7 +10,7 @@
  *    对于带 Cookie 的请求（收藏夹/历史等），需要用户在浏览器中
  *    允许跨域或部署反代。
  *
- * 3. Electron / Tauri 桌面环境：用各自的 IPC 桥接，等同于原生模式。
+ * 3. Electron / Tauri 桌面环境：用各自的原生网络 API，等同于原生模式。
  *
  * 这是 FocuBili 能做但 RIXIA 在纯 Web 模式下不能做的核心差异：
  * 原生 HTTP 与浏览器 fetch 的 CORS 差异。Capacitor 打包后这个差异消失。
@@ -22,15 +22,11 @@ declare global {
   interface Window {
     Capacitor?: {
       isNativePlatform?: () => boolean;
+      Plugins?: {
+        CapacitorHttp?: CapacitorHttpPlugin;
+      };
     };
-    CapacitorHttp?: {
-      request: (options: {
-        url: string;
-        method: string;
-        headers?: Record<string, string>;
-        data?: unknown;
-      }) => Promise<{ status: number; data: unknown; headers: Record<string, string> }>;
-    };
+    CapacitorHttp?: CapacitorHttpPlugin;
     CapacitorWebFetch?: typeof fetch;
     __TAURI__?: {
       http?: {
@@ -38,6 +34,22 @@ declare global {
       };
     };
   }
+}
+
+interface CapacitorHttpPlugin {
+  request: (options: {
+    url: string;
+    method: string;
+    headers?: Record<string, string>;
+    data?: unknown;
+  }) => Promise<{ status: number; data: unknown; headers: Record<string, string> }>;
+}
+
+/** Capacitor 8 registers plugins under Capacitor.Plugins; keep the top-level
+ * lookup for older runtimes and lightweight test hosts. */
+export function getCapacitorHttp(): CapacitorHttpPlugin | undefined {
+  if (typeof window === "undefined") return undefined;
+  return window.CapacitorHttp ?? window.Capacitor?.Plugins?.CapacitorHttp;
 }
 
 export function isNativeEnvironment(): boolean {
@@ -50,11 +62,36 @@ export function isNativeEnvironment(): boolean {
 
 /**
  * 创建一个跨环境的 JSON 请求函数。
- * 在 Tauri 桌面环境用 @tauri-apps/plugin-http（CORS-free），
+ * 在 Tauri 桌面环境用原生 HTTP 插件（CORS-free），
  * 在 Capacitor 原生环境用 CapacitorHttp，
  * 在浏览器开发模式用 Vite 代理（/bili-api → https://api.bilibili.com），
  * 在浏览器生产模式用 fetch（受 CORS 限制，需要用户自行部署反代）。
  */
+
+export function refererForBiliUrl(url: string): string {
+  try {
+    const parsed = new URL(url, "https://api.bilibili.com");
+    const bvid = parsed.searchParams.get("bvid");
+    const path = parsed.pathname;
+    if (
+      path.includes("/x/player") ||
+      path.includes("/x/web-interface/view") ||
+      path.includes("/wbi/view") ||
+      path.includes("/tag/archive")
+    ) {
+      return bvid ? `https://www.bilibili.com/video/${bvid}/` : "https://www.bilibili.com/";
+    }
+    if (path.includes("search")) return "https://search.bilibili.com/";
+    if (path.includes("/x/space") || path.includes("web-space") || path.includes("/x/v3/fav") || path.includes("/x/relation")) {
+      const mid = parsed.searchParams.get("mid") ?? parsed.searchParams.get("up_mid") ?? parsed.searchParams.get("vmid");
+      return mid ? `https://space.bilibili.com/${mid}` : "https://space.bilibili.com/";
+    }
+  } catch {
+    // ignore malformed URLs and keep the generic video site referer
+  }
+  return "https://www.bilibili.com/";
+}
+
 export function createJsonRequest(): JsonRequest {
   return async (url: string) => {
     // Tauri 环境：使用原生 HTTP 插件绕过 CORS
@@ -64,7 +101,7 @@ export function createJsonRequest(): JsonRequest {
           method: "GET",
           headers: {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-            Referer: "https://www.bilibili.com/",
+            Referer: refererForBiliUrl(url),
             Accept: "application/json",
           },
         } as RequestInit);
@@ -77,15 +114,20 @@ export function createJsonRequest(): JsonRequest {
       }
     }
     // Capacitor 原生环境
-    if (isNativeEnvironment() && window.CapacitorHttp) {
-      const response = await window.CapacitorHttp.request({
+    const capacitorHttp = getCapacitorHttp();
+    if (isNativeEnvironment() && capacitorHttp) {
+      const cookie = readStoredBilibiliCookie();
+      const headers: Record<string, string> = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        Referer: refererForBiliUrl(url),
+        Origin: "https://www.bilibili.com",
+        Accept: "application/json",
+      };
+      if (cookie) headers.Cookie = cookie;
+      const response = await capacitorHttp.request({
         url,
         method: "GET",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-          Referer: "https://www.bilibili.com/",
-          Accept: "application/json",
-        },
+        headers,
       });
       if (response.status !== 200) {
         throw new Error(`HTTP ${response.status}`);
@@ -96,11 +138,18 @@ export function createJsonRequest(): JsonRequest {
     }
     // 浏览器开发模式：用 Vite 代理绕过 CORS
     const proxiedUrl = proxyUrl(url);
+    const headers: Record<string, string> = {
+      Referer: refererForBiliUrl(url),
+      Accept: "application/json",
+    };
+    // 已登录时把 Cookie 交给代理转发（playurl 等接口可返回登录态清晰度）。
+    // 只在请求确实走了本地代理时附加，避免直连 B 站时触发不必要的预检。
+    if (proxiedUrl !== url) {
+      const cookie = readStoredBilibiliCookie();
+      if (cookie) headers["X-Beid-Cookie"] = cookie;
+    }
     const fetchResponse = await fetch(proxiedUrl, {
-      headers: {
-        Referer: "https://www.bilibili.com/",
-        Accept: "application/json",
-      },
+      headers,
       credentials: "omit",
     });
     if (!fetchResponse.ok) {
@@ -110,17 +159,93 @@ export function createJsonRequest(): JsonRequest {
   };
 }
 
+/** 带响应头访问能力的 JSON 响应，用于读取代理回传的登录 Cookie。 */
+export interface HeaderedJsonResponse {
+  body: string;
+  header(name: string): string | null;
+}
+
+const DESKTOP_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+/**
+ * 与 createJsonRequest 相同的路由逻辑，但保留响应头访问能力。
+ * 扫码登录的 poll 需要读取 passport 响应里的 Set-Cookie（本地代理会把
+ * 它合入 x-bili-set-cookie 响应头），原生环境则直接读 CapacitorHttp headers。
+ */
+export async function requestJsonWithHeaders(url: string): Promise<HeaderedJsonResponse> {
+  const capacitorHttp = getCapacitorHttp();
+  if (isNativeEnvironment() && capacitorHttp) {
+    const response = await capacitorHttp.request({
+      url,
+      method: "GET",
+      headers: {
+        "User-Agent": DESKTOP_UA,
+        Referer: refererForBiliUrl(url),
+        Origin: "https://www.bilibili.com",
+        Accept: "application/json",
+      },
+    });
+    if (response.status !== 200) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const headers = response.headers ?? {};
+    return {
+      body: typeof response.data === "string" ? response.data : JSON.stringify(response.data),
+      header(name: string) {
+        const value = headers[name] ?? headers[name.toLowerCase()];
+        return typeof value === "string" && value.length > 0 ? value : null;
+      },
+    };
+  }
+  const fetchResponse = await fetch(proxyUrl(url), {
+    headers: {
+      Referer: refererForBiliUrl(url),
+      Accept: "application/json",
+    },
+    credentials: "omit",
+  });
+  if (!fetchResponse.ok) {
+    throw new Error(`HTTP ${fetchResponse.status}`);
+  }
+  return {
+    body: await fetchResponse.text(),
+    header: (name: string) => fetchResponse.headers.get(name),
+  };
+}
+
+/** 读取本地保存的 B 站登录 Cookie（与 accountService 的存储键保持一致）。 */
+export function readStoredBilibiliCookie(): string | null {
+  try {
+    const value = localStorage.getItem("rixia_bilibili_cookie_v1") ?? "";
+    return /SESSDATA=/.test(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 在开发模式下把 B 站 API URL 转换为 Vite 代理路径。
  * 生产模式下直接返回原始 URL（用户需要自行部署反代或使用 Tauri/Capacitor）。
  */
-function proxyUrl(url: string): string {
-  // 只在 localhost 开发环境下代理
+function proxyUrl(url: string): string {  // 只在 localhost 开发环境下代理
   const isDev = typeof window !== "undefined" &&
     (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
   if (!isDev) return url;
 
   if (url.startsWith("https://api.bilibili.com")) {
+    if (url.includes("/x/web-interface/wbi/search/type")) {
+      return url.replace("https://api.bilibili.com", "/bili-search-api");
+    }
+    if (
+      url.includes("/x/web-interface/wbi/view") ||
+      url.includes("/x/web-interface/view") ||
+      url.includes("/x/tag/archive/tags") ||
+      url.includes("/x/player/wbi/playurl") ||
+      url.includes("/x/player/playurl")
+    ) {
+      return url.replace("https://api.bilibili.com", "/bili-video-api");
+    }
     return url.replace("https://api.bilibili.com", "/bili-api");
   }
   if (url.startsWith("https://s.search.bilibili.com")) {
@@ -128,6 +253,9 @@ function proxyUrl(url: string): string {
   }
   if (url.startsWith("https://comment.bilibili.com")) {
     return url.replace("https://comment.bilibili.com", "/bili-comment");
+  }
+  if (url.startsWith("https://aisubtitle.hdslb.com")) {
+    return url.replace("https://aisubtitle.hdslb.com", "/bili-subtitle");
   }
   if (url.startsWith("https://passport.bilibili.com")) {
     return url.replace("https://passport.bilibili.com", "/bili-passport");
@@ -140,12 +268,13 @@ function proxyUrl(url: string): string {
  * 在原生环境用 CapacitorHttp + base64 解码，在浏览器用 fetch。
  */
 export async function fetchMediaArrayBuffer(url: string): Promise<ArrayBuffer> {
-  if (isNativeEnvironment() && window.CapacitorHttp) {
-    const response = await window.CapacitorHttp.request({
+  const capacitorHttp = getCapacitorHttp();
+  if (isNativeEnvironment() && capacitorHttp) {
+    const response = await capacitorHttp.request({
       url,
       method: "GET",
       headers: {
-        Referer: "https://www.bilibili.com/",
+        Referer: refererForBiliUrl(url),
         responseType: "arraybuffer",
       },
     });
@@ -162,7 +291,7 @@ export async function fetchMediaArrayBuffer(url: string): Promise<ArrayBuffer> {
     throw new Error("原生 HTTP 返回了无法处理的响应类型");
   }
   const fetchResponse = await fetch(url, {
-    headers: { Referer: "https://www.bilibili.com/" },
+    headers: { Referer: refererForBiliUrl(url) },
     credentials: "omit",
   });
   if (!fetchResponse.ok) {

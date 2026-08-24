@@ -1,14 +1,17 @@
 import type { FocusSession, HabitItem, TaskItem } from "../types";
+import { todayKey } from "./time";
 
 export interface DaySeries {
   days: string[];
   values: number[];
 }
 
-/** 近 N 天每天完成的任务数（依据完成时间戳） */
+/** 近 N 天每天完成的任务数（依据完成时间戳，按本地时区归日） */
 export function taskCompletionsByDay(tasks: TaskItem[], days: string[]): number[] {
   return days.map(
-    (date) => tasks.filter((task) => task.completedAt?.slice(0, 10) === date).length,
+    (date) => tasks.filter(
+      (task) => task.completedAt != null && todayKey(new Date(task.completedAt)) === date,
+    ).length,
   );
 }
 

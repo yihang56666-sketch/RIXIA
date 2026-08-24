@@ -39,6 +39,10 @@ import {
   BilibiliLookupError,
 } from "./types";
 import { createJsonRequest } from "./httpAdapter";
+import { CreatorVideoOrder, type CreatorArticle, type CreatorCollection, type CreatorContentPage, type CreatorProfile, type CreatorVideo } from "./extendedModels";
+import CryptoJS from "crypto-js";
+import { normalizeBiliImageUrl, normalizeBiliThumbnailUrl } from "./imageUrl";
+import { signBiliWbiUrl } from "./wbiSign";
 
 const API_HOST = "api.bilibili.com";
 const SUGGEST_HOST = "s.search.bilibili.com";
@@ -56,6 +60,11 @@ export interface BilibiliPublicContentService {
   searchVideos(keyword: string, page?: number, filter?: VideoSearchFilter): Promise<VideoSearchPage>;
   suggestKeywords(input: string): Promise<string[]>;
   searchUsers(keyword: string, page?: number, filter?: UserSearchFilter): Promise<UserSearchPage>;
+  loadCreatorProfile(mid: number): Promise<CreatorProfile>;
+  listCreatorVideos(mid: number, page?: number, options?: { keyword?: string; order?: CreatorVideoOrder }): Promise<CreatorContentPage<CreatorVideo>>;
+  listCreatorArticles(mid: number, page?: number): Promise<CreatorContentPage<CreatorArticle>>;
+  listCreatorCollections(mid: number, page?: number): Promise<CreatorContentPage<CreatorCollection>>;
+  listCollectionVideos(ownerMid: number, collectionId: number, page?: number): Promise<CreatorContentPage<CreatorVideo>>;
 }
 
 /** 默认实现：浏览器 fetch 公开 B 站 API。 */
@@ -70,18 +79,15 @@ export function createBilibiliPublicContentService(
           "没有找到有效的 BV 号。请粘贴类似 BV1GJ411x7h7 的编号或 B 站视频链接。",
         );
       }
-      const url = buildUrl(API_HOST, VIDEO_INFO_PATH, { bvid });
-      const responseText = await requestJson(url);
+      const params = { bvid };
+      const tagsPromise = Promise.resolve()
+        .then(() => requestJson(buildUrl(API_HOST, VIDEO_TAGS_PATH, params)))
+        .then(parseVideoTags)
+        .catch(() => [] as string[]);
+      const responseText = await requestVideoInfo(requestJson, params);
       const video = parseVideoInfo(responseText, bvid);
-      try {
-        const tagResponse = await requestJson(
-          buildUrl(API_HOST, VIDEO_TAGS_PATH, { bvid: video.bvid }),
-        );
-        const tags = parseVideoTags(tagResponse);
-        return tags.length === 0 ? video : { ...video, tags };
-      } catch {
-        return video;
-      }
+      const tags = await tagsPromise;
+      return tags.length === 0 ? video : { ...video, tags };
     },
 
     async searchVideos(keyword, page = 1, filter) {
@@ -129,6 +135,71 @@ export function createBilibiliPublicContentService(
       });
       const responseText = await requestJson(url);
       return parseUserSearchPage(responseText, safePage);
+    },
+
+    async loadCreatorProfile(mid) {
+      if (!Number.isFinite(mid) || mid <= 0) throw new BilibiliLookupError("UP 主编号无效。");
+      const responseText = await requestJson(buildUrl(API_HOST, "/x/web-interface/card", { mid: String(Math.trunc(mid)), photo: "true" }));
+      return parseCreatorProfile(responseText, mid);
+    },
+
+    async listCreatorVideos(mid, page = 1, options) {
+      if (!Number.isFinite(mid) || mid <= 0) throw new BilibiliLookupError("UP 主编号无效。");
+      const safePage = clamp(Math.trunc(page), 1, 50);
+      const keyword = options?.keyword?.trim() ?? "";
+      const order = creatorVideoOrderParameter(options?.order ?? CreatorVideoOrder.latest);
+      const legacyUrl = buildUrl(API_HOST, "/x/space/arc/search", {
+        mid: String(Math.trunc(mid)), pn: String(safePage), ps: "20", order, keyword,
+      });
+      try {
+        return parseCreatorVideos(await requestJson(legacyUrl), safePage);
+      } catch (error) {
+        if (!isRetryableSpaceError(error)) throw error;
+        try {
+          return parseCreatorVideos(await requestJson(await buildCreatorVideosWbiUrl(Math.trunc(mid), safePage, requestJson, keyword, order)), safePage);
+        } catch (fallbackError) {
+          if (!isRetryableSpaceError(fallbackError)) throw fallbackError;
+          throw new BilibiliLookupError("B 站只对“投稿”启用了额外风控，请确认已经登录，稍后刷新投稿；专栏和合集不受此限制。");
+        }
+      }
+    },
+
+    async listCreatorArticles(mid, page = 1) {
+      if (!Number.isFinite(mid) || mid <= 0) throw new BilibiliLookupError("UP 主编号无效。");
+      const safePage = clamp(Math.trunc(page), 1, 50);
+      return parseCreatorArticles(await requestJson(buildUrl(API_HOST, "/x/space/article", {
+        mid: String(Math.trunc(mid)), pn: String(safePage), ps: "20", sort: "publish_time",
+      })), safePage);
+    },
+
+    async listCreatorCollections(mid, page = 1) {
+      if (!Number.isFinite(mid) || mid <= 0) throw new BilibiliLookupError("UP 主编号无效。");
+      const safePage = clamp(Math.trunc(page), 1, 50);
+      const baseQuery = { mid: String(Math.trunc(mid)), page_num: String(safePage), page_size: "20" };
+      try {
+        return parseCreatorCollections(await requestJson(buildUrl(API_HOST, "/x/polymer/web-space/seasons_series_list", baseQuery)), Math.trunc(mid), safePage);
+      } catch (error) {
+        if (!isRetryableSpaceError(error)) throw error;
+        const retryQuery = { ...baseQuery, platform: "web", web_location: "333.1387", dm_img_list: "[]", dm_img_str: "focubili-public", dm_cover_img_str: "focubili-public-space" };
+        return parseCreatorCollections(await requestJson(buildUrl(API_HOST, "/x/polymer/web-space/seasons_series_list", retryQuery)), Math.trunc(mid), safePage);
+      }
+    },
+
+    async listCollectionVideos(ownerMid, collectionId, page = 1) {
+      if (!Number.isFinite(ownerMid) || ownerMid <= 0 || !Number.isFinite(collectionId) || collectionId <= 0) {
+        throw new BilibiliLookupError("合集编号无效。");
+      }
+      const safePage = clamp(Math.trunc(page), 1, 50);
+      const baseQuery = {
+        mid: String(Math.trunc(ownerMid)), season_id: String(Math.trunc(collectionId)), page_num: String(safePage), page_size: "20", sort_reverse: "false",
+      };
+      try {
+        return parseCollectionVideos(await requestJson(buildUrl(API_HOST, "/x/polymer/web-space/seasons_archives_list", baseQuery)), safePage);
+      } catch (error) {
+        if (!isRetryableSpaceError(error)) throw error;
+        const retryQuery = { ...baseQuery, platform: "web", web_location: "333.1387", dm_img_list: "[]", dm_img_str: "focubili-public", dm_cover_img_str: "focubili-public-space" };
+        return parseCollectionVideos(await requestJson(buildUrl(API_HOST, "/x/polymer/web-space/seasons_archives_list", retryQuery)), safePage);
+      }
     },
   };
 }
@@ -204,7 +275,7 @@ function parseVideoTags(responseText: string): string[] {
   }
   if (typeof decoded !== "object" || decoded === null) return [];
   const root = decoded as Record<string, unknown>;
-  const code = readInteger(root.code);
+  const code = readSignedInteger(root.code);
   if (code !== 0 || !Array.isArray(root.data)) return [];
   const tags: string[] = [];
   const seen = new Set<string>();
@@ -216,6 +287,12 @@ function parseVideoTags(responseText: string): string[] {
     if (tags.length >= 16) break;
   }
   return tags;
+}
+
+function readSignedInteger(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function parseVideoSearchPage(responseText: string, requestedPage: number): VideoSearchPage {
@@ -246,7 +323,9 @@ function parseVideoSearchPage(responseText: string, requestedPage: number): Vide
         publishedAt: parseUnixTime(readInteger(item.pubdate))?.toISOString(),
         playCount: readInteger(item.play),
         danmakuCount: readInteger(item.video_review),
-        episodeCountText: readText(item.tag, ""),
+        // The search API exposes the display-ready episode label separately.
+        // `tag` is a comma-separated tag list and must not trigger a detail lookup.
+        episodeCountText: readText(item.episode_count_text ?? item.episodeCountText, ""),
       });
     }
   }
@@ -313,16 +392,197 @@ function parseSearchSuggestions(responseText: string): string[] {
   const decoded = JSON.parse(responseText);
   if (typeof decoded !== "object" || decoded === null) return [];
   const root = decoded as Record<string, unknown>;
-  const tag = readObject(root.tag ?? root.result);
+  const result = readObject(root.result);
+  const tag = readObject(root.tag);
+  const entries = Array.isArray(tag.value)
+    ? tag.value
+    : Array.isArray(result.tag)
+      ? result.tag
+      : [];
   const values: string[] = [];
-  if (Array.isArray(tag.value)) {
-    for (const raw of tag.value as unknown[]) {
-      const item = readObject(raw);
-      const text = readText(item.name ?? item.k, "");
-      if (text) values.push(text);
-    }
+  for (const raw of entries) {
+    const item = readObject(raw);
+    const text = readText(item.value ?? item.name ?? item.k, "");
+    if (text) values.push(text);
   }
   return values;
+}
+
+function parseCreatorProfile(responseText: string, fallbackMid: number): CreatorProfile {
+  const root = parseApiRoot(responseText, "UP 主名片");
+  const data = readObject(root.data);
+  const card = readObject(data.card);
+  const name = readText(card.name, "未知 UP 主");
+  return {
+    mid: readIdentifier(card.mid) || fallbackMid,
+    name,
+    avatarUrl: normalizeImageUrl(readText(card.face, "")),
+    sign: stripHtml(readText(card.sign, "")),
+    officialDescription: stripHtml(readText(readObject(card.Official).desc ?? readObject(card.official).desc, "")),
+    followingCount: readInteger(card.attention),
+    followerCount: readInteger(data.follower),
+    likeCount: readInteger(data.like_num),
+    videoCount: readInteger(data.archive_count),
+    articleCount: readInteger(data.article_count),
+  };
+}
+
+function parseCreatorVideos(responseText: string, requestedPage: number): CreatorContentPage<CreatorVideo> {
+  const root = parseApiRoot(responseText, "UP 主投稿");
+  const data = readObject(root.data);
+  const list = readObject(data.list);
+  const items = parseCreatorVideoList(list.vlist);
+  const count = readInteger(readObject(data.page).count);
+  return { items, page: requestedPage, hasMore: count > 0 ? requestedPage * 20 < count : items.length === 20, totalCount: count || undefined };
+}
+
+function parseCreatorArticles(responseText: string, requestedPage: number): CreatorContentPage<CreatorArticle> {
+  const root = parseApiRoot(responseText, "UP 主专栏");
+  const data = readObject(root.data);
+  const articles = Array.isArray(data.articles) ? data.articles.map((raw) => {
+    const item = readObject(raw);
+    const images = Array.isArray(item.image_urls) ? item.image_urls : [];
+    return {
+      id: readIdentifier(item.id),
+      title: stripHtml(readText(item.title, "未命名专栏")),
+      summary: stripHtml(readText(item.summary, "")),
+      coverUrl: images.length > 0 ? normalizeThumbnailUrl(readText(images[0], "")) : "",
+      publishedAt: parseUnixTime(readInteger(item.publish_time))?.toISOString(),
+      viewCount: readInteger(item.view),
+    };
+  }).filter((item) => item.id > 0) : [];
+  const count = readInteger(readObject(data.page).count ?? data.count);
+  return { items: articles, page: requestedPage, hasMore: count > 0 ? requestedPage * 20 < count : articles.length === 20, totalCount: count || undefined };
+}
+
+function parseCollectionVideos(responseText: string, requestedPage: number): CreatorContentPage<CreatorVideo> {
+  const root = parseApiRoot(responseText, "合集内容");
+  const data = readObject(root.data);
+  const items = parseCreatorVideoList(data.archives);
+  const meta = readObject(data.meta);
+  const count = readInteger(meta.total ?? data.total);
+  return { items, page: requestedPage, hasMore: count > 0 ? requestedPage * 20 < count : items.length === 20, totalCount: count || undefined };
+}
+
+function parseCreatorCollections(responseText: string, ownerMid: number, requestedPage: number): CreatorContentPage<CreatorCollection> {
+  const root = parseApiRoot(responseText, "UP 主合集");
+  const data = readObject(root.data);
+  const rawCollections = readObject(data.items_lists).seasons_list;
+  const items: CreatorCollection[] = Array.isArray(rawCollections) ? rawCollections.map((raw) => {
+    const item = readObject(raw);
+    return {
+      id: readIdentifier(item.season_id ?? item.id),
+      ownerMid,
+      ownerName: readText(readObject(item.upper).name, ""),
+      ownerAvatarUrl: normalizeImageUrl(readText(readObject(item.upper).face, "")),
+      title: stripHtml(readText(item.title, "未命名合集")),
+      coverUrl: normalizeThumbnailUrl(readText(item.cover, "")),
+      description: stripHtml(readText(item.description ?? item.intro, "")),
+      totalCount: readInteger(item.total ?? item.episode_count),
+      previewVideos: parseCreatorVideoList(item.archives),
+    };
+  }).filter((item) => item.id > 0) : [];
+  return { items, page: requestedPage, hasMore: data.has_more === true || items.length === 20 };
+}
+
+function parseCreatorVideoList(value: unknown): CreatorVideo[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((raw) => {
+    const item = readObject(raw);
+    const stats = parseVideoStats(readObject(item.stat));
+    return {
+      bvid: readText(item.bvid, ""),
+      title: stripHtml(readText(item.title, "未命名视频")),
+      coverUrl: normalizeThumbnailUrl(readText(item.pic ?? item.cover, "")),
+      durationSeconds: parseSearchDuration(readText(item.length, "")) || readInteger(item.duration),
+      partCount: Math.max(1, readInteger(item.videos) || 1),
+      publishedAt: parseUnixTime(readInteger(item.created ?? item.pubdate))?.toISOString(),
+      stats: {
+        ...stats,
+        viewCount: stats.viewCount || readInteger(item.play) || readInteger(item.view),
+        danmakuCount: stats.danmakuCount || readInteger(item.video_review) || readInteger(item.danmaku),
+        replyCount: stats.replyCount || readInteger(item.comment) || readInteger(item.reply),
+      },
+    };
+  }).filter((item) => item.bvid.length > 0);
+}
+
+function parseApiRoot(responseText: string, label: string): Record<string, unknown> {
+  let decoded: unknown;
+  try { decoded = JSON.parse(responseText); } catch { throw new BilibiliLookupError(`${label}接口返回的数据格式不正确。`); }
+  if (typeof decoded !== "object" || decoded === null) throw new BilibiliLookupError(`${label}接口返回的数据格式不正确。`);
+  const root = decoded as Record<string, unknown>;
+  const code = readSignedInteger(root.code);
+  if (code !== 0) throw new BilibiliLookupError(`${label}失败：${readText(root.message, "请求失败")}（错误码：${code}）。`);
+  return root;
+}
+
+function creatorVideoOrderParameter(order: CreatorVideoOrder): string {
+  if (order === CreatorVideoOrder.mostPlayed) return "click";
+  if (order === CreatorVideoOrder.mostFavorited) return "stow";
+  return "pubdate";
+}
+
+function isSpaceRiskControl(error: BilibiliLookupError): boolean {
+  return /错误码：(?:-352|-799|-779)/.test(error.message) || /HTTP 412/.test(error.message);
+}
+
+function isRetryableSpaceError(error: unknown): boolean {
+  if (error instanceof BilibiliLookupError) return isSpaceRiskControl(error);
+  return error instanceof Error && /HTTP 412/.test(error.message);
+}
+
+function randomBase64Token(byteCount: number): string {
+  const bytes = new Uint8Array(byteCount);
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < byteCount; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function parseWbiNavRoot(responseText: string): Record<string, unknown> {
+  let decoded: unknown;
+  try { decoded = JSON.parse(responseText); } catch { throw new BilibiliLookupError("WBI 密钥接口返回的数据格式不正确。"); }
+  if (typeof decoded !== "object" || decoded === null) throw new BilibiliLookupError("WBI 密钥接口返回的数据格式不正确。");
+  const root = decoded as Record<string, unknown>;
+  const code = readSignedInteger(root.code);
+  // 未登录时 nav 返回 -101，但仍会带上当天公开的 wbi_img 密钥。
+  if (code !== 0 && code !== -101) {
+    throw new BilibiliLookupError(`WBI 密钥失败：${readText(root.message, "请求失败")}（错误码：${code}）。`);
+  }
+  return root;
+}
+
+async function buildCreatorVideosWbiUrl(mid: number, page: number, requestJson: JsonRequest, keyword = "", order = "pubdate"): Promise<string> {
+  const navRoot = parseWbiNavRoot(await requestJson(`https://${API_HOST}/x/web-interface/nav`));
+  const wbi = readObject(readObject(navRoot.data).wbi_img);
+  const imageKey = wbiFilename(readText(wbi.img_url, ""));
+  const subKey = wbiFilename(readText(wbi.sub_url, ""));
+  const rawKey = `${imageKey}${subKey}`;
+  if (rawKey.length < 64) throw new BilibiliLookupError("WBI 密钥暂时不可用。");
+  const mixinOrder = [46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13,37,48,7,16,24,55,40,61,26,17,0,1,60,51,30,4,22,25,54,21,56,59,6,63,57,62,11,36,20,34,44,52];
+  const mixinKey = mixinOrder.map((index) => rawKey[index] ?? "").join("").slice(0, 32);
+  const params: Record<string, string> = {
+    dm_img_list: "[]",
+    dm_img_str: randomBase64Token(24),
+    dm_cover_img_str: randomBase64Token(48),
+    dm_img_inter: '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}',
+    mid: String(mid), pn: String(page), ps: "20", tid: "0", special_type: "", order,
+    keyword, order_avoided: "true", platform: "web", web_location: "333.1387",
+    wts: String(Math.floor(Date.now() / 1000)),
+  };
+  const query = Object.keys(params).sort().map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key]!.replace(/[!'()*]/g, ""))}`).join("&");
+  const rid = CryptoJS.MD5(`${query}${mixinKey}`).toString();
+  return `https://${API_HOST}/x/space/wbi/arc/search?${query}&w_rid=${rid}`;
+}
+
+function wbiFilename(url: string): string {
+  const match = url.match(/\/([^/]+)\.[A-Za-z0-9]+$/);
+  return match?.[1] ?? "";
 }
 
 function parseVideoInfo(responseText: string, requestedBvid: string): VideoPreview {
@@ -574,26 +834,22 @@ function parseSearchDuration(text: string): number {
 }
 
 function normalizeThumbnailUrl(value: string): string {
-  const normalized = normalizeImageUrl(value);
-  if (!normalized) return "";
-  if (normalized.includes("@")) return normalized;
-  return `${normalized}@320w_200h_1c.webp`;
+  return normalizeBiliThumbnailUrl(value);
 }
 
 function normalizeImageUrl(value: string): string {
-  const withScheme = value.startsWith("//") ? `https:${value}` : value;
-  let parsed: URL | null = null;
+  return normalizeBiliImageUrl(value);
+}
+
+async function requestVideoInfo(requestJson: JsonRequest, params: Record<string, string>): Promise<string> {
   try {
-    parsed = new URL(withScheme);
-  } catch {
-    parsed = null;
+    const signed = await signBiliWbiUrl(API_HOST, "/x/web-interface/wbi/view", params, requestJson);
+    return await requestJson(signed);
+  } catch (error) {
+    if (error instanceof BilibiliLookupError) throw error;
+    if (error instanceof Error && /HTTP 412/.test(error.message)) throw error;
+    return requestJson(buildUrl(API_HOST, VIDEO_INFO_PATH, params));
   }
-  const trustedHost = parsed != null && (
-    parsed.host.endsWith(".hdslb.com") || parsed.host.endsWith(".biliimg.com")
-  );
-  if (!parsed || !trustedHost) return "";
-  const uri = parsed.protocol === "http:" ? new URL(parsed.toString().replace("http://", "https://")) : parsed;
-  return uri.protocol === "https:" ? uri.toString() : "";
 }
 
 function readInteger(value: unknown): number {

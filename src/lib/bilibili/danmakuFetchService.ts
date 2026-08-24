@@ -6,25 +6,33 @@
 
 import type { DanmakuEntry } from "./types";
 import { DanmakuMode } from "./types";
+import { createJsonRequest, isNativeEnvironment } from "./httpAdapter";
 
 export interface DanmakuFetchService {
   fetchDanmaku(cid: number): Promise<DanmakuEntry[]>;
 }
 
 export function createDanmakuFetchService(): DanmakuFetchService {
+  const requestText = createJsonRequest();
   return {
     async fetchDanmaku(cid) {
       if (!cid || cid <= 0) return [];
-      const url = `https://comment.bilibili.com/${cid}.xml`;
-      const response = await fetch(url, {
-        credentials: "omit",
-        headers: { Accept: "application/xml, text/xml, */*" },
-      });
-      if (!response.ok) return [];
-      const text = await response.text();
-      return parseDanmakuXml(text);
+      const url = commentUrl(cid);
+      try {
+        return parseDanmakuXml(await requestText(url));
+      } catch {
+        return [];
+      }
     },
   };
+}
+
+function commentUrl(cid: number): string {
+  const localBrowser = typeof window !== "undefined" &&
+    (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
+  return localBrowser && !isNativeEnvironment()
+    ? `/bili-comment/${cid}.xml`
+    : `https://comment.bilibili.com/${cid}.xml`;
 }
 
 export function parseDanmakuXml(xml: string): DanmakuEntry[] {

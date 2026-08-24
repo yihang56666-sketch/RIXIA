@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FocusSession, HabitItem, TaskItem } from "../types";
+import { todayKey } from "./time";
 import {
   focusMinutesByDay,
   habitCheckinsByDay,
@@ -36,13 +37,25 @@ const DAYS = ["2026-08-11", "2026-08-12", "2026-08-13"];
 describe("taskCompletionsByDay", () => {
   it("counts tasks by their completion timestamp", () => {
     const tasks = [
-      task(true, "2026-08-12T09:00:00.000Z"),
-      task(true, "2026-08-12T21:00:00.000Z"),
-      task(true, "2026-08-13T09:00:00.000Z"),
+      // 用各时区都不会跨日的时间（本地时间归日）
+      task(true, "2026-08-12T02:00:00.000Z"),
+      task(true, "2026-08-12T04:00:00.000Z"),
+      task(true, "2026-08-13T02:00:00.000Z"),
       task(false),
       task(true),
     ];
     expect(taskCompletionsByDay(tasks, DAYS)).toEqual([0, 2, 1]);
+  });
+
+  it("attributes completions to the local calendar day", () => {
+    // 21:00Z 在 UTC+8 已是次日：应计入本地日期，而不是 UTC 切片的前一天
+    const completedAt = "2026-08-12T21:00:00.000Z";
+    const tasks = [task(true, completedAt)];
+    const days = ["2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13"];
+    const result = taskCompletionsByDay(tasks, days);
+    const expected = new Array(days.length).fill(0);
+    expected[days.indexOf(todayKey(new Date(completedAt)))] = 1;
+    expect(result).toEqual(expected);
   });
 });
 

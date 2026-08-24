@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Modal } from "../../components/Modal";
 import { QuickAdd } from "../../components/QuickAdd";
 import { dueLabel, lastNDates, todayKey } from "../../lib/time";
+import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
 import type { TaskItem } from "../../types";
 
@@ -21,14 +22,22 @@ function TaskRow({ item, today }: { item: TaskItem; today: string }) {
         onClick={() => toggleTask(item.id)}
         aria-label={item.done ? "标记为未完成" : "标记为完成"}
       />
-      <button className="task-edit-trigger" onClick={() => setEditing(true)} title="点击编辑">
+      <button className="task-edit-trigger" onClick={() => { setTitle(item.title); setDue(item.due ?? ""); setEditing(true); }} title="点击编辑">
         <p className={item.done ? "done" : ""}>{item.title}</p>
         <span className={`due-chip tone-${dueInfo.tone}`} style={{ marginTop: 5 }}>{dueInfo.text}</span>
       </button>
       <button className="danger" onClick={() => removeTask(item.id)}>删除</button>
 
       {editing && (
-        <Modal title="编辑任务" onClose={() => setEditing(false)}>
+        <Modal
+          title="编辑任务"
+          onClose={() => {
+            // 关闭即丢弃草稿，下次打开从当前值重新开始
+            setTitle(item.title);
+            setDue(item.due ?? "");
+            setEditing(false);
+          }}
+        >
           <form
             className="stack"
             style={{ gap: 10 }}
@@ -63,7 +72,7 @@ function TaskRow({ item, today }: { item: TaskItem; today: string }) {
   );
 }
 
-export function TasksView() {
+export function TasksView({ embedded = false }: { embedded?: boolean } = {}) {
   const { tasks, addTask, toggleTask } = useAppStore();
   const [filter, setFilter] = useState<Filter>("today");
   const today = todayKey();
@@ -78,6 +87,7 @@ export function TasksView() {
   const visible = filter === "today" ? todayTasks : filter === "open" ? openTasks : tasks;
 
   return (
+    <RixiaWorkspacePage title="任务" embedded={embedded}>
     <div className="stack">
       <section className="card">
         <QuickAdd placeholder="添加今天要做的事" onSubmit={(text) => addTask(text, today)} />
@@ -147,5 +157,6 @@ export function TasksView() {
         </section>
       )}
     </div>
+    </RixiaWorkspacePage>
   );
 }

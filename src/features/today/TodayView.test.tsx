@@ -31,6 +31,7 @@ describe("TodayView", () => {
 
   it("renders the next-step action when state is empty", () => {
     render(<TodayView />);
+    expect(screen.getByRole("heading", { name: "今日节奏" })).toBeTruthy();
     expect(screen.getByText("下一步")).toBeTruthy();
     expect(screen.getByText("创建今日任务")).toBeTruthy();
   });

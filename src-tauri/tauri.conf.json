@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "RIXIA",
+  "productName": "BEID",
   "version": "0.3.0",
-  "identifier": "com.rixia.app",
+  "identifier": "com.beid.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://127.0.0.1:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "RIXIA",
+        "title": "BEID · 专注备考工作台",
         "width": 1280,
         "height": 800,
         "minWidth": 720,
@@ -34,10 +34,10 @@
       "../public/icon.png"
     ],
     "category": "Productivity",
-    "shortDescription": "RIXIA — 个人节奏工作台",
-    "longDescription": "本地优先的个人节奏与学习工作台，集成 B 站学习播放能力。",
-    "publisher": "RIXIA",
-    "copyright": "© 2026 RIXIA",
+    "shortDescription": "BEID — 专注备考工作台",
+    "longDescription": "融合节奏工作台与专注看课能力的 B 站考研学习客户端。",
+    "publisher": "BEID",
+    "copyright": "© 2026 BEID",
     "windows": {
       "wix": {
         "language": ["zh-CN", "en-US"]
@@ -47,7 +47,7 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["bilibili", "rixia"]
+        "schemes": ["bilibili", "beid"]
       }
     },
     "shell": {

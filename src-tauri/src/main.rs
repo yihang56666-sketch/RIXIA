@@ -1,4 +1,4 @@
-// RIXIA Tauri 后端入口 — 处理深链接 + 提供原生能力给前端
+// BEID Tauri 后端入口 — 处理深链接 + 提供原生能力给前端
 // 用 `cargo tauri dev` 或 `cargo tauri build` 构建
 
 #![cfg_attr(
@@ -14,7 +14,7 @@ fn main() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            // 注册 bilibili:// 与 rixia:// 协议
+            // 注册 bilibili:// 与 beid:// 协议
             #[cfg(target_os = "windows")]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
@@ -23,5 +23,5 @@ fn main() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("RIXIA Tauri 启动失败");
+        .expect("BEID Tauri 启动失败");
 }

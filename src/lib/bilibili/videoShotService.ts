@@ -8,10 +8,52 @@
 
 import type { JsonRequest } from "./types";
 import type { VideoShotPreview } from "./extendedModels";
+import type { VideoShotFrame } from "./extendedModels";
 import { createJsonRequest } from "./httpAdapter";
 
 export interface VideoShotService {
   loadPreview(bvid: string, cid: number): Promise<VideoShotPreview | null>;
+}
+
+export interface VideoShotCropRect {
+  sx: number;
+  sy: number;
+  width: number;
+  height: number;
+}
+
+export function cropRectForFrame(frame: VideoShotFrame): VideoShotCropRect {
+  return {
+    sx: Math.max(0, frame.column) * frame.frameWidth,
+    sy: Math.max(0, frame.row) * frame.frameHeight,
+    width: frame.frameWidth,
+    height: frame.frameHeight,
+  };
+}
+
+/** Loads one sprite sheet and returns the selected frame as a portable data URL. */
+export async function captureVideoShotFrame(frame: VideoShotFrame): Promise<string | null> {
+  if (!frame.imageUrl || frame.frameWidth <= 0 || frame.frameHeight <= 0) return null;
+  if (typeof Image === "undefined" || typeof document === "undefined") return null;
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.crossOrigin = "anonymous";
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("视频帧图片加载失败"));
+      element.src = frame.imageUrl;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = frame.frameWidth;
+    canvas.height = frame.frameHeight;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    const crop = cropRectForFrame(frame);
+    context.drawImage(image, crop.sx, crop.sy, crop.width, crop.height, 0, 0, crop.width, crop.height);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
 }
 
 export function createEmptyVideoShotService(): VideoShotService {

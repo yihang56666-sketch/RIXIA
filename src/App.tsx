@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Shell } from "./components/Shell";
 import { CountdownsView } from "./features/countdowns/CountdownsView";
 import { FocusView } from "./features/focus/FocusView";
@@ -15,35 +15,54 @@ import { VideosView } from "./features/videos/VideosView";
 import {
   BilibiliFavoritesView,
   BilibiliFollowedView,
-  BilibiliLoginView,
   BilibiliSubscribedCollectionsView,
-  BilibiliWatchHistoryView,
+  FavoriteVideosRoute,
 } from "./features/bilibili/BilibiliAccountViews";
+import { BilibiliLoginView } from "./features/bilibili/LoginView";
 import { BilibiliPlayerRoute } from "./features/bilibili/BilibiliPlayerView";
 import { BilibiliSearchView } from "./features/bilibili/BilibiliSearchView";
+import { LocalWatchHistoryView } from "./features/bilibili/LocalWatchHistoryView";
 import {
-  AppUpdatePage,
   CacheManagementPage,
   ProblemDiagnosticsPage,
   AndroidPermissionManagementPage,
+  WindowsSystemCapabilitiesPage,
 } from "./features/bilibili/SystemPages";
 import { FirstLaunchGate } from "./features/bilibili/FirstLaunchGate";
+import { M3FeedbackProvider } from "./features/bilibili/m3";
+import { AppUpdateProvider, useAppUpdateController } from "./features/bilibili/AppUpdateContext";
 import { FocusDashboard } from "./features/bilibili/FocusDashboard";
 import { FocusStatisticsView } from "./features/bilibili/FocusStatisticsView";
 import { HomeFeedView } from "./features/bilibili/HomeFeedView";
 import { LearningListView } from "./features/bilibili/LearningListView";
 import { VideoNotesView } from "./features/bilibili/VideoNotesView";
 import { ProfileHub } from "./features/bilibili/ProfileHub";
+import { PersonalizationSettingsView } from "./features/bilibili/PersonalizationSettingsView";
+import { AboutView } from "./features/bilibili/AboutView";
 import { CollectionDetailRoute, CreatorProfileRoute } from "./features/bilibili/CreatorCollectionViews";
 import { SettingsView } from "./features/settings/SettingsView";
 import { useAppStore } from "./store/useAppStore";
 import { THEMES } from "./catalog";
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
 import { routeIncomingBilibiliUrlAsync } from "./lib/bilibili/nativeDeepLink";
-import { attachNativeShareIntent, type NativeShareIntentPlugin } from "./lib/bilibili/nativeShareIntent";
+import { attachNativeShareIntent, getNativeShareIntent } from "./lib/bilibili/nativeShareIntent";
+import { createDiagnosticsService } from "./lib/bilibili/diagnosticsService";
+import { AppUpdateStatus } from "./lib/bilibili/miscServices";
 
-const nativeShareIntent = registerPlugin<NativeShareIntentPlugin>("FocuBiliShareIntent");
+function AppUpdateBanner() {
+  const { result, hasUpdate } = useAppUpdateController();
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => setDismissed(false), [result.status, result.latestVersion]);
+  if (!hasUpdate || dismissed || result.status !== AppUpdateStatus.available) return null;
+  return (
+    <aside className="app-update-notice" role="status">
+      <span>发现 BEID {result.latestVersion} 更新</span>
+      <button className="ghost-btn compact" onClick={() => useAppStore.getState().setView("about")}>查看</button>
+      <button className="icon-button" aria-label="关闭更新提示" onClick={() => setDismissed(true)}>×</button>
+    </aside>
+  );
+}
 
 export default function App() {
   const view = useAppStore((state) => state.view);
@@ -51,10 +70,22 @@ export default function App() {
   const backgroundImage = useAppStore((state) => state.backgroundImage);
 
   useEffect(() => {
+    const diagnostics = createDiagnosticsService();
+    const onError = (event: ErrorEvent) => diagnostics.record(event.error ?? event.message, "runtime");
+    const onRejection = (event: PromiseRejectionEvent) => diagnostics.record(event.reason, "promise");
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, []);
+
+  useEffect(() => {
+    const isDark = Boolean(THEMES.find((item) => item.key === theme)?.dark);
     document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = THEMES.find((item) => item.key === theme)?.dark
-      ? "dark"
-      : "light";
+    document.documentElement.dataset.m3Mode = isDark ? "dark" : "light";
+    document.documentElement.style.colorScheme = isDark ? "dark" : "light";
   }, [theme]);
 
   useEffect(() => {
@@ -77,7 +108,7 @@ export default function App() {
   useEffect(() => {
     if (Capacitor.getPlatform() !== "android") return;
     let detach: (() => Promise<void>) | undefined;
-    void attachNativeShareIntent(nativeShareIntent, (text) => {
+    void attachNativeShareIntent(getNativeShareIntent(), (text) => {
       void routeIncomingBilibiliUrlAsync(text, {
         openVideo: (bvid) => useAppStore.getState().openBilibiliVideo(bvid),
         openSearch: () => useAppStore.getState().setView("search"),
@@ -98,6 +129,9 @@ export default function App() {
     >
       <div className="app-overlay" />
       <FirstLaunchGate>
+        <M3FeedbackProvider>
+        <AppUpdateProvider>
+        <AppUpdateBanner />
         <Shell>
           {view === "today" && <TodayView />}
         {view === "plan" && <PlanView />}
@@ -105,16 +139,18 @@ export default function App() {
         {view === "search" && <BilibiliSearchView />}
         {view === "bilibili-player" && <BilibiliPlayerRoute />}
         {view === "favorites" && <BilibiliFavoritesView />}
+        {view === "favorite-videos" && <FavoriteVideosRoute />}
         {view === "followed" && <BilibiliFollowedView />}
-        {view === "watch-history" && <BilibiliWatchHistoryView />}
+        {view === "local-watch-history" && <LocalWatchHistoryView />}
         {view === "subscribed-collections" && <BilibiliSubscribedCollectionsView />}
         {view === "creator-profile" && <CreatorProfileRoute />}
         {view === "collection-detail" && <CollectionDetailRoute />}
         {view === "login" && <BilibiliLoginView />}
-        {view === "app-update" && <AppUpdatePage />}
+        {view === "about" && <AboutView />}
         {view === "cache-management" && <CacheManagementPage />}
         {view === "problem-diagnostics" && <ProblemDiagnosticsPage />}
         {view === "android-permissions" && <AndroidPermissionManagementPage />}
+        {view === "windows-system-capabilities" && <WindowsSystemCapabilitiesPage />}
         {view === "home-feed" && <HomeFeedView />}
         {view === "learning-list" && <LearningListView />}
         {view === "video-notes" && <VideoNotesView />}
@@ -130,8 +166,11 @@ export default function App() {
         {view === "focus" && <FocusView />}
         {view === "videos" && <VideosView />}
         {view === "settings" && <ProfileHub />}
+        {view === "personalization" && <PersonalizationSettingsView />}
         {view === "preferences" && <SettingsView />}
       </Shell>
+      </AppUpdateProvider>
+      </M3FeedbackProvider>
       </FirstLaunchGate>
     </div>
   );

@@ -1,12 +1,14 @@
 /**
- * RIXIA useFocusTimer hook — 1:1 React 移植自 FocuBili 的
- * focus_timer_controller.dart（753 行）。
+ * 全应用唯一的专注计时控制器 — 1:1 移植 FocuBili 的
+ * focus_timer_controller.dart + focus_timer_scope.dart 语义。
  *
- * 管理全应用唯一的专注任务、视频播放联动、打断记录和本机持久化。
- * 所有状态变更自动持久化到 localStorage。
+ * FocuBili 通过根组件持有的 FocusTimerScope 让所有页面共享同一个
+ * FocusTimerController；此前这里是一个 hook，每个组件各建一个实例，
+ * 状态互相不同步。现在模块级单例 + 订阅通知，与原版一致。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useSyncExternalStore } from "react";
+import { Capacitor } from "@capacitor/core";
 import type { FullFocusSession } from "../../lib/bilibili/focusSessionModel";
 import {
   type FocusInterruption,
@@ -33,6 +35,14 @@ import {
   type FocusStoredState,
   createFocusSessionStorageService,
 } from "../../lib/bilibili/focusServices";
+import { shouldAutoCompleteFocus } from "../../lib/bilibili/focusCompletionPolicy";
+import {
+  buildFocusStatisticsSnapshot,
+  FocusStatisticsRange,
+  todayCompletedCount as calcTodayCompletedCount,
+  todayFocusedMs as calcTodayFocusedMs,
+} from "../../lib/bilibili/focusStatisticsModel";
+import { createFocusNotificationService, nativeFocusNotification } from "../../lib/focusNotifications";
 
 const MAX_GOAL_CHARS = 60;
 const MIN_DURATION_MS = 60_000;
@@ -100,92 +110,119 @@ export interface UseFocusTimer {
   todayCompletedCount: number;
 }
 
-export function useFocusTimer(): UseFocusTimer {
-  const storage = useRef(createFocusSessionStorageService());
-  const [ready, setReady] = useState(false);
-  const [activeSession, setActiveSession] = useState<FullFocusSession | null>(null);
-  const [lastFinishedSession, setLastFinishedSession] = useState<FullFocusSession | null>(null);
-  const [history, setHistory] = useState<FullFocusSession[]>([]);
-  const [, forceUpdate] = useState(0);
-  const tickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const playingBvidRef = useRef<string | null>(null);
-  const playingPartCidRef = useRef<number | null>(null);
-  const videoPlayingRef = useRef(false);
+class FocusTimerController {
+  private readonly listeners = new Set<() => void>();
+  private readonly storage = createFocusSessionStorageService();
+  private readonly notificationService = createFocusNotificationService(
+    Capacitor.getPlatform() === "android" ? nativeFocusNotification : undefined,
+  );
+  private ticker: ReturnType<typeof setInterval> | null = null;
+  private playingBvid: string | null = null;
+  private playingPartCid: number | null = null;
+  private videoPlaying = false;
+  private backgroundInterruptionRecorded = false;
 
-  const persist = useCallback((active: FullFocusSession | null, hist: FullFocusSession[]) => {
-    storage.current.saveState(active, hist);
-  }, []);
+  ready = false;
+  version = 0;
+  activeSession: FullFocusSession | null = null;
+  lastFinishedSession: FullFocusSession | null = null;
+  history: FullFocusSession[] = [];
 
-  const syncTicker = useCallback(() => {
-    const shouldRun = ready && activeSession?.status === FocusSessionStatus.running;
+  constructor() {
+    void this.storage.loadState().then((state: FocusStoredState) => {
+      this.activeSession = state.activeSession;
+      this.history = state.history;
+      this.ready = true;
+      this.syncTicker();
+      this.notify();
+    });
+    document.addEventListener("visibilitychange", () => this.handleVisibility());
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  private notify(): void {
+    this.version += 1;
+    this.syncTicker();
+    for (const listener of this.listeners) listener();
+  }
+
+  private persist(active: FullFocusSession | null, history: FullFocusSession[]): void {
+    void this.storage.saveState(active, history);
+  }
+
+  private syncTicker(): void {
+    const shouldRun = this.ready && this.activeSession?.status === FocusSessionStatus.running;
     if (!shouldRun) {
-      if (tickerRef.current) {
-        clearInterval(tickerRef.current);
-        tickerRef.current = null;
+      if (this.ticker) {
+        clearInterval(this.ticker);
+        this.ticker = null;
       }
       return;
     }
-    if (!tickerRef.current) {
-      tickerRef.current = setInterval(() => {
-        forceUpdate((n) => n + 1);
-      }, 1000);
+    if (!this.ticker) {
+      this.ticker = setInterval(() => this.tick(), 1000);
     }
-  }, [ready, activeSession]);
+  }
 
-  // tick is called by the interval when running — it checks completion
-  // The interval itself just calls forceUpdate; the completion check
-  // is done in a separate effect below.
-
-  // 初始化：加载本地状态
-  useEffect(() => {
-    let cancelled = false;
-    storage.current.loadState().then((state: FocusStoredState) => {
-      if (cancelled) return;
-      setActiveSession(state.activeSession);
-      setHistory(state.history);
-      setReady(true);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  // 生命周期：后台时记录打断
-  useEffect(() => {
-    function handleVisibility() {
-      if (!ready) return;
-      if (document.visibilityState === "visible") {
-        forceUpdate((n) => n + 1);
-        return;
-      }
-      if (activeSession?.status === FocusSessionStatus.running) {
-        const now = Date.now();
-        const interruption: FocusInterruption = {
-          id: `${activeSession.id}-${now}`,
-          occurredAt: new Date(now).toISOString(),
-          kind: FocusInterruptionKind.appBackground,
-          reason: "专注被打断",
-        };
-        const updated = addInterruption(activeSession, now, interruption);
-        setActiveSession(updated);
-        persist(updated, history);
-      }
+  private tick(): void {
+    const session = this.activeSession;
+    if (!session || session.status !== FocusSessionStatus.running) return;
+    const now = Date.now();
+    const remaining = remainingAt(session, now);
+    if (shouldAutoCompleteFocus(session.status, remaining)) {
+      this.finishActive(now, FocusSessionStatus.completed, "时间到");
+      return;
     }
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [ready, activeSession, history, persist]);
+    this.notify();
+  }
 
-  // sync ticker
-  useEffect(() => {
-    syncTicker();
-    return () => {
-      if (tickerRef.current) {
-        clearInterval(tickerRef.current);
-        tickerRef.current = null;
-      }
-    };
-  }, [syncTicker]);
+  private handleVisibility(): void {
+    if (!this.ready) return;
+    if (document.visibilityState === "visible") {
+      this.backgroundInterruptionRecorded = false;
+      this.tick();
+      this.notify();
+      return;
+    }
+    if (
+      !this.backgroundInterruptionRecorded &&
+      this.activeSession?.status === FocusSessionStatus.running
+    ) {
+      this.backgroundInterruptionRecorded = true;
+      void this.interruptFocus({
+        kind: FocusInterruptionKind.appBackground,
+        reason: "专注被打断",
+      });
+    }
+  }
 
-  const startFocus = useCallback<UseFocusTimer["startFocus"]>(async (params) => {
-    if (!ready || (activeSession && isActive(activeSession))) return false;
+  private finishActive(now: number, status: FocusSessionStatus, reason: string): void {
+    const session = this.activeSession;
+    if (!session) return;
+    const finished = finishAt(session, now, status, reason);
+    const nextHistory = [finished, ...this.history.filter((s) => s.id !== finished.id)].slice(0, 200);
+    this.lastFinishedSession = finished;
+    this.history = nextHistory;
+    this.activeSession = null;
+    this.persist(null, nextHistory);
+    void this.notificationService.cancelReminder(session.id);
+    if (status === FocusSessionStatus.completed) {
+      void this.notificationService.showFocusCompleted(
+        "专注完成",
+        `${Math.max(1, Math.round(finished.accumulatedFocusMs / 60000))} 分钟专注已完成，休息一下吧`,
+      );
+    }
+    this.notify();
+  }
+
+  startFocus: UseFocusTimer["startFocus"] = async (params) => {
+    if (!this.ready || (this.activeSession && isActive(this.activeSession))) return false;
     const goal = params.goal.trim().slice(0, MAX_GOAL_CHARS);
     if (!goal || params.durationMs < MIN_DURATION_MS || params.durationMs > MAX_DURATION_MS) return false;
     const now = Date.now();
@@ -205,215 +242,253 @@ export function useFocusTimer(): UseFocusTimer {
       sourcePositionMs: params.sourcePositionMs,
       completeOnPartEnd: params.completeOnPartEnd && hasSource,
     });
-    setActiveSession(session);
-    setLastFinishedSession(null);
-    persist(session, history);
-    forceUpdate((n) => n + 1);
+    this.activeSession = session;
+    this.lastFinishedSession = null;
+    this.persist(session, this.history);
+    this.notify();
     return true;
-  }, [ready, activeSession, history, persist]);
+  };
 
-  const interruptFocus = useCallback<UseFocusTimer["interruptFocus"]>(async (params) => {
-    if (!activeSession || !isActive(activeSession)) return;
+  interruptFocus: UseFocusTimer["interruptFocus"] = async (params) => {
+    const session = this.activeSession;
+    if (!session || !isActive(session)) return;
     const now = Date.now();
     const normalizedReason = params.reason.trim() || "未填写原因";
     const interruption: FocusInterruption = {
-      id: `${activeSession.id}-${now}`,
+      id: `${session.id}-${now}`,
       occurredAt: new Date(now).toISOString(),
       kind: params.kind,
       reason: normalizedReason,
       reminderAt: params.reminderAt,
     };
-    const updated = addInterruption(activeSession, now, interruption);
-    setActiveSession(updated);
-    persist(updated, history);
-    forceUpdate((n) => n + 1);
-  }, [activeSession, history, persist]);
+    const updated = addInterruption(session, now, interruption);
+    this.activeSession = updated;
+    this.persist(updated, this.history);
+    if (params.reminderAt) {
+      void this.notificationService.scheduleReminder({
+        id: session.id,
+        title: "回来继续专注",
+        triggerAtMs: new Date(params.reminderAt).getTime(),
+        reason: normalizedReason,
+      });
+    }
+    this.notify();
+  };
 
-  const pauseFocus = useCallback(async () => {
-    return interruptFocus({ kind: FocusInterruptionKind.manualPause, reason: "未填写原因" });
-  }, [interruptFocus]);
+  pauseFocus: UseFocusTimer["pauseFocus"] = async () => {
+    return this.interruptFocus({ kind: FocusInterruptionKind.manualPause, reason: "未填写原因" });
+  };
 
-  const resumeFocus = useCallback(async () => {
-    if (!activeSession || activeSession.status !== FocusSessionStatus.paused) return;
-    const matches = videoPlayingRef.current &&
-      activeSession.sourceBvid === playingBvidRef.current &&
-      activeSession.sourcePartCid === playingPartCidRef.current;
+  resumeFocus: UseFocusTimer["resumeFocus"] = async () => {
+    const session = this.activeSession;
+    if (!session || session.status !== FocusSessionStatus.paused) return;
+    const matches =
+      this.videoPlaying &&
+      session.sourceBvid === this.playingBvid &&
+      session.sourcePartCid === this.playingPartCid;
     if (!matches) {
-      const paused = pauseAt(activeSession, Date.now(), hasVideoAssociation(activeSession)
-        ? FocusPauseReason.playback
-        : FocusPauseReason.awaitingVideo);
-      setActiveSession(paused);
-      persist(paused, history);
-      forceUpdate((n) => n + 1);
+      const paused = pauseAt(
+        session,
+        Date.now(),
+        hasVideoAssociation(session) ? FocusPauseReason.playback : FocusPauseReason.awaitingVideo,
+      );
+      this.activeSession = paused;
+      this.persist(paused, this.history);
+      this.notify();
       return;
     }
-    const resumed = resumeAt(activeSession, Date.now());
-    setActiveSession(resumed);
-    persist(resumed, history);
-    forceUpdate((n) => n + 1);
-  }, [activeSession, history, persist]);
+    const resumed = resumeAt(session, Date.now());
+    void this.notificationService.cancelReminder(session.id);
+    this.activeSession = resumed;
+    this.persist(resumed, this.history);
+    this.notify();
+  };
 
-  const updatePlaybackState = useCallback<UseFocusTimer["updatePlaybackState"]>(async (params) => {
-    playingBvidRef.current = params.bvid;
-    playingPartCidRef.current = params.partCid;
-    videoPlayingRef.current = params.isPlaying;
-    if (!activeSession || !hasVideoAssociation(activeSession)) return;
-    const matches = activeSession.sourceBvid === params.bvid && activeSession.sourcePartCid === params.partCid;
-    if (activeSession.status === FocusSessionStatus.running && (!matches || !params.isPlaying)) {
-      const paused = pauseAt(activeSession, Date.now(), FocusPauseReason.playback);
-      setActiveSession(paused);
-      persist(paused, history);
-      forceUpdate((n) => n + 1);
-    } else if (activeSession.status === FocusSessionStatus.paused &&
-      activeSession.pauseReason === FocusPauseReason.playback && matches && params.isPlaying) {
-      const resumed = resumeAt(activeSession, Date.now());
-      setActiveSession(resumed);
-      persist(resumed, history);
-      forceUpdate((n) => n + 1);
+  updatePlaybackState: UseFocusTimer["updatePlaybackState"] = async (params) => {
+    this.playingBvid = params.bvid;
+    this.playingPartCid = params.partCid;
+    this.videoPlaying = params.isPlaying;
+    const session = this.activeSession;
+    if (!session || !hasVideoAssociation(session)) return;
+    const matches = session.sourceBvid === params.bvid && session.sourcePartCid === params.partCid;
+    if (session.status === FocusSessionStatus.running && (!matches || !params.isPlaying)) {
+      const paused = pauseAt(session, Date.now(), FocusPauseReason.playback);
+      this.activeSession = paused;
+      this.persist(paused, this.history);
+      this.notify();
+    } else if (
+      session.status === FocusSessionStatus.paused &&
+      session.pauseReason === FocusPauseReason.playback &&
+      matches &&
+      params.isPlaying
+    ) {
+      const resumed = resumeAt(session, Date.now());
+      this.activeSession = resumed;
+      this.persist(resumed, this.history);
+      this.notify();
     }
-  }, [activeSession, history, persist]);
+  };
 
-  const completeForPlaybackPart = useCallback<UseFocusTimer["completeForPlaybackPart"]>(async (params) => {
-    if (!activeSession || !isActive(activeSession) || !activeSession.completeOnPartEnd ||
-      activeSession.sourceBvid !== params.bvid || activeSession.sourcePartCid !== params.partCid) {
+  completeForPlaybackPart: UseFocusTimer["completeForPlaybackPart"] = async (params) => {
+    const session = this.activeSession;
+    if (
+      !session ||
+      !isActive(session) ||
+      !session.completeOnPartEnd ||
+      session.sourceBvid !== params.bvid ||
+      session.sourcePartCid !== params.partCid
+    ) {
       return false;
     }
-    const finished = finishAtPartEnd(activeSession, Date.now());
-    setLastFinishedSession(finished);
-    setHistory((prev) => [finished, ...prev.filter((s) => s.id !== finished.id)].slice(0, 200));
-    setActiveSession(null);
-    persist(null, [finished, ...history.filter((s) => s.id !== finished.id)].slice(0, 200));
+    const finished = finishAtPartEnd(session, Date.now());
+    const nextHistory = [finished, ...this.history.filter((s) => s.id !== finished.id)].slice(0, 200);
+    this.lastFinishedSession = finished;
+    this.history = nextHistory;
+    this.activeSession = null;
+    void this.notificationService.cancelReminder(session.id);
+    this.persist(null, nextHistory);
+    this.notify();
     return true;
-  }, [activeSession, history, persist]);
+  };
 
-  const associateVideo = useCallback<UseFocusTimer["associateVideo"]>(async (params) => {
-    if (!activeSession || !isActive(activeSession)) return;
-    playingBvidRef.current = params.bvid;
-    playingPartCidRef.current = params.partCid;
-    videoPlayingRef.current = params.isPlaying;
-    const updated = associateVideoModel(activeSession, Date.now(), params);
-    setActiveSession(updated);
-    persist(updated, history);
-    forceUpdate((n) => n + 1);
-  }, [activeSession, history, persist]);
+  associateVideo: UseFocusTimer["associateVideo"] = async (params) => {
+    const session = this.activeSession;
+    if (!session || !isActive(session)) return;
+    this.playingBvid = params.bvid;
+    this.playingPartCid = params.partCid;
+    this.videoPlaying = params.isPlaying;
+    const updated = associateVideoModel(session, Date.now(), params);
+    this.activeSession = updated;
+    this.persist(updated, this.history);
+    this.notify();
+  };
 
-  const updateLastSeenCb = useCallback<UseFocusTimer["updateLastSeen"]>(async (params) => {
-    if (!activeSession || !hasVideoAssociation(activeSession)) return;
-    const updated = updateLastSeenModel(activeSession, params);
-    setActiveSession(updated);
-    persist(updated, history);
-  }, [activeSession, history, persist]);
+  updateLastSeen: UseFocusTimer["updateLastSeen"] = async (params) => {
+    const session = this.activeSession;
+    if (!session || !hasVideoAssociation(session)) return;
+    const updated = updateLastSeenModel(session, params);
+    this.activeSession = updated;
+    this.persist(updated, this.history);
+    this.notify();
+  };
 
-  const extendFocus = useCallback<UseFocusTimer["extendFocus"]>(async (extensionMs) => {
-    if (!activeSession || !isActive(activeSession) || extensionMs <= 0 ||
-      activeSession.plannedDurationMs + extensionMs > MAX_DURATION_MS) {
+  extendFocus: UseFocusTimer["extendFocus"] = async (extensionMs) => {
+    const session = this.activeSession;
+    if (
+      !session ||
+      !isActive(session) ||
+      extensionMs <= 0 ||
+      session.plannedDurationMs + extensionMs > MAX_DURATION_MS
+    ) {
       return false;
     }
-    const updated = extendBy(activeSession, extensionMs);
-    setActiveSession(updated);
-    persist(updated, history);
-    forceUpdate((n) => n + 1);
+    const updated = extendBy(session, extensionMs);
+    this.activeSession = updated;
+    this.persist(updated, this.history);
+    this.notify();
     return true;
-  }, [activeSession, history, persist]);
+  };
 
-  const extendCompletedFocus = useCallback<UseFocusTimer["extendCompletedFocus"]>(async (extensionMs) => {
-    if (!lastFinishedSession || lastFinishedSession.status !== FocusSessionStatus.completed ||
-      extensionMs <= 0 || lastFinishedSession.plannedDurationMs + extensionMs > MAX_DURATION_MS) {
+  extendCompletedFocus: UseFocusTimer["extendCompletedFocus"] = async (extensionMs) => {
+    const finished = this.lastFinishedSession;
+    if (
+      !finished ||
+      finished.status !== FocusSessionStatus.completed ||
+      extensionMs <= 0 ||
+      finished.plannedDurationMs + extensionMs > MAX_DURATION_MS
+    ) {
       return false;
     }
-    const newHistory = history.filter((s) => s.id !== lastFinishedSession.id);
-    const reopened = reopenAt(lastFinishedSession, Date.now(), extensionMs);
-    setActiveSession(reopened);
-    setLastFinishedSession(null);
-    setHistory(newHistory);
-    persist(reopened, newHistory);
-    forceUpdate((n) => n + 1);
+    const nextHistory = this.history.filter((s) => s.id !== finished.id);
+    const reopened = reopenAt(finished, Date.now(), extensionMs);
+    this.activeSession = reopened;
+    this.lastFinishedSession = null;
+    this.history = nextHistory;
+    this.persist(reopened, nextHistory);
+    this.notify();
     return true;
-  }, [lastFinishedSession, history, persist]);
+  };
 
-  const endFocusEarly = useCallback<UseFocusTimer["endFocusEarly"]>(async (reason) => {
-    if (!activeSession || !isActive(activeSession)) return;
-    const finished = finishAt(activeSession, Date.now(), FocusSessionStatus.endedEarly, reason ?? "未填写原因");
-    setLastFinishedSession(finished);
-    setHistory((prev) => [finished, ...prev.filter((s) => s.id !== finished.id)].slice(0, 200));
-    setActiveSession(null);
-    persist(null, [finished, ...history.filter((s) => s.id !== finished.id)].slice(0, 200));
-    forceUpdate((n) => n + 1);
-  }, [activeSession, history, persist]);
+  endFocusEarly: UseFocusTimer["endFocusEarly"] = async (reason) => {
+    if (!this.activeSession || !isActive(this.activeSession)) return;
+    this.finishActive(Date.now(), FocusSessionStatus.endedEarly, reason ?? "未填写原因");
+  };
 
-  const dismissLastFinishedSession = useCallback(() => {
-    setLastFinishedSession(null);
-  }, []);
+  dismissLastFinishedSession: UseFocusTimer["dismissLastFinishedSession"] = () => {
+    this.lastFinishedSession = null;
+    this.notify();
+  };
 
-  const deleteHistoryEntry = useCallback(async (id: string) => {
-    setHistory((prev) => {
-      const next = prev.filter((s) => s.id !== id);
-      persist(activeSession, next);
-      return next;
+  deleteHistoryEntry: UseFocusTimer["deleteHistoryEntry"] = async (id) => {
+    this.history = this.history.filter((s) => s.id !== id);
+    if (this.lastFinishedSession?.id === id) {
+      this.lastFinishedSession = null;
+    }
+    this.persist(this.activeSession, this.history);
+    this.notify();
+  };
+
+  clearHistory: UseFocusTimer["clearHistory"] = async () => {
+    this.history = [];
+    this.lastFinishedSession = null;
+    this.persist(this.activeSession, []);
+    this.notify();
+  };
+
+  getDerived(): {
+    remainingMs: number;
+    elapsedMs: number;
+    progress: number;
+    todayFocusedMs: number;
+    todayCompletedCount: number;
+  } {
+    const now = Date.now();
+    const snapshot = buildFocusStatisticsSnapshot({
+      history: this.history,
+      range: FocusStatisticsRange.sevenDays,
+      nowMs: now,
+      activeSession: this.activeSession,
     });
-    if (lastFinishedSession?.id === id) {
-      setLastFinishedSession(null);
-    }
-  }, [activeSession, lastFinishedSession, persist]);
-
-  const clearHistory = useCallback(async () => {
-    setHistory([]);
-    setLastFinishedSession(null);
-    persist(activeSession, []);
-  }, [activeSession, persist]);
-
-  // 计算当前时间相关值
-  const now = Date.now();
-  const currentRemaining = activeSession ? remainingAt(activeSession, now) : 0;
-  const currentElapsed = activeSession ? elapsedAt(activeSession, now) : 0;
-  const currentProgress = activeSession ? progressAt(activeSession, now) : 0;
-
-  // 今天专注时长
-  const todayKey = new Date().toISOString().slice(0, 10);
-  let todayFocusedMs = 0;
-  if (activeSession) {
-    const daily = activeSession.dailyFocusMilliseconds;
-    todayFocusedMs = (daily[todayKey] ?? 0);
-    if (activeSession.status === FocusSessionStatus.running) {
-      todayFocusedMs += Math.max(0, currentElapsed - Object.values(activeSession.dailyFocusMilliseconds).reduce((a, b) => a + b, 0));
-    }
+    return {
+      remainingMs: this.activeSession ? remainingAt(this.activeSession, now) : 0,
+      elapsedMs: this.activeSession ? elapsedAt(this.activeSession, now) : 0,
+      progress: this.activeSession ? progressAt(this.activeSession, now) : 0,
+      todayFocusedMs: calcTodayFocusedMs(snapshot),
+      todayCompletedCount: calcTodayCompletedCount(this.history, now),
+    };
   }
-  for (const s of history) {
-    const day = s.finishedAt?.slice(0, 10);
-    if (day === todayKey) {
-      todayFocusedMs += s.accumulatedFocusMs;
-    }
-  }
+}
 
-  // 今天完成次数
-  const todayCompletedCount = history.filter((s) =>
-    s.status === FocusSessionStatus.completed && s.finishedAt?.slice(0, 10) === todayKey
-  ).length;
+export const focusTimerController = new FocusTimerController();
 
+export function useFocusTimer(): UseFocusTimer {
+  const controller = focusTimerController;
+  useSyncExternalStore(controller.subscribe, () => controller.version);
+  const derived = controller.getDerived();
   return {
-    ready,
-    activeSession,
-    lastFinishedSession,
-    history,
-    hasActiveSession: Boolean(activeSession && isActive(activeSession)),
-    remainingMs: currentRemaining,
-    elapsedMs: currentElapsed,
-    progress: currentProgress,
-    startFocus,
-    pauseFocus,
-    interruptFocus,
-    resumeFocus,
-    updatePlaybackState,
-    completeForPlaybackPart,
-    associateVideo,
-    updateLastSeen: updateLastSeenCb,
-    extendFocus,
-    extendCompletedFocus,
-    endFocusEarly,
-    dismissLastFinishedSession,
-    deleteHistoryEntry,
-    clearHistory,
-    todayFocusedMs,
-    todayCompletedCount,
+    ready: controller.ready,
+    activeSession: controller.activeSession,
+    lastFinishedSession: controller.lastFinishedSession,
+    history: controller.history,
+    hasActiveSession: Boolean(controller.activeSession && isActive(controller.activeSession)),
+    remainingMs: derived.remainingMs,
+    elapsedMs: derived.elapsedMs,
+    progress: derived.progress,
+    startFocus: controller.startFocus,
+    pauseFocus: controller.pauseFocus,
+    interruptFocus: controller.interruptFocus,
+    resumeFocus: controller.resumeFocus,
+    updatePlaybackState: controller.updatePlaybackState,
+    completeForPlaybackPart: controller.completeForPlaybackPart,
+    associateVideo: controller.associateVideo,
+    updateLastSeen: controller.updateLastSeen,
+    extendFocus: controller.extendFocus,
+    extendCompletedFocus: controller.extendCompletedFocus,
+    endFocusEarly: controller.endFocusEarly,
+    dismissLastFinishedSession: controller.dismissLastFinishedSession,
+    deleteHistoryEntry: controller.deleteHistoryEntry,
+    clearHistory: controller.clearHistory,
+    todayFocusedMs: derived.todayFocusedMs,
+    todayCompletedCount: derived.todayCompletedCount,
   };
 }

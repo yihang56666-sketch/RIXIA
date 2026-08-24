@@ -1,9 +1,7 @@
-import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, ExternalLink, MonitorPlay, Play, Trash2 } from "lucide-react";
-import { createLearningProvider } from "../../lib/learning/provider";
-import type { PlayerSession } from "../../lib/learning/types";
-import { isProviderError } from "../../lib/learning/types";
+import { useState } from "react";
+import { ExternalLink, MonitorPlay, Play, Plus, Trash2 } from "lucide-react";
 import { relativeTime } from "../../lib/time";
+import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
 import type { CourseResource } from "../../types";
 
@@ -66,10 +64,8 @@ function ResourceCard({ resource, onOpen }: { resource: CourseResource; onOpen: 
 }
 
 /**
- * Library is the unified learning surface — segmented control switches
- * between continue-learning, saved, notes and inbox.
- * Stub implementation for the v2 shell; full feature work (provider-based
- * playback, timestamp notes) lands in a later task.
+ * Library is the unified learning surface. Opening a video always goes through
+ * the single FocuBili player, never the official Bilibili iframe.
  */
 export function LibraryView() {
   const [tab, setTab] = useState<Tab>("continue");
@@ -79,6 +75,7 @@ export function LibraryView() {
   const addResource = useAppStore((state) => state.addResource);
   const setView = useAppStore((state) => state.setView);
   const touchResource = useAppStore((state) => state.touchResource);
+  const openBilibiliVideo = useAppStore((state) => state.openBilibiliVideo);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
 
@@ -100,88 +97,14 @@ export function LibraryView() {
 
   const savedList = [...resources].sort((a, b) => b.addedAt.localeCompare(a.addedAt));
 
-  const provider = useMemo(
-    () => createLearningProvider(() => ({ resources: useAppStore.getState().resources, timestampNotes: useAppStore.getState().timestampNotes })),
-    [resources],
-  );
-  const [playerError, setPlayerError] = useState<string | null>(null);
-  const [retryResourceId, setRetryResourceId] = useState<string | null>(null);
-  const [activeSession, setActiveSession] = useState<PlayerSession | null>(null);
-  const [activeResource, setActiveResource] = useState<CourseResource | null>(null);
-
-  async function openExternal(resource: CourseResource) {
-    setPlayerError(null);
-    setRetryResourceId(resource.id);
-    try {
-      const session = await provider.openPlayer(resource.id);
-      touchResource(resource.id);
-      setActiveSession(session);
-      setActiveResource(resource);
-    } catch (err) {
-      if (isProviderError(err)) {
-        setPlayerError(err.message);
-        if (err.externalUrl) {
-          window.open(err.externalUrl, "_blank", "noopener");
-        }
-      } else {
-        setPlayerError("播放器加载失败");
-      }
-    }
-  }
-
-  function closePlayer() {
-    setActiveSession(null);
-    setActiveResource(null);
+  function openExternal(resource: CourseResource) {
+    touchResource(resource.id);
+    openBilibiliVideo(resource.bvid, resource.title);
   }
 
   return (
+    <RixiaWorkspacePage title="资料库">
     <div className="stack">
-      {activeSession && activeResource && (
-        <section className="card library-player">
-          <div className="row" style={{ marginBottom: 10 }}>
-            <div style={{ minWidth: 0 }}>
-              <h2 style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {activeResource.title}
-              </h2>
-              <p className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>{activeResource.bvid}</p>
-            </div>
-            <a
-              className="ghost-btn compact"
-              href={activeSession.externalUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <ExternalLink size={15} /> 在 B 站打开
-            </a>
-            <button className="icon-button" onClick={closePlayer} aria-label="关闭播放器" title="关闭">
-              <ArrowLeft size={16} />
-            </button>
-          </div>
-          <div className="player-wrap">
-            {activeSession.iframeUrl ? (
-              <iframe
-                src={activeSession.iframeUrl}
-                title={activeResource.title}
-                className="player-frame"
-                allowFullScreen
-                referrerPolicy="no-referrer-when-downgrade"
-                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-              />
-            ) : (
-              <div className="player-fallback">
-                <MonitorPlay size={32} color="var(--text-3)" strokeWidth={1.5} />
-                <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
-                  当前 Provider 无法内嵌播放，请到 B 站打开
-                </p>
-                <a className="primary compact" href={activeSession.externalUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink size={15} /> 打开 B 站
-                </a>
-              </div>
-            )}
-          </div>
-        </section>
-      )}
-
       <section className="card">
         <div className="segmented" role="tablist" aria-label="资料库视图">
           {TABS.map((item) => (
@@ -204,22 +127,6 @@ export function LibraryView() {
           <p className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>
             上次没看完的视频，从这里继续。
           </p>
-          {playerError && retryResourceId && (
-            <div className="library-error" role="alert">
-              <AlertTriangle size={16} color="var(--danger)" />
-              <span>{playerError}</span>
-              <button
-                className="ghost-btn compact"
-                type="button"
-                onClick={() => {
-                  const resource = resources.find((r) => r.id === retryResourceId);
-                  if (resource) openExternal(resource);
-                }}
-              >
-                重试
-              </button>
-            </div>
-          )}
           {continueList.length === 0 ? (
             <div className="empty" style={{ padding: "26px 8px" }}>
               <MonitorPlay size={26} color="var(--text-3)" strokeWidth={1.5} />
@@ -245,6 +152,9 @@ export function LibraryView() {
               onChange={(e) => setInput(e.target.value)}
               placeholder="粘贴哔哩哔哩视频链接或 BV 号"
             />
+            <button className="primary compact" type="submit">
+              <Plus size={14} /> 保存视频
+            </button>
             {error && <p className="background-error">{error}</p>}
           </form>
           {savedList.length === 0 ? (
@@ -269,7 +179,7 @@ export function LibraryView() {
           </div>
           {notes.length === 0 ? (
             <div className="empty" style={{ padding: "26px 8px" }}>
-              <span>还没有笔记，到「计划 → 笔记」中创建</span>
+              <span>还没有笔记，到「工具 → 笔记」中创建</span>
             </div>
           ) : (
             <ul className="library-notes">
@@ -309,5 +219,6 @@ export function LibraryView() {
         </section>
       )}
     </div>
+    </RixiaWorkspacePage>
   );
 }
