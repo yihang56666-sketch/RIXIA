@@ -52,10 +52,16 @@ public class BeidNativePlayerPlugin extends Plugin {
     private final Runnable stateTicker = new Runnable() {
         @Override
         public void run() {
-            if (player == null) return;
-            if (danmakuView != null) danmakuView.setPositionSeconds(player.getCurrentPosition() / 1000f);
-            emitState(player.isPlaying() ? "playing" : "paused", null);
-            stateHandler.postDelayed(this, 500L);
+            // 跑在主线程消息队列里、不在任何调用方 try/catch 内：
+            // 这里抛出的任何异常都是未捕获主线程异常，直接闪退。
+            try {
+                if (player == null) return;
+                if (danmakuView != null) danmakuView.setPositionSeconds(player.getCurrentPosition() / 1000f);
+                emitState(player.isPlaying() ? "playing" : "paused", null);
+                stateHandler.postDelayed(this, 500L);
+            } catch (Throwable error) {
+                android.util.Log.e("BeidNativePlayer", "stateTicker crashed", error);
+            }
         }
     };
     private ExoPlayer player;
@@ -84,7 +90,10 @@ public class BeidNativePlayerPlugin extends Plugin {
         activity.runOnUiThread(() -> {
             try {
                 task.run();
-            } catch (Exception error) {
+            } catch (Throwable error) {
+                // Throwable 而非 Exception：InflateException/NoClassDefFoundError 等
+                // Error 不接住的话会直接闪退。
+                android.util.Log.e("BeidNativePlayer", "plugin call failed", error);
                 String message = error.getMessage();
                 call.reject(message == null || message.isEmpty() ? "原生播放器异常" : message);
             }
@@ -343,17 +352,25 @@ public class BeidNativePlayerPlugin extends Plugin {
         player.addListener(new Player.Listener() {
             @Override
             public void onPlaybackStateChanged(int state) {
-                if (state == Player.STATE_READY) {
-                    player.play();
-                    completeOpen(null, false);
-                    emitState(player.isPlaying() ? "playing" : "ready", null);
+                try {
+                    if (state == Player.STATE_READY) {
+                        player.play();
+                        completeOpen(null, false);
+                        emitState(player.isPlaying() ? "playing" : "ready", null);
+                    }
+                    if (state == Player.STATE_ENDED) emitState("ended", null);
+                } catch (Throwable error) {
+                    android.util.Log.e("BeidNativePlayer", "playback state listener crashed", error);
                 }
-                if (state == Player.STATE_ENDED) emitState("ended", null);
             }
 
             @Override
             public void onIsPlayingChanged(boolean isPlaying) {
-                emitState(isPlaying ? "playing" : "paused", null);
+                try {
+                    emitState(isPlaying ? "playing" : "paused", null);
+                } catch (Throwable error) {
+                    android.util.Log.e("BeidNativePlayer", "playing listener crashed", error);
+                }
             }
 
             @Override
