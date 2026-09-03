@@ -20,6 +20,7 @@ import {
 } from "./features/bilibili/BilibiliAccountViews";
 import { BilibiliLoginView } from "./features/bilibili/LoginView";
 import { BilibiliPlayerRoute } from "./features/bilibili/BilibiliPlayerView";
+import { CloudResourceView } from "./features/videos/CloudResourceView";
 import { BilibiliSearchView } from "./features/bilibili/BilibiliSearchView";
 import { LocalWatchHistoryView } from "./features/bilibili/LocalWatchHistoryView";
 import {
@@ -138,6 +139,7 @@ export default function App() {
         {view === "library" && <LibraryView />}
         {view === "search" && <BilibiliSearchView />}
         {view === "bilibili-player" && <BilibiliPlayerRoute />}
+        {view === "cloud-player" && <CloudResourceView />}
         {view === "favorites" && <BilibiliFavoritesView />}
         {view === "favorite-videos" && <FavoriteVideosRoute />}
         {view === "followed" && <BilibiliFollowedView />}

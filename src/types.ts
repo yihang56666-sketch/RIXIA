@@ -21,6 +21,7 @@ export type ViewKey =
   | "personalization"
   | "search"
   | "bilibili-player"
+  | "cloud-player"
   | "favorites"
   | "favorite-videos"
   | "followed"
@@ -189,6 +190,9 @@ export interface FocusSession {
 export interface CourseResource {
   id: string;
   bvid: string;
+  /** External HTTPS resource (夸克/百度网盘/直链). */
+  source?: "bilibili" | "quark" | "baidu" | "direct";
+  url?: string;
   title: string;
   status: ResourceStatus;
   addedAt: string;
@@ -250,6 +254,7 @@ export interface AppState {
   focusRounds: FocusRounds;
   activeFocus: ActiveFocus | null;
   activeBilibiliBvid: string | null;
+  activeCloudResourceId: string | null;
   activeBilibiliPlaybackTarget: { cid: number; seconds: number } | null;
   activeBilibiliCreator: { mid: number; name: string; avatarUrl: string; sign: string; officialDescription: string } | null;
   activeBilibiliCollection: {
@@ -261,6 +266,16 @@ export interface AppState {
   resources: CourseResource[];
   timestampNotes: TimestampNote[];
   journals: JournalEntry[];
+}
+
+/** 备份的兄弟存储块：主 store 之外的 B 站播放器与专注持久化数据。 */
+export interface CompanionBackupData {
+  focusActiveSession: unknown;
+  focusHistory: unknown[];
+  videoNotes: unknown[];
+  watchHistory: unknown[];
+  learningList: unknown[];
+  localWatchHistory: unknown[];
 }
 
 export interface BackupData {
@@ -288,4 +303,5 @@ export interface BackupData {
   resources: CourseResource[];
   timestampNotes: TimestampNote[];
   journals: JournalEntry[];
+  companion?: CompanionBackupData | null;
 }

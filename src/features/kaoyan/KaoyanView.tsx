@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import {
   currentExamDate, dateKeysInRange, DEFAULT_KAOYAN_WORDS, kaoyanExamLabel, kaoyanMilestones, mockExamStats,
-  kaoyanCourseQuery, REVIEW_INTERVAL_DAYS, reviewStats, subjectProgress, unitProgress,
+  kaoyanCourseQuery, kaoyanPlanOverview, REVIEW_INTERVAL_DAYS, reviewStats, subjectProgress, unitProgress,
 } from "../../lib/kaoyan";
 import { Heatmap } from "../../components/Heatmap";
 import { ProgressRing } from "../../components/ProgressRing";
@@ -132,6 +132,25 @@ function FocusGoalCard() {
   </section>;
 }
 
+function PlanOverviewCard({ today }: { today: string }) {
+  const { studyUnits, reviewItems, wrongQuestions } = useAppStore();
+  const overview = kaoyanPlanOverview(studyUnits, reviewItems, wrongQuestions, today);
+  const completion = overview.todayTotal ? Math.round((overview.todayCompleted / overview.todayTotal) * 100) : 0;
+  return <section className="card kaoyan-plan-overview" aria-label="计划总览">
+    <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
+      <div><h3>计划总览</h3><p className="muted">今天先完成最重要的一步</p></div>
+      <span className={completion === 100 && overview.todayTotal > 0 ? "kaoyan-chip done" : "kaoyan-chip accent"}>{completion}% 今日完成</span>
+    </div>
+    <div className="kaoyan-overview-grid">
+      <div><strong>{overview.todayCompleted}/{overview.todayTotal}</strong><span>今日任务</span></div>
+      <div><strong>{overview.progressPercent}%</strong><span>总进度</span></div>
+      <div><strong>{overview.dueReviews}</strong><span>待复习</span></div>
+      <div><strong>{overview.wrongQuestions}</strong><span>错题</span></div>
+    </div>
+    <ProgressBar percent={overview.progressPercent} color="#5B8DEF" />
+  </section>;
+}
+
 function ProgressBar({ percent, color }: { percent: number; color: string }) {
   return <div className="progress-track"><div className="progress-fill" style={{ width: `${percent}%`, backgroundColor: color }} /></div>;
 }
@@ -140,9 +159,11 @@ function SubjectForm({ subject, onDone }: { subject?: StudySubject; onDone: () =
   const { addSubject, updateSubject } = useAppStore();
   const [title, setTitle] = useState(subject?.title ?? "");
   const [color, setColor] = useState(subject?.color ?? SUBJECT_COLORS[0]);
+  const valid = title.trim().length > 0;
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (!valid) return;
     if (subject) updateSubject(subject.id, title, color);
     else addSubject(title, color);
     onDone();
@@ -155,7 +176,7 @@ function SubjectForm({ subject, onDone }: { subject?: StudySubject; onDone: () =
     </div>
     <div className="form-actions">
       <button className="ghost-btn" type="button" onClick={onDone}>取消</button>
-      <button className="primary compact" type="submit">{subject ? "保存科目" : "添加科目"}</button>
+      <button className="primary compact" type="submit" disabled={!valid} title={valid ? undefined : "请填写科目名称"}>{subject ? "保存科目" : "添加科目"}</button>
     </div>
   </form>;
 }
@@ -166,9 +187,17 @@ function UnitForm({ subjectId, unit, onDone }: { subjectId: string; unit?: Study
   const [title, setTitle] = useState(unit?.title ?? "");
   const [startDate, setStartDate] = useState(unit?.startDate ?? today);
   const [endDate, setEndDate] = useState(unit?.endDate ?? today);
+  const valid = title.trim().length > 0 && startDate <= endDate;
+
+  function changeStartDate(next: string) {
+    setStartDate(next);
+    // 开始日期越过结束日期时自动顶高结束，避免表单提交被 store 静默拒绝。
+    if (next > endDate) setEndDate(next);
+  }
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (!valid) return;
     if (unit) updateStudyUnit(unit.id, title, startDate, endDate);
     else addStudyUnit(subjectId, title, startDate, endDate);
     onDone();
@@ -177,12 +206,12 @@ function UnitForm({ subjectId, unit, onDone }: { subjectId: string; unit?: Study
   return <form className="kaoyan-form" onSubmit={submit}>
     <input className="field" autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：函数极限、阅读理解" />
     <div className="date-fields">
-      <label>开始<input className="field" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
+      <label>开始<input className="field" type="date" value={startDate} onChange={(event) => changeStartDate(event.target.value)} /></label>
       <label>结束<input className="field" type="date" min={startDate} value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
     </div>
     <div className="form-actions">
       <button className="ghost-btn" type="button" onClick={onDone}>取消</button>
-      <button className="primary compact" type="submit">{unit ? "保存小类" : "添加小类"}</button>
+      <button className="primary compact" type="submit" disabled={!valid} title={valid ? undefined : "请填写名称并确保结束不早于开始"}>{unit ? "保存小类" : "添加小类"}</button>
     </div>
   </form>;
 }
@@ -349,7 +378,7 @@ function ReviewTab({ today }: { today: string }) {
               <div className="kaoyan-review-body">
                 <strong>{question.title}</strong>
                 <span className="muted" style={{ fontSize: 12.5 }}>
-                  {subject ? `${subject.title} · ` : ""}{question.tags.join(" / ") || "未打标签"} · 记录于 {formatDateLabel(question.createdAt.slice(0, 10))}
+                  {subject ? `${subject.title} · ` : ""}{question.tags.join(" / ") || "未打标签"} · 记录于 {formatDateLabel(todayKey(new Date(question.createdAt)))}
                 </span>
               </div>
               <button title="删除错题" aria-label="删除错题" className="delete-icon" onClick={() => removeWrongQuestion(question.id)}><Trash2 size={16} /></button>
@@ -482,15 +511,17 @@ function WordsTab({ today }: { today: string }) {
   const isMastered = (item: (typeof wordReviews)[number]) =>
     item.stage >= REVIEW_INTERVAL_DAYS.length - 1 && item.history.at(-1)?.remembered === true;
 
-  const dueWords = useMemo(
+  // 计数用未截断的完整待复习队列，并剔除已被删除的单词留下的孤儿复习项；
+  // 展示列表再截前 10 条。
+  const dueQueue = useMemo(
     () => wordReviews
-      .filter((item) => item.dueDate <= today && !isMastered(item))
-      .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-      .slice(0, 10),
+      .filter((item) => item.dueDate <= today && !isMastered(item) && wordById.has(item.sourceId ?? ""))
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [today, wordReviews],
+    [today, wordReviews, wordById],
   );
-  const masteredCount = wordReviews.filter(isMastered).length;
+  const dueWords = useMemo(() => dueQueue.slice(0, 10), [dueQueue]);
+  const masteredCount = wordReviews.filter((item) => isMastered(item) && wordById.has(item.sourceId ?? "")).length;
 
   function submitWord(event: FormEvent) {
     event.preventDefault();
@@ -517,11 +548,11 @@ function WordsTab({ today }: { today: string }) {
           <p className="muted">按艾宾浩斯周期 1/2/4/7/15/30 天自动排期</p>
         </div>
         <div className="kaoyan-review-chips">
-          <span className="kaoyan-chip accent">待复习 {dueWords.length}</span>
+          <span className="kaoyan-chip accent">待复习 {dueQueue.length}</span>
           <span className="kaoyan-chip done">已掌握 {masteredCount}</span>
         </div>
       </div>
-      {dueWords.length === 0 ? (
+      {dueQueue.length === 0 ? (
         <p className="empty">今天没有到期的单词。先添加或导入词表，新单词会在明天进入复习。</p>
       ) : (
         <div className="kaoyan-review-queue">
@@ -703,6 +734,7 @@ export function KaoyanView({ embedded = false }: { embedded?: boolean } = {}) {
     </section>
     <ExamCountdownHero today={today} />
     <FocusGoalCard />
+    <PlanOverviewCard today={today} />
     <div className="kaoyan-tabs" role="tablist" aria-label="考研功能区">
       {TABS.map(({ key, label, icon: Icon }) => <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? "kaoyan-tab on" : "kaoyan-tab"} onClick={() => setTab(key)}><Icon size={15} /> {label}</button>)}
     </div>

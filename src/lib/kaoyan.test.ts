@@ -4,7 +4,7 @@ import {
   mockExamStats, nextReviewDue, nextReviewStage, REVIEW_INTERVAL_DAYS,
   kaoyanCourseQuery, reviewStats, subjectProgress, unitProgress,
 } from "./kaoyan";
-import type { MockExam, ReviewItem } from "../types";
+import type { MockExam, ReviewItem, StudyUnit, WrongQuestion } from "../types";
 
 describe("Kaoyan progress", () => {
   it("includes both start and end dates in a study period", () => {
@@ -88,6 +88,16 @@ describe("Kaoyan exam date", () => {
     expect(milestones.map((item) => item.name)).toContain("初试");
     expect(milestones.find((item) => item.name === "初试")?.date).toBe("2026-12-19");
     expect(milestones.find((item) => item.name === "成绩公布")?.date).toBe("2027-02-26");
+  });
+});
+
+describe("Kaoyan plan overview", () => {
+  it("summarizes today's tasks, progress, reviews, and wrong questions", async () => {
+    const { kaoyanPlanOverview } = await import("./kaoyan");
+    const units: StudyUnit[] = [{ id: "u1", subjectId: "s1", title: "极限", startDate: "2026-08-01", endDate: "2026-08-30", completedDates: ["2026-08-30"], createdAt: "2026-08-01" }];
+    const reviews: ReviewItem[] = [{ id: "r1", sourceType: "custom", title: "作文", dueDate: "2026-08-30", stage: 0, history: [], createdAt: "2026-08-01" }];
+    const wrong: WrongQuestion[] = [{ id: "w1", title: "错题", tags: [], wrongCount: 1, createdAt: "2026-08-30" }];
+    expect(kaoyanPlanOverview(units, reviews, wrong, "2026-08-30")).toEqual({ plannedDays: 30, completedDays: 1, progressPercent: 3, todayTotal: 1, todayCompleted: 1, dueReviews: 1, wrongQuestions: 1 });
   });
 });
 

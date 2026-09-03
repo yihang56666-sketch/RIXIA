@@ -710,4 +710,118 @@ describe("BilibiliPlayerView", () => {
     expect(bar.querySelector("input[type='range']")).not.toBeNull();
     expect(screen.getAllByRole("button", { name: "播放" }).length).toBeGreaterThan(0);
   });
+
+  it("shows speed, volume, quality, and fullscreen controls in the native bar", async () => {
+    nativePlayerTest.enabled = true;
+    if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
+      (globalThis as { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      } as typeof ResizeObserver;
+    }
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    const bar = await screen.findByRole("group", { name: "原生播放控制" });
+    expect(bar.querySelector("select[aria-label='播放倍速']")).not.toBeNull();
+    await vi.waitFor(() => expect(bar.querySelector("select[aria-label='清晰度']")).not.toBeNull());
+    expect(bar.querySelector("input[aria-label='音量']")).not.toBeNull();
+    expect(bar.querySelector("button[aria-label='进入全屏']")).not.toBeNull();
+  });
+
+  it("consumes the system back request while CSS fullscreen is active", async () => {
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    fireEvent.click((await screen.findAllByRole("button", { name: "进入全屏" }))[0]);
+    expect(screen.getAllByRole("button", { name: "退出全屏" }).length).toBeGreaterThan(0);
+    const back = new Event("beid:request-exit-fullscreen", { cancelable: true });
+    window.dispatchEvent(back);
+    expect(back.defaultPrevented).toBe(true);
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "进入全屏" }).length).toBeGreaterThan(0));
+  });
+
+  it("shows the saved timestamp with an undo entry after saving a note", async () => {
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+
+    fireEvent.change(await screen.findByLabelText("笔记标题"), { target: { value: "反馈测试" } });
+    fireEvent.click(screen.getByRole("button", { name: /^保存$/ }));
+
+    expect(await screen.findByText(/已保存 · /)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "撤销" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    await waitFor(() => expect(screen.queryByText(/已保存 · /)).not.toBeInTheDocument());
+    expect(screen.getByLabelText("笔记标题")).toHaveValue("");
+    expect(saveVideoNote).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a persistent back button reachable while the control layer is hidden", async () => {
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    await screen.findByRole("button", { name: "返回资料库" });
+    expect(document.querySelector(".fb-player-persistent-back")).toBeNull();
+
+    const overlay = document.querySelector(".player-gesture-overlay") as HTMLElement;
+    // 单击视频：双击判定窗口（280ms）过后控制层隐藏
+    fireEvent(overlay, new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, clientX: 150, clientY: 60 }));
+    fireEvent(window, new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 150, clientY: 60 }));
+    await vi.waitFor(() => expect(document.querySelector(".fb-player-surface")?.getAttribute("data-controls")).toBe("hidden"));
+
+    const persistent = document.querySelector(".fb-player-persistent-back") as HTMLButtonElement;
+    expect(persistent).not.toBeNull();
+    fireEvent.click(persistent);
+    await waitFor(() => expect(useAppStore.getState().view).toBe("library"));
+  });
+
+  it("reveals the control layer again after a double-tap seek on the video", async () => {
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    await screen.findByRole("button", { name: "返回资料库" });
+
+    const overlay = document.querySelector(".player-gesture-overlay") as HTMLElement;
+    const tap = (x: number) => {
+      fireEvent(overlay, new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, clientX: x, clientY: 60 }));
+      fireEvent(window, new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: x, clientY: 60 }));
+    };
+    tap(150);
+    await vi.waitFor(() => expect(document.querySelector(".fb-player-surface")?.getAttribute("data-controls")).toBe("hidden"));
+
+    // 双击右侧：快进 10 秒的同时控制层必须重新出现
+    tap(180);
+    tap(181);
+    await vi.waitFor(() => expect(document.querySelector(".fb-player-surface")?.getAttribute("data-controls")).toBe("shown"));
+  });
+
+  it("toggles the control layer back on when tapping the hidden video again", async () => {
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    await screen.findByRole("button", { name: "返回资料库" });
+
+    const overlay = document.querySelector(".player-gesture-overlay") as HTMLElement;
+    const tap = (x: number) => {
+      fireEvent(overlay, new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, clientX: x, clientY: 60 }));
+      fireEvent(window, new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: x, clientY: 60 }));
+    };
+    tap(150);
+    await vi.waitFor(() => expect(document.querySelector(".fb-player-surface")?.getAttribute("data-controls")).toBe("hidden"));
+
+    // 控制层隐藏后再次单击必须重新唤出（surface pointerdown 的 reveal
+    // 不能让延迟 onTap 误判为"当前可见"而立即又隐藏）。
+    tap(150);
+    await vi.waitFor(() => expect(document.querySelector(".fb-player-surface")?.getAttribute("data-controls")).toBe("shown"));
+  });
+
+  it("keeps back and focus actions reachable in the native bar while the native view covers the surface", async () => {
+    nativePlayerTest.enabled = true;
+    if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
+      (globalThis as { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      } as typeof ResizeObserver;
+    }
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    const bar = await screen.findByRole("group", { name: "原生播放控制" });
+    const back = bar.querySelector("button[aria-label='返回资料库']") as HTMLButtonElement;
+    expect(back).not.toBeNull();
+    expect(bar.querySelector("button[aria-label='专注控制']")).not.toBeNull();
+
+    fireEvent.click(back);
+    await waitFor(() => expect(useAppStore.getState().view).toBe("library"));
+  });
 });

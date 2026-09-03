@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { extractBvid } from "../lib/bilibili";
+import { identifyResourceSource, normalizeResourceLink } from "../lib/resourceSources";
 import { migratePersistedState, validateBackup } from "../lib/migrations";
+import { exportCompanionBackup, importCompanionBackup } from "../lib/companionBackup";
+import { enforceDataUrlBudget } from "../lib/backgroundImage";
 import { createId } from "../lib/id";
 import { todayKey } from "../lib/time";
 import { nextReviewDue, nextReviewStage } from "../lib/kaoyan";
@@ -80,6 +83,7 @@ interface AppActions {
   setFocusGoalMinutes: (minutes: number) => void;
   addResource: (input: string, title?: string) => CourseResource | null;
   openBilibiliVideo: (bvid: string, title?: string) => void;
+  openCloudResource: (resourceId: string) => void;
   openBilibiliVideoAt: (bvid: string, title: string | undefined, cid: number, seconds: number) => void;
   openBilibiliCreator: (creator: AppState["activeBilibiliCreator"] extends infer T ? Exclude<T, null> : never) => void;
   openBilibiliCollection: (collection: AppState["activeBilibiliCollection"] extends infer T ? Exclude<T, null> : never) => void;
@@ -115,8 +119,10 @@ const safeStorage: StateStorage = {
   setItem: (name, value) => {
     try {
       localStorage.setItem(name, value);
-    } catch {
+    } catch (error) {
       // QuotaExceededError 等：保留内存态，等待下次成功写入。
+      // 完全静默会让"数据早已不再落盘"无从察觉（重启后全部回退），至少留痕。
+      console.warn(`[beid] 持久化写入失败（${name}），数据仅保留在内存中`, error);
     }
   },
   removeItem: (name) => {
@@ -160,6 +166,7 @@ const initialState: Omit<
   focusRounds: { workMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, longBreakEvery: 4 },
   activeFocus: null,
   activeBilibiliBvid: null,
+  activeCloudResourceId: null,
   activeBilibiliPlaybackTarget: null,
   resources: [],
   timestampNotes: [],
@@ -173,7 +180,12 @@ export const useAppStore = create<AppState & AppActions>()(
       setView: (view) => set({ view }),
       setTheme: (theme) => set({ theme }),
       setDensity: (density) => set({ density }),
-      setBackgroundImage: (backgroundImage) => set({ backgroundImage }),
+      // 超预算的背景 data URL 会把整个持久化炸成静默失败，在唯一变更点拦截。
+      setBackgroundImage: (backgroundImage) =>
+        set({
+          backgroundImage:
+            backgroundImage === null ? null : enforceDataUrlBudget(backgroundImage),
+        }),
       toggleTool: (tool) =>
         set((state) => {
           const enabled = state.enabledTools.includes(tool)
@@ -499,11 +511,28 @@ export const useAppStore = create<AppState & AppActions>()(
       }),
       addResource: (input, title) => {
         const bvid = extractBvid(input);
-        if (!bvid) return null;
-        if (get().resources.some((item) => item.bvid === bvid)) return null;
+        if (!bvid) {
+          const source = identifyResourceSource(input);
+          const url = source && source !== "bilibili" ? normalizeResourceLink(input) : null;
+          if (!source || source === "bilibili" || !url) return null;
+          if (get().resources.some((item) => item.url === url)) return null;
+          const external: CourseResource = {
+            id: createId(),
+            bvid: "",
+            source,
+            url,
+            title: title?.trim() || `${source === "quark" ? "夸克网盘" : source === "baidu" ? "百度网盘" : "直链"}资源`,
+            status: "saved",
+            addedAt: new Date().toISOString(),
+          };
+          set((state) => ({ resources: [external, ...state.resources] }));
+          return external;
+        }
+        if (get().resources.some((item) => item.bvid === bvid && !item.url)) return null;
         const item: CourseResource = {
           id: createId(),
           bvid,
+          source: "bilibili",
           title: title?.trim() || `视频 ${bvid}`,
           status: "saved",
           addedAt: new Date().toISOString(),
@@ -514,6 +543,11 @@ export const useAppStore = create<AppState & AppActions>()(
       openBilibiliVideo: (bvid, title) => {
         get().addResource(bvid, title);
         set({ activeBilibiliBvid: bvid, activeBilibiliPlaybackTarget: null, view: "bilibili-player" });
+      },
+      openCloudResource: (resourceId) => {
+        if (!get().resources.some((item) => item.id === resourceId && Boolean(item.url))) return;
+        get().touchResource(resourceId);
+        set({ activeCloudResourceId: resourceId, view: "cloud-player" });
       },
       openBilibiliVideoAt: (bvid, title, cid, seconds) => {
         get().addResource(bvid, title);
@@ -626,6 +660,9 @@ export const useAppStore = create<AppState & AppActions>()(
           timestampNotes: data.timestampNotes,
           journals: data.journals,
         });
+        // 播放器笔记/学习清单/专注历史/观看历史住在独立存储键里；
+        // companion 块存在才覆盖（旧版备份没有这块，保留设备现有数据）。
+        if (data.companion) importCompanionBackup(data.companion);
       },
       exportBackup: () => {
         const state = get();
@@ -654,6 +691,7 @@ export const useAppStore = create<AppState & AppActions>()(
           resources: state.resources,
           timestampNotes: state.timestampNotes,
           journals: state.journals,
+          companion: exportCompanionBackup(),
         };
       },
       resetAll: () => set({ ...initialState }),
@@ -662,6 +700,40 @@ export const useAppStore = create<AppState & AppActions>()(
       name: "rixia-v1",
       version: 3,
       storage: createJSONStorage(() => safeStorage),
+      // 只持久化持久数据与恢复类状态（view/activeFocus 支撑重启后回到原页面与
+      // 恢复专注会话）；B 站导航指针（creator/collection/folder/search）是会话
+      // 临时态，跨标签页 rehydrate 时会把别的标签页的导航位置带过来。
+      partialize: (state) => ({
+        theme: state.theme,
+        density: state.density,
+        backgroundImage: state.backgroundImage,
+        view: state.view,
+        loginAutoOfficial: state.loginAutoOfficial,
+        enabledTools: state.enabledTools,
+        inbox: state.inbox,
+        tasks: state.tasks,
+        habits: state.habits,
+        notes: state.notes,
+        countdowns: state.countdowns,
+        subjects: state.subjects,
+        studyUnits: state.studyUnits,
+        wrongQuestions: state.wrongQuestions,
+        reviewItems: state.reviewItems,
+        mockExams: state.mockExams,
+        kaoyanWords: state.kaoyanWords,
+        kaoyanExamDate: state.kaoyanExamDate,
+        focusMinutes: state.focusMinutes,
+        focusSessions: state.focusSessions,
+        focusGoalMinutes: state.focusGoalMinutes,
+        focusRounds: state.focusRounds,
+        activeFocus: state.activeFocus,
+        activeBilibiliBvid: state.activeBilibiliBvid,
+        activeBilibiliPlaybackTarget: state.activeBilibiliPlaybackTarget,
+        activeCloudResourceId: state.activeCloudResourceId,
+        resources: state.resources,
+        timestampNotes: state.timestampNotes,
+        journals: state.journals,
+      }),
       migrate: (persisted, version) => migratePersistedState(persisted, version) as unknown as AppState & AppActions,
     },
   ),

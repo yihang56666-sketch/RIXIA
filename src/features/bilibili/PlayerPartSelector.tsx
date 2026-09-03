@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, Crosshair, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { useOverlayInteraction } from "../../lib/overlayStack";
 import type { VideoPart } from "../../lib/bilibili/types";
 
 export function PlayerPartSelector({
@@ -13,6 +14,8 @@ export function PlayerPartSelector({
   onClose: () => void;
   onSelect: (part: VideoPart) => void;
 }) {
+  // 登记浮层栈：系统返回/Escape 先关选集，而不是退回资料库。
+  useOverlayInteraction(true, onClose);
   const [descending, setDescending] = useState(false);
   const currentPartRef = useRef<HTMLButtonElement | null>(null);
   const visibleParts = useMemo(() => descending ? [...parts].reverse() : parts, [descending, parts]);

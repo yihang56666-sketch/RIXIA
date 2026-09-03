@@ -14,8 +14,8 @@ import { isActive, parseSession, sessionToJson } from "./focusSessionModel";
 
 // ============ Focus Session Storage ============
 
-const ACTIVE_KEY = "rixia_focus_active_session";
-const HISTORY_KEY = "rixia_focus_history";
+export const ACTIVE_KEY = "rixia_focus_active_session";
+export const HISTORY_KEY = "rixia_focus_history";
 const MAX_HISTORY = 200;
 
 export interface FocusStoredState {

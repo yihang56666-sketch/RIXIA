@@ -10,8 +10,11 @@ export function CountdownsView({ embedded = false }: { embedded?: boolean } = {}
   const [date, setDate] = useState("");
   const today = todayKey();
 
+  const valid = title.trim().length > 0 && date !== "";
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!valid) return;
     addCountdown(title, date);
     setTitle("");
     setDate("");
@@ -24,7 +27,7 @@ export function CountdownsView({ embedded = false }: { embedded?: boolean } = {}
         <form className="stack" onSubmit={handleSubmit} style={{ gap: 10 }}>
           <input className="field" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例如：研究生考试" />
           <input className="field" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <button className="primary compact" type="submit">添加倒计时</button>
+          <button className="primary compact" type="submit" disabled={!valid} title={valid ? undefined : "请填写名称并选择日期"}>添加倒计时</button>
         </form>
       </section>
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAppStore } from "../store/useAppStore";
+import { useOverlayInteraction } from "../lib/overlayStack";
 import type { HabitFrequency, HabitItem } from "../types";
 
 const PRESET_COLORS = ["#0a84ff", "#3f8f5f", "#d97773", "#7c6cd1", "#e0a040", "#38bdf8", "#e85d4a", "#8fb8d8"];
@@ -11,6 +12,8 @@ const PRESET_COLORS = ["#0a84ff", "#3f8f5f", "#d97773", "#7c6cd1", "#e0a040", "#
 export function HabitFrequencyEditor({ habit, onClose }: { habit: HabitItem; onClose: () => void }) {
   const updateHabitFrequency = useAppStore((state) => state.updateHabitFrequency);
   const updateHabitColor = useAppStore((state) => state.updateHabitColor);
+  // 全屏编辑器也登记浮层栈：系统返回/Escape 先关编辑器，而不是丢掉编辑状态退回上级。
+  useOverlayInteraction(true, onClose);
   const [type, setType] = useState<HabitFrequency["type"]>(habit.frequency?.type ?? "daily");
   const [weeklyTarget, setWeeklyTarget] = useState(
     habit.frequency?.type === "weekly-count" ? habit.frequency.target : 3,

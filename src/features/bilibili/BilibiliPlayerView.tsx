@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ChevronLeft,
@@ -52,6 +52,7 @@ import { DEFAULT_DANMAKU_PREFERENCES, DanmakuMode } from "../../lib/bilibili/typ
 import { DashPlayer, isMsePlaybackSupported } from "../../lib/bilibili/dashPlayer";
 import { GestureCoordinator } from "../../lib/bilibili/gestureCoordinator";
 import { createJsonRequest, readStoredBilibiliCookie } from "../../lib/bilibili/httpAdapter";
+import { hasOpenOverlays } from "../../lib/overlayStack";
 import { Capacitor } from "@capacitor/core";
 import {
   createNativeMediaPlayer,
@@ -152,10 +153,17 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const [includeNoteFrame, setIncludeNoteFrame] = useState(false);
   const [noteFramePath, setNoteFramePath] = useState<string | undefined>(undefined);
   const [noteSaving, setNoteSaving] = useState(false);
+  // 保存反馈带结构化状态：成功显示时间点并提供撤销入口，失败说明原因等待重试。
+  const [noteFeedback, setNoteFeedback] = useState<{ text: string; kind: "success" | "error"; undoNoteId?: string } | null>(null);
+  const noteFeedbackTimerRef = useRef<number | null>(null);
   const [confirmDeleteNote, setConfirmDeleteNote] = useState(false);
   // 屏蔽词输入的原始草稿：避免受控值过滤空段导致逗号打不进去
   const [blockedKeywordsDraft, setBlockedKeywordsDraft] = useState<string | null>(null);
   const noteAutoSaveTimerRef = useRef<number | null>(null);
+  // 笔记草稿是否有未落盘改动 + 最新 saveNote 引用：自动保存走提交后依赖的
+  // effect 防抖（避免调度时的旧闭包丢掉最后几个字），卸载时兜底保存一次。
+  const noteDirtyRef = useRef(false);
+  const saveNoteRef = useRef<((automatic?: boolean) => Promise<void>) | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   // 进度条拖动中的预览时间：拖动期间只更新这里，松手才提交一次真正的 seek，
   // 避免 onChange 每个 tick 都触发 seek 把 MSE 管线打满（拖动卡死的根因）。
@@ -197,6 +205,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const [controlsVisible, setControlsVisible] = useState(true);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const fullscreenRef = useRef(false);
   const [clock, setClock] = useState(() => new Date());
   const [speedPill, setSpeedPill] = useState(false);
   const controlsTimerRef = useRef<number | null>(null);
@@ -205,7 +214,50 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
 
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const playerPageRef = useRef<HTMLDivElement | null>(null);
+
+  const enterFullscreen = useCallback(async () => {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    // 统一走 CSS 全屏（surface position:fixed）。不用原生 requestFullscreen：
+    // 它会把 surface 放进浏览器 top layer，压掉 surface 之外的所有弹窗
+    // （选集/分段信息/专注 Sheet/M3Dialog），全屏里这些按钮会全部失灵；
+    // Android WebView 还经常直接 reject。CSS 全屏三端行为一致。
+    fullscreenRef.current = true;
+    setFullscreen(true);
+  }, []);
+
+  const exitFullscreen = useCallback(async () => {
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen?.();
+      } catch {
+        // Fall through to the local CSS fullscreen fallback.
+      }
+    }
+    fullscreenRef.current = false;
+    setFullscreen(false);
+  }, []);
+
+  useEffect(() => {
+    const onSystemBack = (event: Event) => {
+      if (!fullscreenRef.current && !document.fullscreenElement) return;
+      event.preventDefault();
+      void exitFullscreen();
+    };
+    window.addEventListener("beid:request-exit-fullscreen", onSystemBack);
+    return () => window.removeEventListener("beid:request-exit-fullscreen", onSystemBack);
+  }, [exitFullscreen]);
   const gestureRef = useRef<HTMLDivElement | null>(null);
+  // 手势层在 loading 结束后才挂载；用 callback ref 让协调器 effect 感知挂载时机，
+  // 否则首次 effect 跑在 loading 期间、拿到 null ref 后手势永远失效。
+  const [gestureElement, setGestureElement] = useState<HTMLDivElement | null>(null);
+  const attachGestureElement = useCallback((el: HTMLDivElement | null) => {
+    gestureRef.current = el;
+    setGestureElement(el);
+  }, []);
+  // 手指按下那一刻控制层的可见性快照：surface 的 pointerdown reveal 在协调器
+  // 的延迟 onTap 之前执行，onTap 需要它才能正确切换而不是永远隐藏。
+  const tapBaselineVisibleRef = useRef(true);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<DanmakuRenderer | null>(null);
   const prefsRef = useRef<DanmakuPreferences>(DEFAULT_DANMAKU_PREFERENCES);
@@ -214,6 +266,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const playerControlRef = useRef<PlayerControlBridge | null>(null);
   const gestureRefCoordinator = useRef<GestureCoordinator | null>(null);
   const nativePlayerRef = useRef<NativeMediaPlayer | null>(null);
+  const nativeVideoSizeRef = useRef<{ width: number; height: number } | null>(null);
   const dashPlayerRef = useRef<DashPlayer | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const resumedPositionRef = useRef(0);
@@ -565,6 +618,9 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         setCurrentTime(state.positionSeconds);
         if (state.durationSeconds > 0) setDuration(state.durationSeconds);
         setPlaying(state.isPlaying);
+        if (state.videoWidth && state.videoHeight) {
+          nativeVideoSizeRef.current = { width: state.videoWidth, height: state.videoHeight };
+        }
       });
       await syncBounds();
       const playurlService = createPlayurlService(createJsonRequest());
@@ -741,6 +797,9 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const pendingGestureScrubRef = useRef<number | null>(null);
   const gestureHandlers = {
     onSeek: (delta: number) => {
+      // 双击左/右侧的快进快退同样要唤出控制层，
+      // 否则用户双击后只看到迷你进度条，找不到任何视频选项。
+      revealControls();
       if (nativePlayerActive && nativePlayerRef.current) {
         const target = Math.max(0, Math.min(duration, currentTime + delta));
         void nativePlayerRef.current.seek(target);
@@ -766,6 +825,8 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       if (pending !== null) commitSeek(pending);
     },
     onTogglePlay: () => {
+      // 双击中央切换播放/暂停时同步显示控制层，让状态变化可见。
+      revealControls();
       if (nativePlayerActive && nativePlayerRef.current) {
         if (playing) void nativePlayerRef.current.pause();
         else void nativePlayerRef.current.play();
@@ -790,7 +851,9 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     },
     onTap: () => {
       setShowPrefs(false);
-      if (controlsVisibleRef.current) {
+      // surface 的 onPointerDown 会先 revealControls，等协调器 280ms 后回调 onTap
+      // 时 controlsVisibleRef 已被刷新为 true——按按下瞬间的快照判断才不会自我挫败。
+      if (tapBaselineVisibleRef.current) {
         if (controlsTimerRef.current != null) window.clearTimeout(controlsTimerRef.current);
         controlsTimerRef.current = null;
         setControlsVisible(false);
@@ -818,10 +881,10 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const gestureHandlersRef = useRef(gestureHandlers);
   gestureHandlersRef.current = gestureHandlers;
   useEffect(() => {
-    if (!gestureRef.current) return;
+    if (!gestureElement) return;
     const handlers = gestureHandlersRef;
     const coord = new GestureCoordinator({
-      element: gestureRef.current,
+      element: gestureElement,
       onSeek: (delta) => handlers.current.onSeek(delta),
       onSeekAbsolute: (time) => handlers.current.onSeekAbsolute(time),
       onScrubEnd: () => handlers.current.onScrubEnd(),
@@ -839,12 +902,37 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       coord.destroy();
       gestureRefCoordinator.current = null;
     };
-  }, [doubleTapSeekEnabled]);
+  }, [doubleTapSeekEnabled, gestureElement]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
+      // 焦点落在可激活控件上时 Space 是"按下"而不是"播放/暂停"。
+      if (
+        (event.key === " " || event.key === "Enter") &&
+        target?.closest(
+          "button, a, [role='button'], [role='switch'], [role='option'], [role='menuitem'], [role='tab']",
+        )
+      ) {
+        return;
+      }
+      // 播放器内浮层（弹幕设置/选集/字幕/笔记删除确认等）或全局浮层打开时，
+      // 媒体快捷键一律让路，避免按键穿透弹窗操作背后的播放器。
+      if (
+        showPrefs ||
+        showSubtitles ||
+        showChapterPanel ||
+        showCollection ||
+        showPartSelector ||
+        showLeaveInterruptionFlow ||
+        showFocusSheet ||
+        confirmDeleteNote ||
+        associationPromptSessionId != null ||
+        hasOpenOverlays()
+      ) {
+        return;
+      }
       if (event.key === " ") {
         event.preventDefault();
         if (playing) {
@@ -858,7 +946,8 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         }
       } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
-        const next = Math.max(0, Math.min(duration, currentTime + (event.key === "ArrowLeft" ? -10 : 10)));
+        const next = Math.max(0, Math.min(duration, currentTimeRef.current + (event.key === "ArrowLeft" ? -10 : 10)));
+        currentTimeRef.current = next;
         if (nativePlayerActive) void nativePlayerRef.current?.seek(next);
         playerControlRef.current?.seek(next);
         setCurrentTime(next);
@@ -872,14 +961,15 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         setMuted(nextMuted);
       } else if (event.key.toLowerCase() === "f") {
         event.preventDefault();
-        void overlayRef.current?.requestFullscreen?.();
-      } else if (event.key === "Escape" && document.fullscreenElement) {
-        void document.exitFullscreen?.();
+        if (fullscreen) void exitFullscreen();
+        else void enterFullscreen();
+      } else if (event.key === "Escape" && (document.fullscreenElement || fullscreen)) {
+        void exitFullscreen();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [currentTime, duration, muted, nativePlayerActive, playing]);
+  }, [associationPromptSessionId, confirmDeleteNote, currentTime, duration, enterFullscreen, exitFullscreen, fullscreen, muted, nativePlayerActive, playing, showChapterPanel, showCollection, showFocusSheet, showLeaveInterruptionFlow, showPartSelector, showPrefs, showSubtitles]);
 
   // 播放时控制层自动隐藏（暂停或未播放时保持显示）
   useEffect(() => {
@@ -908,7 +998,9 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
 
   useEffect(() => {
     function onFullscreenChange() {
-      setFullscreen(Boolean(document.fullscreenElement));
+      const active = Boolean(document.fullscreenElement);
+      fullscreenRef.current = active;
+      setFullscreen(active);
     }
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
@@ -923,21 +1015,37 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     const landscapeQuery = window.matchMedia("(orientation: landscape)");
     function syncFullscreen() {
       const isLandscape = landscapeQuery.matches;
-      if (isLandscape && !document.fullscreenElement) {
-        void overlayRef.current?.requestFullscreen?.();
-      } else if (!isLandscape && document.fullscreenElement) {
-        void document.exitFullscreen?.();
+      // FocuBili keeps wide tablet/desktop workspaces in the embedded player
+      // layout. Only phone-sized landscape viewports auto-enter fullscreen;
+      // otherwise a system Back press would immediately be undone by this
+      // effect while the tablet remains landscape.
+      const isWideWorkspace = window.innerWidth >= 900 && window.innerWidth > window.innerHeight;
+      if (isWideWorkspace) return;
+      if (isLandscape && !document.fullscreenElement && !fullscreenRef.current) {
+        void enterFullscreen();
+      } else if (!isLandscape && (document.fullscreenElement || fullscreen)) {
+        void exitFullscreen();
       }
     }
     syncFullscreen();
     landscapeQuery.addEventListener("change", syncFullscreen);
     return () => landscapeQuery.removeEventListener("change", syncFullscreen);
-  }, []);
+  }, [enterFullscreen, exitFullscreen, fullscreen]);
 
   // 动画循环：每帧根据当前播放器时间渲染弹幕。
   // 时间经 ref 读取，避免依赖 currentTime 导致循环每 ~250ms 被拆掉重建。
   useEffect(() => {
-    if (danmaku.length === 0) return;
+    if (danmaku.length === 0) {
+      // 切到无弹幕的分 P（或拉取失败）时清掉上一段分 P 的残影，
+      // 否则最后一批弹幕会冻结在画面上直到换集。
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (canvas && ctx) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      return;
+    }
     let stopped = false;
     function tick() {
       if (stopped) return;
@@ -1118,6 +1226,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       window.clearTimeout(noteAutoSaveTimerRef.current);
       noteAutoSaveTimerRef.current = null;
     }
+    noteDirtyRef.current = false;
     setEditingNoteId(null);
     setNoteTitle("");
     setNoteBody("");
@@ -1132,6 +1241,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       window.clearTimeout(noteAutoSaveTimerRef.current);
       noteAutoSaveTimerRef.current = null;
     }
+    noteDirtyRef.current = false;
     setEditingNoteId(note.id);
     setNoteTitle(note.title);
     setNoteBody(note.body);
@@ -1150,6 +1260,34 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     setCurrentTime(notePositionSeconds);
   }
 
+  /** 显示笔记保存反馈并自动消退；成功反馈保留更久，给用户留出撤销窗口。 */
+  function showNoteFeedback(feedback: { text: string; kind: "success" | "error"; undoNoteId?: string }, durationMs: number) {
+    if (noteFeedbackTimerRef.current != null) window.clearTimeout(noteFeedbackTimerRef.current);
+    setNoteFeedback(feedback);
+    noteFeedbackTimerRef.current = window.setTimeout(() => {
+      noteFeedbackTimerRef.current = null;
+      setNoteFeedback(null);
+    }, durationMs);
+  }
+
+  /** 撤销刚保存的笔记：从服务与列表中移除并回到新建状态。 */
+  async function undoLastNoteSave() {
+    const undoNoteId = noteFeedback?.undoNoteId;
+    if (!undoNoteId) return;
+    if (noteFeedbackTimerRef.current != null) {
+      window.clearTimeout(noteFeedbackTimerRef.current);
+      noteFeedbackTimerRef.current = null;
+    }
+    setNoteFeedback(null);
+    try {
+      await videoNoteService.remove(undoNoteId);
+      setNotes((current) => current.filter((n) => n.id !== undoNoteId));
+      if (editingNoteId === undoNoteId) startNewNote();
+    } catch {
+      showNoteFeedback({ text: "撤销失败，笔记仍在列表中", kind: "error" }, 4000);
+    }
+  }
+
   async function saveNote(automatic = false) {
     if (!video) return;
     // 显式保存优先于待执行的自动保存；否则旧闭包可能仍以 null 的
@@ -1166,6 +1304,13 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       return;
     }
     if (!trimmedTitle && !trimmedBody) return;
+    if (!automatic) {
+      if (noteFeedbackTimerRef.current != null) {
+        window.clearTimeout(noteFeedbackTimerRef.current);
+        noteFeedbackTimerRef.current = null;
+      }
+      setNoteFeedback(null);
+    }
     setNoteSaving(true);
     try {
       let framePath = includeNoteFrame ? noteFramePath : undefined;
@@ -1202,18 +1347,64 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       });
       setEditingNoteId(note.id);
       setNoteFramePath(note.framePath);
+      if (!automatic) {
+        noteDirtyRef.current = false;
+        // 新建笔记给撤销入口；编辑已有笔记只提示更新结果。时间点直接取保存位置。
+        const positionText = `${Math.floor(positionSeconds / 60)}:${String(positionSeconds % 60).padStart(2, "0")}`;
+        showNoteFeedback(
+          editingNoteId == null
+            ? { text: `已保存 · ${positionText}`, kind: "success", undoNoteId: note.id }
+            : { text: `已更新 · ${positionText}`, kind: "success" },
+          6000,
+        );
+      }
+    } catch (error) {
+      if (!automatic) {
+        showNoteFeedback(
+          { text: error instanceof Error ? `保存失败：${error.message}` : "保存失败，请重试", kind: "error" },
+          4000,
+        );
+      }
     } finally {
       // 任何异常（截图失败/配额不足）都不能把保存按钮永久锁在"保存中"。
       setNoteSaving(false);
     }
   }
+  // 供卸载兜底保存使用：ref 每次渲染都指向最新的 saveNote，避免空依赖 effect 捕获首帧闭包。
+  saveNoteRef.current = saveNote;
 
-  function scheduleNoteAutoSave() {
-    if (noteAutoSaveTimerRef.current != null) window.clearTimeout(noteAutoSaveTimerRef.current);
-    noteAutoSaveTimerRef.current = window.setTimeout(() => {
+  // 自动保存：以提交后的笔记内容为依赖做 800ms 防抖。手动保存仍通过
+  // noteAutoSaveTimerRef 直接取消待执行的自动保存（见 saveNote 开头）。
+  useEffect(() => {
+    if (!noteDirtyRef.current) return;
+    const timer = window.setTimeout(() => {
       noteAutoSaveTimerRef.current = null;
+      noteDirtyRef.current = false;
       void saveNote(true);
     }, 800);
+    noteAutoSaveTimerRef.current = timer;
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noteTitle, noteBody, includeNoteFrame]);
+
+  // 卸载兜底：离开播放器时把未落盘的草稿自动保存一次，最后几个字不丢。
+  useEffect(() => {
+    return () => {
+      if (noteAutoSaveTimerRef.current != null) {
+        window.clearTimeout(noteAutoSaveTimerRef.current);
+        noteAutoSaveTimerRef.current = null;
+      }
+      if (noteDirtyRef.current) {
+        noteDirtyRef.current = false;
+        void saveNoteRef.current?.(true);
+      }
+    };
+  }, []);
+
+  /** 标记草稿有未保存改动；真正的防抖保存在下方 effect 里，
+   *  这样自动保存读到的是提交后的标题/正文，而不是调度瞬间的旧闭包。 */
+  function scheduleNoteAutoSave() {
+    noteDirtyRef.current = true;
   }
 
   async function deleteEditingNote() {
@@ -1540,15 +1731,98 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     setCurrentTime(0);
   }
 
+  // 弹幕设置 / 字幕轨道面板：浏览器模式渲染在画面浮层内；
+  // Android 原生模式画面区被原生视频视图覆盖，改渲染到画面下方的原生控制条区域。
+  const danmakuPrefsPanel = showPrefs && (
+    <div className={nativePlayerActive ? "fb-player-native-panel" : "fb-player-popup"} role="dialog" aria-label="弹幕设置">
+      <strong>弹幕设置</strong>
+      <label className="field-row">
+        <span>弹幕开关</span>
+        <input type="checkbox" checked={prefs.enabled} onChange={(e) => updatePrefs({ enabled: e.target.checked })} />
+      </label>
+      <label className="field-row">
+        <span>不透明度</span>
+        <input type="range" min={0} max={1} step={0.1} value={prefs.opacity} onChange={(e) => updatePrefs({ opacity: Number(e.target.value) })} />
+      </label>
+      <label className="field-row">
+        <span>字号</span>
+        <input type="range" min={8} max={48} step={1} value={prefs.fontSize} onChange={(e) => updatePrefs({ fontSize: Number(e.target.value) })} />
+      </label>
+      <label className="field-row">
+        <span>显示区域</span>
+        <input type="range" min={0.1} max={1} step={0.1} value={prefs.displayArea} onChange={(e) => updatePrefs({ displayArea: Number(e.target.value) })} />
+      </label>
+      <label className="field-row">
+        <span>滚动弹幕</span>
+        <input type="checkbox" checked={prefs.showScrolling} onChange={(e) => updatePrefs({ showScrolling: e.target.checked })} />
+      </label>
+      <label className="field-row">
+        <span>顶部弹幕</span>
+        <input type="checkbox" checked={prefs.showTop} onChange={(e) => updatePrefs({ showTop: e.target.checked })} />
+      </label>
+      <label className="field-row">
+        <span>底部弹幕</span>
+        <input type="checkbox" checked={prefs.showBottom} onChange={(e) => updatePrefs({ showBottom: e.target.checked })} />
+      </label>
+      <label className="field-row">
+        <span>合并同时出现的相同弹幕</span>
+        <input type="checkbox" checked={prefs.mergeRepeated} onChange={(e) => updatePrefs({ mergeRepeated: e.target.checked })} />
+      </label>
+      <label className="field-row">
+        <span>轨道数量</span>
+        <input type="range" min={1} max={24} step={1} value={prefs.laneCount} onChange={(e) => updatePrefs({ laneCount: Number(e.target.value) })} />
+      </label>
+      <label className="field-row">
+        <span>滚动时长</span>
+        <input type="range" min={3} max={20} step={1} value={prefs.scrollDurationSeconds} onChange={(e) => updatePrefs({ scrollDurationSeconds: Number(e.target.value) })} />
+      </label>
+      <label className="field-row">
+        <span>屏蔽词（逗号分隔）</span>
+        <input
+          type="text"
+          value={blockedKeywordsDraft ?? prefs.blockedKeywords.join(",")}
+          onChange={(e) => {
+            const raw = e.target.value;
+            setBlockedKeywordsDraft(raw);
+            updatePrefs({ blockedKeywords: raw.split(",").map((s) => s.trim()).filter(Boolean) });
+          }}
+          onBlur={() => setBlockedKeywordsDraft(null)}
+        />
+      </label>
+    </div>
+  );
+  const subtitlePanel = showSubtitles && subtitleTracks.length > 0 && (
+    <div className={nativePlayerActive ? "fb-player-native-panel" : "fb-player-popup"} role="dialog" aria-label="字幕轨道">
+      <strong>字幕轨道</strong>
+      <label className="field-row">
+        <select
+          aria-label="字幕轨道"
+          value={selectedSubtitleId ?? "off"}
+          onChange={(event) => {
+            const value = event.target.value;
+            setSelectedSubtitleId(value === "off" ? null : Number(value));
+          }}
+        >
+          <option value="off">关闭字幕</option>
+          {subtitleTracks.map((track) => <option key={track.id} value={track.id}>{track.label}</option>)}
+        </select>
+      </label>
+    </div>
+  );
+
   return (
-    <div className="fb-player-page" ref={playerPageRef}>
+    <div className="fb-player-page" ref={playerPageRef} data-player-fullscreen={fullscreen ? "1" : "0"}>
       <div
         className="fb-player-surface"
         ref={overlayRef}
         data-native={nativePlayerActive ? "1" : "0"}
+        data-fullscreen={fullscreen ? "1" : "0"}
         data-controls={controlsVisible ? "shown" : "hidden"}
         onMouseMove={revealControls}
-        onPointerDown={revealControls}
+        onPointerDown={() => {
+          tapBaselineVisibleRef.current = controlsVisibleRef.current;
+          revealControls();
+        }}
       >
         {!nativePlayerActive && (
           <video
@@ -1584,7 +1858,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         )}
         <canvas ref={canvasRef} className="player-danmaku-canvas" />
         {activeSubtitle && <div className="player-subtitle-overlay" aria-live="polite">{activeSubtitle}</div>}
-        <div ref={gestureRef} className="player-gesture-overlay" />
+        <div ref={attachGestureElement} className="player-gesture-overlay" />
         {resumeNotice && <div className="fb-player-resume-notice" data-controls={controlsVisible ? "shown" : "hidden"} role="status">{resumeNotice}</div>}
         {interactiveChoicePresented && interactiveNode && (
           <InteractiveVideoChoiceOverlay
@@ -1639,6 +1913,14 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             <Settings2 size={18} />
           </button>
         </div>
+
+        {/* 控制层自动隐藏后仍保留一个可点的返回入口，
+            平板/手机全屏看课时不会出现"左上角没有返回按键"。 */}
+        {!controlsVisible && (
+          <button className="fb-player-persistent-back" onClick={requestLeavePlayer} aria-label="返回资料库">
+            <ArrowLeft size={16} />
+          </button>
+        )}
 
         {/* 底部控制层 */}
         <div className="fb-player-controls-overlay" data-visible={controlsVisible}>
@@ -1743,7 +2025,9 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             <button
               className="player-btn"
               onClick={() => {
-                const t = Math.max(0, currentTime - 10);
+                // 用同步 ref 计算，快速连点两次也能各前进 10 秒（state 闭包会读到旧值）。
+                const t = Math.max(0, currentTimeRef.current - 10);
+                currentTimeRef.current = t;
                 if (nativePlayerActive && nativePlayerRef.current) void nativePlayerRef.current.seek(t);
                 playerControlRef.current?.seek(t);
                 setCurrentTime(t);
@@ -1755,7 +2039,8 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             <button
               className="player-btn"
               onClick={() => {
-                const t = Math.min(duration, currentTime + 10);
+                const t = Math.min(duration, currentTimeRef.current + 10);
+                currentTimeRef.current = t;
                 if (nativePlayerActive && nativePlayerRef.current) void nativePlayerRef.current.seek(t);
                 playerControlRef.current?.seek(t);
                 setCurrentTime(t);
@@ -1781,6 +2066,24 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             >
               {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
             </button>
+            <input
+              className="player-volume"
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={muted ? 0 : volume}
+              aria-label="音量"
+              role="presentation"
+              onChange={(event) => {
+                const next = Math.max(0, Math.min(1, Number(event.target.value)));
+                setVolume(next);
+                setMuted(next === 0);
+                if (next > 0) lastAudibleVolumeRef.current = next;
+                if (nativePlayerActive && nativePlayerRef.current) void nativePlayerRef.current.setVolume(next);
+                playerControlRef.current?.setVolume(next);
+              }}
+            />
             <select
               className="player-quality-select"
               aria-label="播放倍速"
@@ -1848,16 +2151,22 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             </label>
             <button
               className="player-btn"
-              onClick={() => {
-                if (document.fullscreenElement) void document.exitFullscreen?.();
-                else void overlayRef.current?.requestFullscreen?.();
-              }}
+              onClick={() => (fullscreen ? void exitFullscreen() : void enterFullscreen())}
               aria-label={fullscreen ? "退出全屏" : "进入全屏"}
             >
               {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
             </button>
             {nativePlayerActive && (
-              <button className="player-btn" onClick={() => void nativePlayerRef.current?.enterPictureInPicture(16 / 9)} aria-label="画中画">
+              <button
+                className="player-btn"
+                onClick={() => {
+                  // 竖屏/横屏视频各用各的宽高比；原生状态缺失时退回 16:9。
+                  const size = nativeVideoSizeRef.current;
+                  const ratio = size && size.width > 0 && size.height > 0 ? size.width / size.height : 16 / 9;
+                  void nativePlayerRef.current?.enterPictureInPicture(ratio);
+                }}
+                aria-label="画中画"
+              >
                 <PictureInPicture size={17} />
               </button>
             )}
@@ -1876,88 +2185,27 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
           </div>
         )}
 
-        {/* 弹幕设置弹窗 */}
-        {showPrefs && (
-          <div className="fb-player-popup" role="dialog" aria-label="弹幕设置">
-            <strong>弹幕设置</strong>
-            <label className="field-row">
-              <span>弹幕开关</span>
-              <input type="checkbox" checked={prefs.enabled} onChange={(e) => updatePrefs({ enabled: e.target.checked })} />
-            </label>
-            <label className="field-row">
-              <span>不透明度</span>
-              <input type="range" min={0} max={1} step={0.1} value={prefs.opacity} onChange={(e) => updatePrefs({ opacity: Number(e.target.value) })} />
-            </label>
-            <label className="field-row">
-              <span>字号</span>
-              <input type="range" min={8} max={48} step={1} value={prefs.fontSize} onChange={(e) => updatePrefs({ fontSize: Number(e.target.value) })} />
-            </label>
-            <label className="field-row">
-              <span>显示区域</span>
-              <input type="range" min={0.1} max={1} step={0.1} value={prefs.displayArea} onChange={(e) => updatePrefs({ displayArea: Number(e.target.value) })} />
-            </label>
-            <label className="field-row">
-              <span>滚动弹幕</span>
-              <input type="checkbox" checked={prefs.showScrolling} onChange={(e) => updatePrefs({ showScrolling: e.target.checked })} />
-            </label>
-            <label className="field-row">
-              <span>顶部弹幕</span>
-              <input type="checkbox" checked={prefs.showTop} onChange={(e) => updatePrefs({ showTop: e.target.checked })} />
-            </label>
-            <label className="field-row">
-              <span>底部弹幕</span>
-              <input type="checkbox" checked={prefs.showBottom} onChange={(e) => updatePrefs({ showBottom: e.target.checked })} />
-            </label>
-            <label className="field-row">
-              <span>合并同时出现的相同弹幕</span>
-              <input type="checkbox" checked={prefs.mergeRepeated} onChange={(e) => updatePrefs({ mergeRepeated: e.target.checked })} />
-            </label>
-            <label className="field-row">
-              <span>轨道数量</span>
-              <input type="range" min={1} max={24} step={1} value={prefs.laneCount} onChange={(e) => updatePrefs({ laneCount: Number(e.target.value) })} />
-            </label>
-            <label className="field-row">
-              <span>滚动时长</span>
-              <input type="range" min={3} max={20} step={1} value={prefs.scrollDurationSeconds} onChange={(e) => updatePrefs({ scrollDurationSeconds: Number(e.target.value) })} />
-            </label>
-            <label className="field-row">
-              <span>屏蔽词（逗号分隔）</span>
-              <input
-                type="text"
-                value={blockedKeywordsDraft ?? prefs.blockedKeywords.join(",")}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  setBlockedKeywordsDraft(raw);
-                  updatePrefs({ blockedKeywords: raw.split(",").map((s) => s.trim()).filter(Boolean) });
-                }}
-                onBlur={() => setBlockedKeywordsDraft(null)}
-              />
-            </label>
-          </div>
-        )}
+        {/* 弹幕设置弹窗（原生画面覆盖期间移到画面下方的控制条区域渲染） */}
+        {!nativePlayerActive && danmakuPrefsPanel}
         {/* 字幕菜单弹窗 */}
-        {showSubtitles && subtitleTracks.length > 0 && (
-          <div className="fb-player-popup" role="dialog" aria-label="字幕轨道">
-            <strong>字幕轨道</strong>
-            <label className="field-row">
-              <select
-                aria-label="字幕轨道"
-                value={selectedSubtitleId ?? "off"}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setSelectedSubtitleId(value === "off" ? null : Number(value));
-                }}
-              >
-                <option value="off">关闭字幕</option>
-                {subtitleTracks.map((track) => <option key={track.id} value={track.id}>{track.label}</option>)}
-              </select>
-            </label>
-          </div>
-        )}
+        {!nativePlayerActive && subtitlePanel}
       </div>
 
 {shouldUseNativePlayer && (
         <div className="fb-player-native-bar" role="group" aria-label="原生播放控制">
+          {/* 原生视频视图盖住 WebView 画面区，surface 内的返回按钮/控制层都不可见；
+              返回与专注入口必须放在画面下方的原生控制条里。 */}
+          <button className="player-btn" onClick={requestLeavePlayer} aria-label="返回资料库" title="返回资料库">
+            <ArrowLeft size={17} />
+          </button>
+          <button
+            className="player-btn"
+            onClick={() => setShowFocusSheet(true)}
+            aria-label="专注控制"
+            title="专注控制"
+          >
+            <Timer size={17} />
+          </button>
           <button
             className="player-btn"
             onClick={() => {
@@ -1988,6 +2236,54 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             }}
           />
           <span className="player-time">{formatTime(currentTime)} / {formatTime(duration)}</span>
+          <button
+            className="player-btn"
+            onClick={() => {
+              setMuted((m) => {
+                const next = !m;
+                const nextVolume = next ? 0 : lastAudibleVolumeRef.current;
+                void nativePlayerRef.current?.setVolume(nextVolume);
+                setVolume(nextVolume);
+                return next;
+              });
+            }}
+            aria-label={muted ? "取消静音" : "静音"}
+          >
+            {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
+          </button>
+          <input
+            className="player-volume"
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={muted ? 0 : volume}
+            aria-label="音量"
+            onChange={(event) => {
+              const next = Math.max(0, Math.min(1, Number(event.target.value)));
+              setVolume(next);
+              setMuted(next === 0);
+              if (next > 0) lastAudibleVolumeRef.current = next;
+              void nativePlayerRef.current?.setVolume(next);
+            }}
+          />
+          <select className="player-quality-select" aria-label="播放倍速" value={playbackSpeed} onChange={(event) => changePlaybackSpeed(Number(event.target.value))}>
+            {[0.5, 0.75, 1, 1.25, 1.5, 2, 3].map((speed) => <option key={speed} value={speed}>{speed}x</option>)}
+          </select>
+          {qualityOptions.length > 1 && (
+            <select className="player-quality-select" aria-label="清晰度" value={requestedQuality} onChange={(event) => {
+              const next = Number(event.target.value);
+              if (!Number.isFinite(next) || next === requestedQuality) return;
+              resumedPositionRef.current = currentTime;
+              setNativePlayerActive(false);
+              setRequestedQuality(next);
+            }}>
+              {qualityOptions.map((quality) => <option key={quality} value={quality}>{qualityLabel(quality)}</option>)}
+            </select>
+          )}
+          <button className="player-btn" onClick={() => (fullscreen ? void exitFullscreen() : void enterFullscreen())} aria-label={fullscreen ? "退出全屏" : "进入全屏"}>
+            {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+          </button>
         </div>
       )}
 
@@ -2169,6 +2465,16 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             )}
 
             <div className="fb-player-note-composer-wrap">
+              {noteFeedback && (
+                <div className={noteFeedback.kind === "success" ? "fb-player-note-feedback" : "fb-player-note-feedback error"} role="status">
+                  <span>{noteFeedback.text}</span>
+                  {noteFeedback.undoNoteId && (
+                    <button type="button" className="fb-player-note-undo" onClick={() => void undoLastNoteSave()}>
+                      撤销
+                    </button>
+                  )}
+                </div>
+              )}
               <VideoNoteComposer
                 title={noteTitle}
                 body={noteBody}

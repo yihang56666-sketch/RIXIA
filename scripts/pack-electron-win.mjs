@@ -1,9 +1,16 @@
 import { cpSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 
 const projectRoot = process.cwd();
-const electronDist = "C:\\\\beid-build\\\\node_modules\\\\electron\\\\dist";
+// Electron dist 跟随当前工程解析：优先 BEID_ELECTRON_DIST 环境变量，
+// 其次本仓库 node_modules 里的 electron 包，不再硬编码某台打包机的盘符路径。
+const electronDist =
+  process.env.BEID_ELECTRON_DIST ??
+  path.dirname(createRequire(path.join(projectRoot, "package.json")).resolve("electron/package.json")) +
+    path.sep +
+    "dist";
 const outDir = path.join(projectRoot, "release", "BEID-0.3.0-windows-app");
 const zipPath = path.join(projectRoot, "release", "BEID-0.3.0-windows-app.zip");
 

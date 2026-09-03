@@ -34,6 +34,7 @@ export const VIEW_TITLES: Record<ViewKey, string> = {
   personalization: "个性化设置",
   search: "搜索 B 站",
   "bilibili-player": "播放器",
+  "cloud-player": "网盘资源",
   favorites: "我的收藏",
   "favorite-videos": "收藏夹内容",
   followed: "关注 UP 主",

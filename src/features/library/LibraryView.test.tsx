@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LibraryView } from "./LibraryView";
 import { useAppStore } from "../../store/useAppStore";
 
@@ -41,5 +41,17 @@ describe("LibraryView", () => {
     fireEvent.click(screen.getByRole("tab", { name: "已保存" }));
 
     expect(screen.getByRole("button", { name: "保存视频" })).toBeInTheDocument();
+  });
+
+  it("opens a saved cloud resource inside the app without launching the browser", () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    useAppStore.setState({
+      resources: [{ id: "q1", title: "网盘课", bvid: "", source: "quark", url: "https://pan.quark.cn/s/example", addedAt: "2026-08-22T00:00:00.000Z", status: "saved" }],
+    } as Partial<ReturnType<typeof useAppStore.getState>>);
+    render(<LibraryView />);
+    fireEvent.click(screen.getByRole("button", { name: "打开 网盘课" }));
+    expect(open).not.toHaveBeenCalled();
+    expect(useAppStore.getState().view).toBe("cloud-player");
+    open.mockRestore();
   });
 });

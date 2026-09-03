@@ -43,6 +43,8 @@ function TaskRow({ item, today }: { item: TaskItem; today: string }) {
             style={{ gap: 10 }}
             onSubmit={(event) => {
               event.preventDefault();
+              // store 对空标题静默拒绝，这里先拦下，避免弹窗关闭让用户以为已保存。
+              if (!title.trim()) return;
               updateTask(item.id, title, due || null);
               setEditing(false);
             }}
@@ -63,7 +65,7 @@ function TaskRow({ item, today }: { item: TaskItem; today: string }) {
               >
                 删除任务
               </button>
-              <button className="primary compact" type="submit">保存</button>
+              <button className="primary compact" type="submit" disabled={!title.trim()}>保存</button>
             </div>
           </form>
         </Modal>

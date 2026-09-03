@@ -374,6 +374,10 @@ export function BilibiliSearchView() {
     setAddingBvid(bvid);
     void learningListService
       .remove(`${bvid}:${cid}`)
+      // 与 add 路径同步刷新 learningTaskIds，否则移除后卡片永远停留在
+      // "已在学习清单"状态，无法从搜索结果重新加入。
+      .then(() => learningListService.list())
+      .then((entries) => replaceLearningTaskIds(entries))
       .catch(() => {})
       .finally(() => setAddingBvid(null));
   }

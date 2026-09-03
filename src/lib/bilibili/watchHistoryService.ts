@@ -18,7 +18,7 @@ export interface WatchHistoryService {
   clear(): Promise<LocalWatchHistoryEntry[]>;
 }
 
-const STORAGE_KEY = "focubili.local-watch-history.v1";
+export const STORAGE_KEY = "focubili.local-watch-history.v1";
 const MAX_ENTRIES = 50;
 
 export function createWatchHistoryService(storage: Storage = localStorage): WatchHistoryService {

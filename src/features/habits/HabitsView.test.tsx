@@ -23,4 +23,31 @@ describe("HabitsView", () => {
     fireEvent.click(screen.getByRole("button", { name: "今日打卡" }));
     expect(useAppStore.getState().habits[0]?.checkedDates).toContain(todayKey());
   });
+
+  it("checks all due habits when the bulk action is clicked", () => {
+    useAppStore.setState({
+      habits: [
+        {
+          id: "habit-a",
+          title: "喝水",
+          createdAt: "2026-08-01T00:00:00.000Z",
+          checkedDates: [],
+        },
+        {
+          id: "habit-b",
+          title: "阅读",
+          createdAt: "2026-08-01T00:00:00.000Z",
+          checkedDates: [],
+        },
+      ],
+    });
+
+    render(<HabitsView />);
+
+    fireEvent.click(screen.getByRole("button", { name: "全部打卡" }));
+
+    const habits = useAppStore.getState().habits;
+    expect(habits[0]?.checkedDates).toContain(todayKey());
+    expect(habits[1]?.checkedDates).toContain(todayKey());
+  });
 });

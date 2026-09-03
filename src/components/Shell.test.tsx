@@ -19,6 +19,16 @@ describe("Shell", () => {
     expect(screen.getByRole("dialog", { name: "命令面板" })).toBeInTheDocument();
   });
 
+  it("provides a command palette trigger in the mobile navigation", () => {
+    render(<Shell><div>内容</div></Shell>);
+
+    const triggers = screen.getAllByRole("button", { name: "打开命令面板" });
+    expect(triggers).toHaveLength(2);
+
+    fireEvent.click(triggers[1]);
+    expect(screen.getByRole("dialog", { name: "命令面板" })).toBeInTheDocument();
+  });
+
   it("keeps Rixia quick capture on workspace pages, not FocuBili home", () => {
     useAppStore.setState({ view: "today" });
     render(<Shell><div>内容</div></Shell>);
@@ -60,5 +70,37 @@ describe("Shell", () => {
     useAppStore.setState({ view: "kaoyan" });
     render(<Shell><div>考研</div></Shell>);
     expect(screen.queryByRole("button", { name: "快速收集" })).not.toBeInTheDocument();
+  });
+
+  it("closes the command palette first when the Android system back event fires", () => {
+    render(<Shell><div>内容</div></Shell>);
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(screen.getByRole("dialog", { name: "命令面板" })).toBeInTheDocument();
+
+    act(() => window.dispatchEvent(new Event("beid:request-app-back")));
+    expect(screen.queryByRole("dialog", { name: "命令面板" })).not.toBeInTheDocument();
+    expect(useAppStore.getState().view).toBe("focus-dashboard");
+  });
+
+  it("walks back through the in-app view history on system back instead of exiting", () => {
+    render(<Shell><div>内容</div></Shell>);
+
+    act(() => useAppStore.getState().setView("kaoyan"));
+    act(() => useAppStore.getState().setView("today"));
+
+    act(() => window.dispatchEvent(new Event("beid:request-app-back")));
+    expect(useAppStore.getState().view).toBe("kaoyan");
+
+    act(() => window.dispatchEvent(new Event("beid:request-app-back")));
+    expect(useAppStore.getState().view).toBe("focus-dashboard");
+  });
+
+  it("treats browser popstate as an in-app back so tablet/PWA back stays inside the app", () => {
+    render(<Shell><div>内容</div></Shell>);
+
+    act(() => useAppStore.getState().setView("kaoyan"));
+    act(() => window.dispatchEvent(new PopStateEvent("popstate", { state: { beid: true } })));
+    expect(useAppStore.getState().view).toBe("focus-dashboard");
   });
 });

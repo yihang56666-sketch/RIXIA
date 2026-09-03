@@ -12,7 +12,6 @@ import android.provider.Settings;
 import java.util.HashSet;
 import java.util.Set;
 
-import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSObject;
@@ -20,11 +19,15 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 
 /** Android notification and AlarmManager bridge for focus continuation. */
-@CapacitorPlugin(name = "BeidFocusNotifications")
+@CapacitorPlugin(
+    name = "BeidFocusNotifications",
+    permissions = { @Permission(strings = { Manifest.permission.POST_NOTIFICATIONS }, alias = "notifications") }
+)
 public class BeidFocusNotificationPlugin extends Plugin {
-    private static final int REQUEST_NOTIFICATIONS = 7401;
     private static final String ACTION_REMINDER = "com.beid.app.FOCUS_REMINDER";
     static final String PREFS = "beid_focus_reminders";
     static final String IDS = "ids";
@@ -43,12 +46,22 @@ public class BeidFocusNotificationPlugin extends Plugin {
     @PluginMethod
     public void requestPermission(PluginCall call) {
         Context context = getContext();
-        if (Build.VERSION.SDK_INT >= 33 && ActivityCompat.checkSelfPermission(
-                context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(getActivity(),
-                    new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
+        BeidFocusNotificationReceiver.ensureChannel(context);
+        if (Build.VERSION.SDK_INT < 33 || notificationAllowed(context)) {
+            // 33 以下没有运行时通知开关；已授权则直接放行。
+            call.resolve(new JSObject().put("granted", true));
+            return;
         }
-        call.resolve(new JSObject().put("granted", notificationAllowed(context)));
+        // 走 Capacitor 权限管线：系统对话框的用户选择在
+        // notificationsPermissionCallback 里回传真实结果，
+        // 不能在这里同步 resolve——那一刻权限必然还是"未授予"。
+        requestPermissionForAlias("notifications", call, "notificationsPermissionCallback");
+    }
+
+    @PermissionCallback
+    private void notificationsPermissionCallback(PluginCall call) {
+        boolean granted = notificationAllowed(getContext());
+        call.resolve(new JSObject().put("granted", granted));
     }
 
     @PluginMethod

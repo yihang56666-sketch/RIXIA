@@ -89,7 +89,9 @@ public final class BeidDanmakuView extends View {
                 x = (getWidth() - textWidth) / 2f;
                 y = getHeight() - (lane + 1) * lineHeight;
             } else {
-                float progress = Math.min(1f, elapsed / 9f);
+                // 滚动时长用每条弹幕自带的 duration；长弹幕走得慢、短弹幕走得快。
+                float duration = entry.durationSeconds > 0f ? entry.durationSeconds : 9f;
+                float progress = Math.min(1f, elapsed / duration);
                 x = getWidth() - progress * (getWidth() + textWidth);
                 y = (lane + 1) * lineHeight;
             }

@@ -235,7 +235,6 @@ export default defineConfig({
     host: "127.0.0.1",
     proxy: { ...bilibiliProxy },
   },
-  test: {
-    environment: "node",
-  },
+  // Vitest 配置统一在 vitest.config.ts（jsdom + setup）；这里不重复声明，
+  // 否则两份配置会随文件存在与否静默切换，误导排查。
 });

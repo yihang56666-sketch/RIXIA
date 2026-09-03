@@ -40,6 +40,18 @@ export function isTopmostOverlay(id: symbol): boolean {
   return stack.length > 0 && stack[stack.length - 1] === id;
 }
 
+/** 仅测试用：清空模块级浮层栈，避免用例间状态串扰。 */
+export function resetOverlayStackForTesting() {
+  stack.length = 0;
+  escapeHandlers.clear();
+  lockCount = 0;
+  if (typeof document === "undefined") return;
+  const body = document.body;
+  delete body.dataset.overlayScrollLock;
+  body.style.paddingRight = "";
+  body.style.overflow = "";
+}
+
 if (typeof window !== "undefined") {
   window.addEventListener("keydown", (event) => {
     if (event.key !== "Escape" || stack.length === 0) return;

@@ -20,6 +20,9 @@ import type {
   WrongQuestion,
 } from "../types";
 import { THEME_MIGRATION, VIEW_TITLES } from "../catalog";
+import { enforceDataUrlBudget } from "./backgroundImage";
+import { sanitizeCompanionBackup } from "./companionBackup";
+import { identifyResourceSource, normalizeResourceLink } from "./resourceSources";
 
 const NEW_THEME_KEYS = new Set<ThemeName>([
   "porcelain", "graphite", "sage", "aurora", "rosewood",
@@ -47,7 +50,10 @@ function migrateResource(input: unknown): CourseResource | null {
   const id = typeof input.id === "string" ? input.id : "";
   const bvid = typeof input.bvid === "string" ? input.bvid : "";
   const title = typeof input.title === "string" ? input.title : bvid || "未命名";
-  if (!id || !bvid) return null;
+  const rawUrl = typeof input.url === "string" ? input.url : "";
+  const detectedSource = rawUrl ? identifyResourceSource(rawUrl) : null;
+  const url = detectedSource && detectedSource !== "bilibili" ? normalizeResourceLink(rawUrl) : null;
+  if (!id || (!bvid && !url)) return null;
   const addedAt = typeof input.addedAt === "string" ? input.addedAt : new Date().toISOString();
   const statusRaw = input.status;
   const status: ResourceStatus =
@@ -64,6 +70,7 @@ function migrateResource(input: unknown): CourseResource | null {
   const episodeId = typeof input.episodeId === "string" ? input.episodeId : undefined;
   return {
     id, bvid, title, status, addedAt,
+    ...(url ? { url, source: detectedSource! } : { source: "bilibili" as const }),
     lastOpenedAt, progressSeconds, durationSeconds, episodeId,
   };
 }
@@ -438,6 +445,7 @@ export function migratePersistedState(
         : 120,
     focusRounds: migrateFocusRounds(state.focusRounds),
     activeFocus,
+    activeCloudResourceId: typeof state.activeCloudResourceId === "string" ? state.activeCloudResourceId : null,
     resources,
     timestampNotes,
     journals: asArray<unknown>(state.journals, [])
@@ -489,9 +497,15 @@ export function validateBackup(input: unknown): BackupData {
         : 25,
     focusGoalMinutes: migrated.focusGoalMinutes ?? 120,
     focusRounds: migrated.focusRounds ?? { workMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, longBreakEvery: 4 },
-    backgroundImage: typeof migrated.backgroundImage === "string" ? migrated.backgroundImage : null,
+    backgroundImage:
+      typeof migrated.backgroundImage === "string"
+        ? enforceDataUrlBudget(migrated.backgroundImage)
+        : null,
     resources: migrated.resources ?? [],
     timestampNotes: migrated.timestampNotes ?? [],
     journals: migrated.journals ?? [],
+    // 旧版备份没有 companion 块（返回 null）：导入时保留设备上现有的
+    // 播放器/专注数据，而不是清空它们。
+    companion: sanitizeCompanionBackup(data.companion),
   };
 }

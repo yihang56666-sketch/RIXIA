@@ -189,6 +189,26 @@ export function FocusView() {
     };
   }, []);
 
+  // 计时启动/暂停的常规路径：active 翻转时申请/释放常亮。
+  // 上面的 effect 只在挂载/可见性变化时介入，从 UI 点"开始专注"走的是这里。
+  useEffect(() => {
+    if (!active) {
+      releaseWakeLock.current?.();
+      releaseWakeLock.current = null;
+      return;
+    }
+    if (document.visibilityState !== "visible") return; // 回前台时由 visibilitychange 补申请
+    void requestWakeLock().then((release) => {
+      if (!release) return;
+      if (!activeRef.current || document.visibilityState !== "visible") {
+        release();
+        return;
+      }
+      releaseWakeLock.current?.();
+      releaseWakeLock.current = release;
+    });
+  }, [active]);
+
   // 离开页面时停止氛围音
   useEffect(() => () => stopAmbience(), []);
 

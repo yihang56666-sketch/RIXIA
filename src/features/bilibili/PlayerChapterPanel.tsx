@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import type { VideoChapter } from "../../lib/bilibili/extendedModels";
 import { chapterContains } from "../../lib/bilibili/extendedModels";
 import { formatChapterTime } from "./PlayerChapterStrip";
+import { useOverlayInteraction } from "../../lib/overlayStack";
 
 export function PlayerChapterPanel({
   chapters,
@@ -18,6 +19,8 @@ export function PlayerChapterPanel({
   onToggleChapterProgress: (visible: boolean) => void;
   onClose: () => void;
 }) {
+  // 登记浮层栈：系统返回/Escape 先关分段信息，而不是退回资料库。
+  useOverlayInteraction(true, onClose);
   return (
     <div className="modal-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="modal-card player-chapter-panel" role="dialog" aria-modal="true" aria-label="分段信息">

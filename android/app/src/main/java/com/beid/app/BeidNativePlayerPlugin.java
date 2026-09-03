@@ -10,12 +10,12 @@ import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.util.UnstableApi;
 import androidx.media3.database.StandaloneDatabaseProvider;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
@@ -47,6 +47,7 @@ import org.json.JSONArray;
 
 /** Android Media3 playback surface used by BEID's integrated player. */
 @CapacitorPlugin(name = "BeidNativePlayer")
+@UnstableApi
 public class BeidNativePlayerPlugin extends Plugin {
     private final Handler stateHandler = new Handler(Looper.getMainLooper());
     private final Runnable stateTicker = new Runnable() {
@@ -68,7 +69,7 @@ public class BeidNativePlayerPlugin extends Plugin {
     private SimpleCache mediaCache;
     private PlayerView playerView;
     private BeidDanmakuView danmakuView;
-    private FrameLayout.LayoutParams playerLayout;
+    private ViewGroup.LayoutParams playerLayout;
     private float density;
     private PluginCall pendingOpenCall;
     private Map<String, String> mediaHeaders = defaultMediaHeaders("https://www.bilibili.com/");
@@ -122,14 +123,18 @@ public class BeidNativePlayerPlugin extends Plugin {
                 return;
             }
             int[] offset = hostOffsetPx();
-            playerLayout.width = Math.max(1, Math.round((float) width * density));
-            playerLayout.height = Math.max(1, Math.round((float) height * density));
-            playerLayout.leftMargin = Math.round((float) left * density) + offset[0];
-            playerLayout.topMargin = Math.round((float) top * density) + offset[1];
+            updateLayout(playerLayout,
+                Math.max(1, Math.round((float) width * density)),
+                Math.max(1, Math.round((float) height * density)),
+                Math.round((float) left * density) + offset[0],
+                Math.round((float) top * density) + offset[1]);
             playerView.setLayoutParams(playerLayout);
             playerView.setVisibility(View.VISIBLE);
             if (danmakuView != null) {
-                danmakuView.setLayoutParams(new FrameLayout.LayoutParams(playerLayout));
+                ViewGroup.LayoutParams danmakuLayout = danmakuView.getLayoutParams();
+                updateLayout(danmakuLayout, playerLayout.width, playerLayout.height,
+                    readLeftMargin(playerLayout), readTopMargin(playerLayout));
+                danmakuView.setLayoutParams(danmakuLayout);
                 danmakuView.setVisibility(View.VISIBLE);
             }
             call.resolve();
@@ -281,10 +286,14 @@ public class BeidNativePlayerPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         Runnable cleanup = () -> {
-            releasePlayer();
-            if (mediaCache != null) {
-                mediaCache.release();
-                mediaCache = null;
+            try {
+                releasePlayer();
+                if (mediaCache != null) {
+                    mediaCache.release();
+                    mediaCache = null;
+                }
+            } catch (Throwable error) {
+                android.util.Log.e("BeidNativePlayer", "destroy cleanup crashed", error);
             }
         };
         android.app.Activity activity = getActivity();
@@ -329,15 +338,21 @@ public class BeidNativePlayerPlugin extends Plugin {
         playerView.setShutterBackgroundColor(Color.BLACK);
         playerView.setVisibility(View.INVISIBLE);
         playerView.setOnTouchListener((view, event) -> forwardTouchToWebView(view, event));
-        playerLayout = new FrameLayout.LayoutParams(1, 1);
-        host.addView(playerView, insertAt, playerLayout);
+        // Let the parent create its own parameter subtype (CoordinatorLayout,
+        // FrameLayout, etc.). Passing FrameLayout.LayoutParams to a
+        // CoordinatorLayout causes a ClassCastException during the next measure.
+        host.addView(playerView, insertAt);
+        playerLayout = playerView.getLayoutParams();
+        if (playerLayout == null) {
+            throw new IllegalStateException("播放器布局参数不可用");
+        }
         danmakuView = new BeidDanmakuView(getContext());
         danmakuView.setClickable(true);
         danmakuView.setFocusable(false);
         danmakuView.setFocusableInTouchMode(false);
         danmakuView.setVisibility(View.INVISIBLE);
         danmakuView.setOnTouchListener((view, event) -> forwardTouchToWebView(view, event));
-        host.addView(danmakuView, insertAt + 1, new FrameLayout.LayoutParams(playerLayout));
+        host.addView(danmakuView, insertAt + 1);
         DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
             .setUserAgent(DESKTOP_UA)
             .setConnectTimeoutMs(15_000)
@@ -375,18 +390,46 @@ public class BeidNativePlayerPlugin extends Plugin {
 
             @Override
             public void onPlayerError(@NonNull PlaybackException error) {
-                String message = error.getErrorCodeName();
-                if (message == null || message.isEmpty()) message = "原生播放器无法播放当前媒体";
-                else message = "原生播放器无法播放当前媒体（" + message + "）";
-                if (pendingOpenCall != null) {
-                    completeOpen(message, true);
-                } else {
-                    emitState("error", message);
+                // Media3 invokes this on the playback thread/main looper after
+                // release as well. Never let error reporting become a second
+                // uncaught exception that terminates the WebView process.
+                try {
+                    String message = error.getErrorCodeName();
+                    if (message == null || message.isEmpty()) message = "原生播放器无法播放当前媒体";
+                    else message = "原生播放器无法播放当前媒体（" + message + "）";
+                    if (pendingOpenCall != null) {
+                        completeOpen(message, true);
+                    } else {
+                        emitState("error", message);
+                    }
+                } catch (Throwable callbackError) {
+                    android.util.Log.e("BeidNativePlayer", "player error callback crashed", callbackError);
                 }
             }
         });
         stateHandler.removeCallbacks(stateTicker);
         stateHandler.post(stateTicker);
+    }
+
+    private static void updateLayout(ViewGroup.LayoutParams layout, int width, int height, int left, int top) {
+        if (layout == null) return;
+        layout.width = width;
+        layout.height = height;
+        if (layout instanceof ViewGroup.MarginLayoutParams) {
+            ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) layout;
+            margins.leftMargin = left;
+            margins.topMargin = top;
+        }
+    }
+
+    private static int readLeftMargin(ViewGroup.LayoutParams layout) {
+        return layout instanceof ViewGroup.MarginLayoutParams
+            ? ((ViewGroup.MarginLayoutParams) layout).leftMargin : 0;
+    }
+
+    private static int readTopMargin(ViewGroup.LayoutParams layout) {
+        return layout instanceof ViewGroup.MarginLayoutParams
+            ? ((ViewGroup.MarginLayoutParams) layout).topMargin : 0;
     }
 
     private MediaSource mediaSource(String url) {
@@ -462,9 +505,18 @@ public class BeidNativePlayerPlugin extends Plugin {
         View webView = getBridge() != null ? getBridge().getWebView() : null;
         if (webView == null || source == null) return false;
         MotionEvent copy = MotionEvent.obtain(event);
-        copy.offsetLocation(source.getLeft() - webView.getLeft(), source.getTop() - webView.getTop());
-        webView.dispatchTouchEvent(copy);
+        // PlayerView is a sibling overlay and may move independently when the
+        // web player enters fixed-position fullscreen. Map through screen
+        // coordinates so status bars, margins, and fullscreen offsets are all
+        // accounted for.
+        int[] sourceLocation = new int[2];
+        int[] webLocation = new int[2];
+        source.getLocationOnScreen(sourceLocation);
+        webView.getLocationOnScreen(webLocation);
+        copy.offsetLocation(sourceLocation[0] - webLocation[0], sourceLocation[1] - webLocation[1]);
+        boolean handled = webView.dispatchTouchEvent(copy);
         copy.recycle();
+        android.util.Log.d("BeidNativePlayer", "forward touch action=" + event.getActionMasked() + " handled=" + handled);
         return true;
     }
 
@@ -493,6 +545,9 @@ public class BeidNativePlayerPlugin extends Plugin {
         state.put("positionSeconds", player.getCurrentPosition() / 1000d);
         state.put("durationSeconds", Math.max(0L, player.getDuration()) / 1000d);
         state.put("isPlaying", player.isPlaying());
+        androidx.media3.common.VideoSize videoSize = player.getVideoSize();
+        state.put("videoWidth", videoSize.width);
+        state.put("videoHeight", videoSize.height);
         if (message != null) state.put("message", message);
         notifyListeners("stateChange", state);
     }

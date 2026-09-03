@@ -442,6 +442,13 @@ body {
 .app-background[data-has-background="true"]::before { display: none; }
 .app-overlay { display: none; }
 
+/* 自定义背景画在根元素上，但壳层和 M3 页面各自铺了不透明底色，
+   会把背景图完全盖住——有背景时把它们透明化，卡片仍保留自己的表面。 */
+.app-background[data-has-background="true"] .focubili-shell,
+.app-background[data-has-background="true"] .fb-page {
+  background: transparent;
+}
+
 .app-update-notice {
   position: fixed;
   top: 14px;
@@ -462,14 +469,11 @@ body {
 
 .app-update-notice > span { min-width: 0; }
 .app-background[data-has-background="true"] .app-overlay {
-  display: block;
+  display: none;
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 38%, transparent), color-mix(in srgb, var(--bg-base) 62%, transparent)),
-    radial-gradient(120% 80% at 50% 0%, transparent, color-mix(in srgb, var(--bg-base) 30%, transparent));
-  backdrop-filter: blur(2px) saturate(1.05);
+  background: transparent;
 }
 
 button, input, textarea, select { font: inherit; color: inherit; }
@@ -1377,7 +1381,8 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
 .palette-overlay {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  /* 必须盖过播放器全屏 surface（z 1000），否则全屏里 Ctrl+K 面板被吞 */
+  z-index: 1100;
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -2772,7 +2777,28 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
   padding: 20px;
   background: var(--focubili-container);
   box-shadow: none;
+  transition: box-shadow 180ms ease, transform 180ms ease, background-color 180ms ease;
 }
+.app-background[data-has-background="true"] .focubili-stage .card {
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(20, 30, 50, 0.04), 0 10px 30px rgba(20, 30, 50, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+}
+.app-background[data-has-background="true"] .focubili-rail,
+.app-background[data-has-background="true"] .focubili-bottom-nav {
+  background: #ffffff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.app-background[data-has-background="true"] .focubili-stage .card:hover {
+  box-shadow: 0 2px 4px rgba(20, 30, 50, 0.06), 0 14px 34px rgba(20, 30, 50, 0.1);
+}
+.focubili-stage button,
+.focubili-stage .field,
+.focubili-stage .segmented-item {
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.focubili-stage button:active { transform: scale(0.98); }
 .focubili-stage .primary { background: var(--focubili-blue); }
 .focubili-stage .primary:hover { background: #075fe0; }
 .focubili-stage .field { border-color: transparent; background: var(--focubili-surface); }
@@ -2780,6 +2806,18 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
 .focubili-stage .segmented-item.active { background: var(--focubili-blue-soft); color: var(--focubili-blue); }
 .focubili-stage .ghost-btn { background: var(--focubili-surface); border-color: var(--focubili-line); }
 .focubili-stage .bilibili-result-item { border-color: var(--focubili-line); background: var(--focubili-surface); border-radius: 16px; }
+
+.cloud-resource-viewer { height: 100%; min-height: 0; display: flex; flex-direction: column; background: rgba(255,255,255,.72); }
+.cloud-resource-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 8px 16px; border-bottom: 1px solid var(--focubili-line); background: rgba(255,255,255,.9); }
+.cloud-resource-heading { min-width: 0; flex: 1; display: grid; gap: 2px; }
+.cloud-resource-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
+.cloud-resource-heading span { color: var(--focubili-muted); font-size: 12px; }
+.cloud-resource-frame { flex: 1; min-height: 0; display: grid; place-items: center; padding: 16px; background: #f4f6fa; }
+.cloud-resource-frame iframe, .cloud-resource-frame video { width: min(100%, 1100px); height: min(100%, 720px); min-height: 240px; border: 0; border-radius: 14px; background: #111; box-shadow: 0 12px 32px rgba(30,45,70,.14); }
+.cloud-resource-frame video { object-fit: contain; }
+.cloud-resource-hint { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 9px 16px calc(9px + env(safe-area-inset-bottom, 0px)); color: var(--focubili-muted); font-size: 12px; background: rgba(255,255,255,.9); }
+.cloud-resource-empty { display: grid; justify-items: center; gap: 12px; margin: auto; text-align: center; }
+@media (max-width: 700px) { .cloud-resource-frame { padding: 8px; } .cloud-resource-frame iframe, .cloud-resource-frame video { min-height: 200px; border-radius: 10px; } .cloud-resource-hint { align-items: flex-start; } }
 
 /* 账号数据行使用 M3 token */
 .focubili-stage .bilibili-account-row {
@@ -2818,6 +2856,7 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
 .continue-learning-empty p { flex: 1; }
 
 .focubili-bottom-nav { display: none; }
+.focubili-bottom-command { display: none; }
 
 .focubili-profile { max-width: 720px; margin: 0 auto; }
 .focubili-profile-account {
@@ -2887,11 +2926,29 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
     height: var(--beid-bottom-nav-height);
     padding: 8px max(16px, var(--safe-area-inset-left, env(safe-area-inset-left, 0px))) calc(8px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     border-top: 1px solid var(--focubili-line);
     background: color-mix(in srgb, var(--focubili-surface) 96%, transparent);
     backdrop-filter: blur(14px);
   }
+  .focubili-bottom-command {
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 3px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 5px 8px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--focubili-muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .focubili-bottom-command:active { background: var(--focubili-container); }
   .focubili-bottom-item {
     display: grid;
     place-items: center;
@@ -3712,6 +3769,9 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
   background: var(--focubili-container);
   border-bottom: 1px solid var(--focubili-line);
   z-index: 6;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .fb-player-native-bar .player-btn {
   width: 40px;
@@ -3744,6 +3804,58 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
 .fb-player-surface[data-native="1"] {
   background: #000;
 }
+.fb-player-native-bar .player-volume { width: 84px; min-width: 64px; flex: 0 0 84px; accent-color: var(--focubili-blue); }
+.fb-player-native-bar .player-quality-select { height: 34px; min-width: 68px; flex: 0 0 auto; border: 1px solid var(--focubili-line); border-radius: 8px; background: var(--focubili-container); color: var(--focubili-ink); padding: 0 6px; }
+.fb-player-ctl-row .player-volume {
+  width: 84px;
+  min-width: 56px;
+  flex: 0 1 84px;
+  accent-color: var(--focubili-blue);
+}
+@media (max-width: 700px) {
+  .fb-player-ctl-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  }
+  .fb-player-ctl-row > * { flex: 0 0 auto; }
+  .fb-player-ctl-row .player-time { flex: 0 0 auto; }
+  .fb-player-topbar { padding-top: max(10px, env(safe-area-inset-top, 0px)); }
+}
+
+/* 控制层隐藏期间的常驻返回入口：确保播放画面左上角永远有返回可达。 */
+.fb-player-persistent-back {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top, 0px));
+  left: 10px;
+  z-index: 7;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(15, 22, 34, 0.45);
+  color: rgba(255, 255, 255, 0.88);
+  cursor: pointer;
+}
+.fb-player-persistent-back:hover { background: rgba(15, 22, 34, 0.7); color: #fff; }
+.fb-player-surface[data-fullscreen="1"] {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  width: 100vw;
+  height: 100vh;
+  max-height: none;
+  aspect-ratio: auto;
+  align-self: auto;
+}
+/* 全屏时 surface 盖住页面流，播放器自有弹层（选集/分段信息/合集）
+   平时 z 80，会沉到 surface 底下——点开毫无反应。全屏期间提升到
+   surface 之上；M3Dialog/专注 Sheet 本就 z 1200 无需处理。 */
+.fb-player-page[data-player-fullscreen="1"] .modal-overlay { z-index: 1100; }
 .fb-player-surface .player-frame,
 .fb-player-surface iframe {
   position: absolute;
@@ -4117,6 +4229,31 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
 }
 .fb-player-note-chip.active .fb-player-note-time { background: rgba(255,255,255,0.35); }
 .fb-player-note-composer-wrap { margin-top: 4px; }
+.fb-player-note-feedback {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--focubili-blue);
+  background: var(--focubili-blue-soft);
+  color: var(--focubili-ink);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.fb-player-note-feedback.error { border-left-color: #d64545; background: rgba(214, 69, 69, 0.12); }
+.fb-player-note-undo {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--focubili-blue);
+  color: #fff;
+}
+.fb-player-note-undo:hover { filter: brightness(1.08); }
 
 /* ---- Mobile ---- */
 @media (max-width: 700px) {
@@ -4500,6 +4637,12 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
 /* ============ 考研专注扩展：初试倒计时 / 复习队列 / 模考 / 统计 ============ */
 
 .kaoyan-exam-hero { padding: 18px; }
+.kaoyan-plan-overview { padding: 16px 18px; }
+.kaoyan-overview-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.kaoyan-overview-grid > div { min-width: 0; padding: 10px 8px; border-radius: 8px; background: var(--surface-2); text-align: center; }
+.kaoyan-overview-grid strong { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.kaoyan-overview-grid span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+@media (max-width: 620px) { .kaoyan-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .kaoyan-exam-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .kaoyan-exam-date { font-size: 21px; font-weight: 700; letter-spacing: -0.015em; margin-top: 2px; }
 .kaoyan-exam-edit { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -4607,3 +4750,146 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
 }
 .kaoyan-player-link-saved { font-size: 12px; font-weight: 600; color: #2f8a74; }
 .kaoyan-player-link-hint { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text-2); margin-right: auto; }
+
+/* =========================================================================
+   Apple-flavored polish layer (白皙、明亮、干净利落)
+   —— 放在文件末尾，作为对上方 M3 基础样式的精修覆盖
+   ========================================================================= */
+
+/* iOS 风格的物理感性缓动 */
+:root {
+  --ease-apple: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-apple-fast: 0.22s;
+  --dur-apple: 0.34s;
+}
+
+/* SF 字体优先，整壳统一 */
+.focubili-shell {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "PingFang SC", "Segoe UI Variable Text", "Segoe UI", "Noto Sans SC",
+    "Microsoft YaHei UI", "Microsoft YaHei", Roboto, sans-serif;
+}
+
+/* 明亮的浅色材质：白卡片 + 细发丝边 + 轻投影（仅浅色模式） */
+:root:not([data-m3-mode="dark"]) {
+  --focubili-surface: #f5f5f7;
+  --focubili-container: #ffffff;
+  --focubili-line: rgba(0, 0, 0, 0.07);
+}
+
+  :root:not([data-m3-mode="dark"]) .focubili-stage .card {
+    background: #ffffff;
+    border: 0.5px solid rgba(0, 0, 0, 0.08);
+    border-radius: 16px;
+    box-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.04), 0 6px 24px rgba(17, 24, 39, 0.05);
+    transition: box-shadow var(--dur-apple) var(--ease-apple),
+      transform var(--dur-apple) var(--ease-apple),
+      background-color var(--dur-apple-fast) var(--ease-apple);
+  }
+  :root:not([data-m3-mode="dark"]) .focubili-stage .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 14px 36px rgba(17, 24, 39, 0.09);
+  }
+
+  /* 侧栏：干净白底，活跃项用克制的蓝色药丸 */
+  :root:not([data-m3-mode="dark"]) .focubili-rail {
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(24px) saturate(1.6);
+    -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    border-right-color: rgba(0, 0, 0, 0.06);
+  }
+  :root:not([data-m3-mode="dark"]) .focubili-nav-item {
+    transition: background-color var(--dur-apple-fast) var(--ease-apple),
+      color var(--dur-apple-fast) var(--ease-apple);
+  }
+  :root:not([data-m3-mode="dark"]) .focubili-nav-item:hover {
+    background: rgba(0, 0, 0, 0.045);
+  }
+  :root:not([data-m3-mode="dark"]) .focubili-nav-item.active {
+    color: var(--focubili-blue);
+    background: rgba(10, 132, 255, 0.1);
+    font-weight: 600;
+  }
+
+  /* 主按钮：iOS 蓝 + 轻按压反馈 */
+  :root:not([data-m3-mode="dark"]) .focubili-stage .primary {
+    background: linear-gradient(180deg, #1a8cff, #0a84ff);
+    border: 0;
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(10, 132, 255, 0.24), 0 4px 12px rgba(10, 132, 255, 0.2);
+    transition: transform var(--dur-apple-fast) var(--ease-apple),
+      box-shadow var(--dur-apple-fast) var(--ease-apple),
+      filter var(--dur-apple-fast) var(--ease-apple);
+  }
+  :root:not([data-m3-mode="dark"]) .focubili-stage .primary:hover {
+    background: linear-gradient(180deg, #238aff, #0d7df5);
+    filter: brightness(1.02);
+    box-shadow: 0 2px 4px rgba(10, 132, 255, 0.26), 0 8px 20px rgba(10, 132, 255, 0.26);
+  }
+  :root:not([data-m3-mode="dark"]) .focubili-stage .primary:active {
+    transform: scale(0.97);
+    filter: brightness(0.96);
+  }
+
+  /* 分段控件 / 输入框：圆角胶囊 + 柔和选中 */
+  :root:not([data-m3-mode="dark"]) .focubili-stage .segmented {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 10px;
+    padding: 2px;
+  }
+  :root:not([data-m3-mode="dark"]) .focubili-stage .segmented-item {
+    border-radius: 8px;
+    transition: background-color var(--dur-apple-fast) var(--ease-apple),
+      color var(--dur-apple-fast) var(--ease-apple);
+  }
+  :root:not([data-m3-mode="dark"]) .focubili-stage .segmented-item.active {
+    background: #ffffff;
+    color: var(--focubili-ink);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.09), 0 3px 8px rgba(0, 0, 0, 0.05);
+  }
+  :root:not([data-m3-mode="dark"]) .focubili-stage .field {
+    background: #ffffff;
+    border: 0.5px solid rgba(0, 0, 0, 0.1);
+    border-radius: 10px;
+    transition: border-color var(--dur-apple-fast) var(--ease-apple),
+      box-shadow var(--dur-apple-fast) var(--ease-apple),
+      background-color var(--dur-apple-fast) var(--ease-apple);
+  }
+  :root:not([data-m3-mode="dark"]) .focubili-stage .field:focus-within,
+  :root:not([data-m3-mode="dark"]) .focubili-stage .field:focus {
+    border-color: rgba(10, 132, 255, 0.55);
+    box-shadow: 0 0 0 3.5px rgba(10, 132, 255, 0.16);
+    outline: 0;
+  }
+
+/* 自定义壁纸下的通透材质：卡片保持 96% 不透明的白，壁纸只在留白处露脸，
+   既保留壁纸的个性，又不让内容发雾。 */
+.app-background[data-has-background="true"] .focubili-stage .card {
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  border: 0.5px solid rgba(255, 255, 255, 0.6);
+}
+.app-background[data-has-background="true"] .focubili-rail,
+.app-background[data-has-background="true"] .focubili-bottom-nav {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+}
+
+/* 网盘资源加载中状态 */
+.cloud-resource-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: var(--focubili-muted, #6b7280);
+  font-size: 13.5px;
+  pointer-events: none;
+  z-index: 1;
+}
+.cloud-resource-frame { position: relative; }
+.spin { animation: cloudSpin 0.9s linear infinite; }
+@keyframes cloudSpin { to { transform: rotate(360deg); } }

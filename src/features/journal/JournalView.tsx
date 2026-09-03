@@ -72,7 +72,13 @@ export function JournalView({ date }: { date?: string }) {
             rows={8}
           />
           <div className="journal-editor-actions">
-            <button className="ghost-btn compact" type="button" onClick={() => setEditing(false)} disabled={!existing}>
+            <button
+              className="ghost-btn compact"
+              type="button"
+              // 取消要还原到已保存内容，否则视图模式展示的是被丢弃的草稿。
+              onClick={() => { setBody(existing?.body ?? ""); setEditing(false); }}
+              disabled={!existing}
+            >
               取消
             </button>
             <button className="primary compact" type="button" onClick={handleSave} disabled={!body.trim()}>

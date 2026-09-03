@@ -139,7 +139,7 @@ function normalizePreferredQuality(value: unknown): number {
 
 // ============ Video notes ============
 
-const VIDEO_NOTES_KEY = "rixia_video_notes_v1";
+export const VIDEO_NOTES_KEY = "rixia_video_notes_v1";
 
 export interface VideoNoteService {
   list(): Promise<VideoNote[]>;
@@ -207,7 +207,7 @@ function isValidNote(value: unknown): value is VideoNote {
 
 // ============ Watch history ============
 
-const WATCH_HISTORY_KEY = "rixia_watch_history_v1";
+export const WATCH_HISTORY_KEY = "rixia_watch_history_v1";
 const WATCH_HISTORY_LIMIT = 500;
 
 export interface WatchHistoryService {
@@ -333,7 +333,7 @@ export function createSearchHistoryService(
 
 // ============ Learning List ============
 
-const LEARNING_LIST_KEY = "rixia_learning_list_v1";
+export const LEARNING_LIST_KEY = "rixia_learning_list_v1";
 
 export interface LearningListService {
   list(): Promise<LearningListEntry[]>;

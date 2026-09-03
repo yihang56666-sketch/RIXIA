@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import {
   X,
   Delete,
@@ -84,6 +84,11 @@ export function VideoNoteComposer({
   onDelete,
 }: VideoNoteComposerProps) {
   const [frameError, setFrameError] = useState(false);
+  // frameError 只对触发它的那一份 frame 文件成立；换笔记/换分 P 后
+  // framePath 变化必须重置，否则一张失效截图会连累后面所有笔记的预览。
+  useEffect(() => {
+    setFrameError(false);
+  }, [framePath]);
   const recordedText = createdAt ? formatVideoNoteDateTime(createdAt) : (borderless ? "保存时记录" : "保存时自动填写");
   const inputDisabled = saving;
 

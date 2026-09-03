@@ -135,10 +135,11 @@
 .fb h1, .fb h2, .fb h3, .fb p { margin: 0; }
 
 /* ---- Card — FocuBili: elevation 0, radius 20, surfaceContainerHighest @ 45% ---- */
+/* 不设 overflow: hidden——卡片内的 m3-menu 下拉会被卡片底边裁掉
+   （"选项显示不完整"的根因）；需要内裁的子元素自己声明 overflow。 */
 .m3-card {
   background: color-mix(in srgb, var(--m3-surface-container-highest) 45%, var(--m3-surface));
   border-radius: 20px;
-  overflow: hidden;
 }
 
 /* ---- Buttons ---- */
@@ -537,6 +538,9 @@
   right: 0;
   z-index: 1100;
   min-width: 160px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 8px 0;
   border-radius: 4px;
   background: var(--m3-surface-container);
@@ -784,3 +788,82 @@
   .m3-dialog, .m3-dialog-scrim, .m3-menu, .m3-snackbar, .fb-player-sheet, .fb-player-sheet-scrim { animation: none; }
   .m3-linear-progress > div { transition: none; }
 }
+
+/* =========================================================================
+   Apple-flavored polish for the M3 layer (浅色模式)
+   —— 白皙干净：白卡片 + 发丝描边 + 轻投影 + iOS 物理感性动画
+   ========================================================================= */
+
+:root:not([data-m3-mode="dark"]) .fb-page {
+  background: transparent;
+}
+
+:root:not([data-m3-mode="dark"]) .m3-card {
+  background: #ffffff;
+  border: 0.5px solid rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.04), 0 6px 24px rgba(17, 24, 39, 0.05);
+  transition: box-shadow 0.34s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.34s cubic-bezier(0.32, 0.72, 0, 1),
+    background-color 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+:root:not([data-m3-mode="dark"]) .m3-card:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 14px 36px rgba(17, 24, 39, 0.09);
+}
+:root:not([data-m3-mode="dark"]) .m3-card:active {
+  transform: translateY(0) scale(0.995);
+  transition-duration: 0.1s;
+}
+
+/* fb 页面内部的卡片容器也走同一套白卡片语言 */
+:root:not([data-m3-mode="dark"]) .fb-page-scroll .card,
+:root:not([data-m3-mode="dark"]) .fb-page-scroll .kaoyan-exam-hero,
+:root:not([data-m3-mode="dark"]) .fb-page-scroll .kaoyan-hero {
+  background: #ffffff;
+  border: 0.5px solid rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.04), 0 6px 24px rgba(17, 24, 39, 0.05);
+  transition: box-shadow 0.34s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.34s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* M3 按钮：iOS 蓝、轻投影、按压缩放 */
+:root:not([data-m3-mode="dark"]) .m3-filled-btn {
+  background: linear-gradient(180deg, #1a8cff, #0a84ff);
+  color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(10, 132, 255, 0.24), 0 4px 12px rgba(10, 132, 255, 0.2);
+  transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1),
+    box-shadow 0.22s cubic-bezier(0.32, 0.72, 0, 1),
+    filter 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+:root:not([data-m3-mode="dark"]) .m3-filled-btn:hover:not(:disabled) {
+  filter: brightness(1.03);
+  box-shadow: 0 2px 4px rgba(10, 132, 255, 0.26), 0 8px 20px rgba(10, 132, 255, 0.26);
+}
+:root:not([data-m3-mode="dark"]) .m3-filled-btn:active:not(:disabled) {
+  transform: scale(0.97);
+  filter: brightness(0.96);
+}
+
+:root:not([data-m3-mode="dark"]) .m3-tonal-btn,
+:root:not([data-m3-mode="dark"]) .m3-outlined-btn,
+:root:not([data-m3-mode="dark"]) .m3-text-btn {
+  transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1),
+    background-color 0.22s cubic-bezier(0.32, 0.72, 0, 1),
+    color 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+:root:not([data-m3-mode="dark"]) .m3-tonal-btn:active:not(:disabled),
+:root:not([data-m3-mode="dark"]) .m3-outlined-btn:active:not(:disabled),
+:root:not([data-m3-mode="dark"]) .m3-text-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* 自定义壁纸时的通透白卡片（M3 层） */
+:root:not([data-m3-mode="dark"]) .app-background[data-has-background="true"] .m3-card {
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+}
+

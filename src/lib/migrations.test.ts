@@ -62,6 +62,13 @@ describe("persisted state v2 migration", () => {
     expect(result.resources?.[0]).toMatchObject({ id: "r1", title: "新", status: "in-progress" });
   });
 
+  it("preserves supported external resource links during migration", () => {
+    const result = migratePersistedState({
+      resources: [{ id: "q1", bvid: "", url: "https://pan.quark.cn/s/abc", title: "网盘课", status: "saved", addedAt: "2026-08-01T00:00:00.000Z" }],
+    }, 3);
+    expect(result.resources?.[0]).toMatchObject({ id: "q1", source: "quark", url: "https://pan.quark.cn/s/abc" });
+  });
+
   it("drops malformed timestamp notes and focus sessions", () => {
     const result = migratePersistedState(
       {
@@ -112,5 +119,42 @@ describe("persisted state v2 migration", () => {
     expect(validated.density).toBe("comfortable");
     expect(validated.tasks).toHaveLength(1);
     expect(validated.resources[0].bvid).toBe("BV1");
+    expect(validated.companion).toBeNull();
+  });
+
+  it("validates the companion block and keeps legacy backups companion-free", () => {
+    const withCompanion = validateBackup({
+      data: {
+        tasks: [],
+        habits: [],
+        notes: [],
+        inbox: [],
+        countdowns: [],
+        companion: {
+          focusActiveSession: { id: "a1" },
+          focusHistory: [{ id: "f1" }],
+          videoNotes: [{ id: "n1" }],
+          watchHistory: "junk",
+          learningList: [],
+          localWatchHistory: [],
+        },
+      },
+    });
+    expect(withCompanion.companion).toEqual({
+      focusActiveSession: { id: "a1" },
+      focusHistory: [{ id: "f1" }],
+      videoNotes: [{ id: "n1" }],
+      watchHistory: [],
+      learningList: [],
+      localWatchHistory: [],
+    });
+  });
+
+  it("caps oversized background data URLs instead of accepting persistence-breaking images", () => {
+    const big = "data:image/png;base64," + "A".repeat(2_000_000);
+    const rejected = validateBackup({ data: { tasks: [], habits: [], notes: [], inbox: [], countdowns: [], backgroundImage: big } });
+    expect(rejected.backgroundImage).toBeNull();
+    const accepted = validateBackup({ data: { tasks: [], habits: [], notes: [], inbox: [], countdowns: [], backgroundImage: "data:image/webp;base64,AAAA" } });
+    expect(accepted.backgroundImage).toBe("data:image/webp;base64,AAAA");
   });
 });

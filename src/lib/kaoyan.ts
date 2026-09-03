@@ -45,7 +45,39 @@ export function subjectProgress(units: DatedStudyUnit[]): Progress {
 
 // ============ 考研专注扩展：艾宾浩斯复习 + 初试倒计时 + 模考 ============
 
-import type { MockExam, ReviewItem } from "../types";
+import type { MockExam, ReviewItem, StudyUnit, WrongQuestion } from "../types";
+
+export interface KaoyanPlanOverview {
+  plannedDays: number;
+  completedDays: number;
+  progressPercent: number;
+  todayTotal: number;
+  todayCompleted: number;
+  dueReviews: number;
+  wrongQuestions: number;
+}
+
+/** 汇总计划首页需要的可操作指标，保持 UI 不重复计算业务规则。 */
+export function kaoyanPlanOverview(
+  units: StudyUnit[],
+  reviews: ReviewItem[],
+  wrongQuestions: WrongQuestion[],
+  today: string,
+): KaoyanPlanOverview {
+  const progress = subjectProgress(units);
+  const todayUnits = units.filter((unit) => unit.startDate <= today && today <= unit.endDate);
+  const todayCompleted = todayUnits.filter((unit) => unit.completedDates.includes(today)).length;
+  const dueReviews = reviewStats(reviews, today).dueToday;
+  return {
+    plannedDays: progress.total,
+    completedDays: progress.completed,
+    progressPercent: progress.percent,
+    todayTotal: todayUnits.length,
+    todayCompleted,
+    dueReviews,
+    wrongQuestions: wrongQuestions.length,
+  };
+}
 
 /** 艾宾浩斯复习周期（天）：记住了就进入下一档，忘了回到第 1 档重来。 */
 export const REVIEW_INTERVAL_DAYS = [1, 2, 4, 7, 15, 30];

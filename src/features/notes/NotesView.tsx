@@ -40,13 +40,15 @@ function NoteCard({ note }: { note: NoteItem }) {
             style={{ gap: 10 }}
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
+              // store 对空内容静默拒绝，先拦下以免弹窗关闭让用户以为已保存。
+              if (!body.trim()) return;
               updateNote(note.id, body);
               setEditing(false);
             }}
           >
             <textarea className="field" value={body} onChange={(event) => setBody(event.target.value)} autoFocus />
             <div className="form-actions">
-              <button className="primary compact" type="submit">保存</button>
+              <button className="primary compact" type="submit" disabled={!body.trim()}>保存</button>
             </div>
           </form>
         </Modal>
@@ -59,8 +61,11 @@ export function NotesView() {
   const { notes, addNote } = useAppStore();
   const [body, setBody] = useState("");
 
+  const valid = body.trim().length > 0;
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!valid) return;
     addNote(body);
     setBody("");
   }
@@ -71,7 +76,7 @@ export function NotesView() {
       <section className="card">
         <form className="stack" onSubmit={handleSubmit}>
           <textarea className="field" value={body} onChange={(e) => setBody(e.target.value)} placeholder="写下此刻的想法" />
-          <button className="primary compact" type="submit">保存笔记</button>
+          <button className="primary compact" type="submit" disabled={!valid}>保存笔记</button>
         </form>
       </section>
 

@@ -25,6 +25,7 @@ import {
 import { JournalView } from "../journal/JournalView";
 import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
+import { resourceSourceLabel } from "../../lib/resourceSources";
 
 function TrendBadge({ summary }: { summary: ReturnType<typeof trendSummary> }) {
   if (summary.deltaPercent === null) {
@@ -244,7 +245,9 @@ export function TodayView() {
                   onClick={() => setView("library")}
                 >
                   <span className="today-resource-title">{resource.title}</span>
-                  <span className="muted today-resource-meta">{resource.bvid}</span>
+                  <span className="muted today-resource-meta">
+                    {resource.source && resource.source !== "bilibili" ? resourceSourceLabel(resource.source) : resource.bvid}
+                  </span>
                   {progress !== null && (
                     <div className="library-progress">
                       <div className="library-progress-bar" style={{ width: `${progress}%` }} />

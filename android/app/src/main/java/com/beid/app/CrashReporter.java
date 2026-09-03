@@ -3,10 +3,9 @@ package com.beid.app;
 import android.content.Context;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -41,10 +40,11 @@ public final class CrashReporter implements Thread.UncaughtExceptionHandler {
                     + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date())
                     + "\nthread: " + thread.getName()
                     + "\n\n" + stack;
-                Files.write(
-                    new File(dir, "last_crash.txt").toPath(),
-                    body.getBytes(StandardCharsets.UTF_8)
-                );
+                File output = new File(dir, "last_crash.txt");
+                try (FileOutputStream stream = new FileOutputStream(output, false)) {
+                    stream.write(body.getBytes("UTF-8"));
+                    stream.flush();
+                }
             }
         } catch (Throwable ignored) {
             // 崩溃处理自身不能再抛

@@ -42,6 +42,8 @@ interface CapacitorHttpPlugin {
     method: string;
     headers?: Record<string, string>;
     data?: unknown;
+    /** "arraybuffer" 时原生层返回 base64 字符串（顶层选项，不是请求头）。 */
+    responseType?: "json" | "text" | "arraybuffer" | "blob" | "document" | "formdata";
   }) => Promise<{ status: number; data: unknown; headers: Record<string, string> }>;
 }
 
@@ -273,9 +275,11 @@ export async function fetchMediaArrayBuffer(url: string): Promise<ArrayBuffer> {
     const response = await capacitorHttp.request({
       url,
       method: "GET",
+      // responseType 是 CapacitorHttp 的顶层选项，塞进 headers 会被当成
+      // 请求头发出去，原生层拿到的会是文本而不是二进制。
+      responseType: "arraybuffer",
       headers: {
         Referer: refererForBiliUrl(url),
-        responseType: "arraybuffer",
       },
     });
     if (response.status !== 200) {

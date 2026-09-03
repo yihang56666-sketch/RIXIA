@@ -22,6 +22,9 @@ export interface NativePlayerState {
   positionSeconds: number;
   durationSeconds: number;
   isPlaying: boolean;
+  /** 当前视频帧尺寸（像素）；音频流或未知时可能缺失/为 0。 */
+  videoWidth?: number;
+  videoHeight?: number;
   message?: string;
 }
 
@@ -165,10 +168,13 @@ export function createNativeMediaPlayer(
     async onStateChange(listener) {
       ensureActive();
       await stateSubscription?.remove();
-      stateSubscription = await bridge.addListener("stateChange", listener);
+      const subscription = await bridge.addListener("stateChange", listener);
+      stateSubscription = subscription;
+      // 捕获本次订阅再返回 remover：共享变量会让第二个监听者的
+      // remover 摘掉别人的订阅。
       return async () => {
-        await stateSubscription?.remove();
-        stateSubscription = null;
+        await subscription.remove();
+        if (stateSubscription === subscription) stateSubscription = null;
       };
     },
     async dispose() {

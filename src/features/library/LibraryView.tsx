@@ -4,6 +4,7 @@ import { relativeTime } from "../../lib/time";
 import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
 import type { CourseResource } from "../../types";
+import { resourceSourceLabel } from "../../lib/resourceSources";
 
 type Tab = "continue" | "saved" | "notes" | "inbox";
 
@@ -19,6 +20,7 @@ function ResourceCard({ resource, onOpen }: { resource: CourseResource; onOpen: 
   const progress = resource.durationSeconds && resource.progressSeconds
     ? Math.min(100, Math.round((resource.progressSeconds / resource.durationSeconds) * 100))
     : null;
+  const sourceLabel = resource.source && resource.source !== "bilibili" ? resourceSourceLabel(resource.source) : "哔哩哔哩";
 
   return (
     <article className="card library-card">
@@ -31,7 +33,7 @@ function ResourceCard({ resource, onOpen }: { resource: CourseResource; onOpen: 
           <strong>{resource.title}</strong>
         </button>
         <span className="muted library-meta">
-          {resource.bvid} · {relativeTime(resource.lastOpenedAt ?? resource.addedAt)}
+          {sourceLabel} · {relativeTime(resource.lastOpenedAt ?? resource.addedAt)}
         </span>
         {progress !== null && (
           <div className="library-progress">
@@ -42,11 +44,11 @@ function ResourceCard({ resource, onOpen }: { resource: CourseResource; onOpen: 
       <div className="library-actions">
         <a
           className="icon-button"
-          href={`https://www.bilibili.com/video/${resource.bvid}`}
+          href={resource.url ?? `https://www.bilibili.com/video/${resource.bvid}`}
           target="_blank"
           rel="noreferrer"
-          aria-label="在哔哩哔哩打开"
-          title="在哔哩哔哩打开"
+          aria-label={`在${sourceLabel}打开`}
+          title={`在${sourceLabel}打开`}
         >
           <ExternalLink size={15} />
         </a>
@@ -76,6 +78,7 @@ export function LibraryView() {
   const setView = useAppStore((state) => state.setView);
   const touchResource = useAppStore((state) => state.touchResource);
   const openBilibiliVideo = useAppStore((state) => state.openBilibiliVideo);
+  const openCloudResource = useAppStore((state) => state.openCloudResource);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
 
@@ -99,6 +102,10 @@ export function LibraryView() {
 
   function openExternal(resource: CourseResource) {
     touchResource(resource.id);
+    if (resource.url) {
+      openCloudResource(resource.id);
+      return;
+    }
     openBilibiliVideo(resource.bvid, resource.title);
   }
 

@@ -81,4 +81,45 @@ describe("KaoyanView", () => {
     expect(useAppStore.getState().view).toBe("search");
     expect(useAppStore.getState().pendingBilibiliSearch).toBe("考研函数极限");
   });
+
+  it("disables subject submit while the title is empty", () => {
+    render(<KaoyanView />);
+    fireEvent.click(screen.getByRole("button", { name: "添加科目" }));
+    const form = screen.getByPlaceholderText("例如：高数、英语、政治").closest("form")!;
+    const save = form.querySelector("button[type='submit']") as HTMLButtonElement;
+    expect(save).toBeDisabled();
+
+    fireEvent.change(screen.getByPlaceholderText("例如：高数、英语、政治"), { target: { value: "英语" } });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    expect(useAppStore.getState().subjects).toHaveLength(1);
+    expect(useAppStore.getState().subjects[0].title).toBe("英语");
+  });
+
+  it("auto-bumps the unit end date when the start date moves past it and then saves", () => {
+    useAppStore.setState({
+      subjects: [{ id: "s1", title: "高数", color: "#5B8DEF", createdAt: "2026-08-01T00:00:00.000Z" }],
+    } as Partial<ReturnType<typeof useAppStore.getState>>);
+    render(<KaoyanView />);
+    fireEvent.click(screen.getByRole("button", { name: /高数/ }));
+    fireEvent.click(screen.getByRole("button", { name: "添加小类" }));
+
+    const form = screen.getByPlaceholderText("例如：函数极限、阅读理解").closest("form")!;
+    fireEvent.change(screen.getByPlaceholderText("例如：函数极限、阅读理解"), { target: { value: "函数极限" } });
+    const dateInputs = form.querySelectorAll<HTMLInputElement>("input[type='date']");
+    const [start, end] = dateInputs;
+    const save = form.querySelector("button[type='submit']") as HTMLButtonElement;
+
+    fireEvent.change(end, { target: { value: "2026-09-10" } });
+    expect(save).toBeEnabled();
+    // 把开始改到结束之后：结束自动顶高，提交不会被 store 静默拒绝。
+    fireEvent.change(start, { target: { value: "2026-10-01" } });
+    expect(end.value).toBe("2026-10-01");
+
+    fireEvent.click(save);
+    const units = useAppStore.getState().studyUnits;
+    expect(units).toHaveLength(1);
+    expect(units[0].startDate).toBe("2026-10-01");
+    expect(units[0].endDate).toBe("2026-10-01");
+  });
 });

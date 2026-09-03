@@ -5,6 +5,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { useRef } from "react";
 import { CommandPalette } from "./CommandPalette";
 import { CaptureButton } from "./CaptureButton";
 import { hasOpenOverlays } from "../lib/overlayStack";
@@ -22,6 +23,7 @@ const BEID_VIEWS = new Set<ViewKey>([
   "focus-dashboard",
   "search",
   "bilibili-player",
+  "cloud-player",
   "favorites",
   "favorite-videos",
   "followed",
@@ -75,6 +77,84 @@ export function Shell({ children }: { children: ReactNode }) {
   const view = useAppStore((state) => state.view);
   const density = useAppStore((state) => state.density);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const previousViewRef = useRef<ViewKey[]>([]);
+
+  useEffect(() => {
+    const previous = previousViewRef.current[previousViewRef.current.length - 1];
+    if (previous !== view) previousViewRef.current.push(view);
+    if (previousViewRef.current.length > 30) previousViewRef.current.shift();
+  }, [view]);
+
+  useEffect(() => {
+    const parentByView: Partial<Record<ViewKey, ViewKey>> = {
+      "bilibili-player": "library",
+      "cloud-player": "library",
+      "favorite-videos": "favorites",
+      "collection-detail": "subscribed-collections",
+      "creator-profile": "settings",
+      "login": "settings",
+      "about": "settings",
+      "personalization": "settings",
+      "preferences": "personalization",
+      "problem-diagnostics": "about",
+      "cache-management": "personalization",
+      "android-permissions": "personalization",
+      "windows-system-capabilities": "personalization",
+      "learning-list": "settings",
+      "video-notes": "settings",
+      "focus-statistics": "focus-dashboard",
+      "home-feed": "focus-dashboard",
+    };
+    const handleBack = () => {
+      const fullscreenBack = new Event("beid:request-exit-fullscreen", { cancelable: true });
+      window.dispatchEvent(fullscreenBack);
+      if (fullscreenBack.defaultPrevented) return;
+      if (paletteOpen) {
+        setPaletteOpen(false);
+        return;
+      }
+      if (hasOpenOverlays()) {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+        return;
+      }
+      const history = previousViewRef.current;
+      while (history.length > 0) {
+        const candidate = history.pop();
+        if (candidate && candidate !== view) {
+          useAppStore.getState().setView(candidate);
+          return;
+        }
+      }
+      useAppStore.getState().setView(parentByView[view] ?? "focus-dashboard");
+    };
+    handleBackRef.current = handleBack;
+    const nativeFallback = () => handleBack();
+    window.addEventListener("beid:request-app-back", nativeFallback);
+    return () => {
+      window.removeEventListener("beid:request-app-back", nativeFallback);
+    };
+  }, [paletteOpen, view]);
+
+  // 浏览器 / 平板 PWA 的系统返回：应用内返回优先，不能一按返回就把整个应用退掉。
+  // 每个视图占一条历史记录；popstate 一律转成应用内返回，走完历史再退到父级页面。
+  const handleBackRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    window.history.replaceState({ beid: true }, "");
+    window.history.pushState({ beid: true }, "");
+    const onPopState = (event: PopStateEvent) => {
+      if ((event.state as { beid?: boolean } | null)?.beid) {
+        handleBackRef.current();
+        // 应用内返回消费了一条历史，重新压入占位符，
+        // 否则下一次系统返回就会退出应用（浏览器/PWA 路径）。
+        window.history.pushState({ beid: true }, "");
+        return;
+      }
+      // 回退越过了应用入口的历史：重新占位，避免误触直接离开应用。
+      window.history.pushState({ beid: true }, "");
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.density = density;
@@ -139,6 +219,16 @@ export function Shell({ children }: { children: ReactNode }) {
             </button>
           );
         })}
+        <button
+          type="button"
+          className="focubili-bottom-command"
+          onClick={() => setPaletteOpen(true)}
+          aria-label="打开命令面板"
+          title="打开命令面板"
+        >
+          <Command size={22} strokeWidth={1.9} />
+          <span>命令</span>
+        </button>
       </nav>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>

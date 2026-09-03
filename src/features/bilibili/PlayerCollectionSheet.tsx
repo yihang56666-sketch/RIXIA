@@ -1,5 +1,6 @@
 import { ListPlus, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useOverlayInteraction } from "../../lib/overlayStack";
 import type { VideoCollection, VideoCollectionEntry } from "../../lib/bilibili/types";
 
 type CollectionOrder = "original" | "newest" | "oldest" | "mostPlayed";
@@ -19,6 +20,8 @@ export function PlayerCollectionSheet({
 }) {
   const [keyword, setKeyword] = useState("");
   const [order, setOrder] = useState<CollectionOrder>("original");
+  // 登记浮层栈：系统返回/Escape 先关合集，而不是退回资料库。
+  useOverlayInteraction(true, onClose);
   const entries = useMemo(() => filterAndSortEntries(collection.entries, keyword, order), [collection.entries, keyword, order]);
   const currentEntryRef = useRef<HTMLButtonElement | null>(null);
 

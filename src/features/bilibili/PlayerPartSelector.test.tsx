@@ -24,4 +24,15 @@ describe("PlayerPartSelector", () => {
     expect(onSelect).toHaveBeenCalledWith(parts[0]);
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  it("closes via Escape because the selector registers on the overlay stack", () => {
+    const onClose = vi.fn();
+    const onSelect = vi.fn();
+    render(<PlayerPartSelector parts={parts} currentCid={20} onClose={onClose} onSelect={onSelect} />);
+
+    // 系统返回在 Shell 里被转换成 Escape 分发给栈顶浮层。
+    fireEvent(window, new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });

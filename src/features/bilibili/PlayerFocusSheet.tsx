@@ -11,6 +11,7 @@ import { Capacitor } from "@capacitor/core";
 import { FocusSessionStatus } from "../../lib/bilibili/focusSessionModel";
 import { FocusInterruptionKind } from "../../lib/bilibili/focusSessionModel";
 import { createFocusPreferencesService } from "../../lib/bilibili/focusServices";
+import { useOverlayInteraction } from "../../lib/overlayStack";
 import { Mi, useM3Feedback } from "./m3";
 import { useFocusTimer } from "./useFocusTimer";
 import { CustomFocusDurationDialog, FocusInterruptionFlow, FocusTerminationDialog } from "./FocusDialogs";
@@ -148,6 +149,9 @@ export function PlayerFocusSheet({
   }
 
   const canStart = timer.ready && goal.trim().length > 0;
+
+  // 登记浮层栈：系统返回/Escape 先关专注面板，而不是退回资料库丢掉专注状态。
+  useOverlayInteraction(true, onClose);
 
   return (
     <>

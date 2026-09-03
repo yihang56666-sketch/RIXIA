@@ -40,8 +40,9 @@ async function main() {
   assert(String(index.body).includes('<div id="root">'), "HTML has #root");
 
   const cssFiles = readdirSync("dist/assets").filter((name) => name.endsWith(".css"));
-  assert(cssFiles.length === 1, `dist/assets has exactly one CSS file (got ${cssFiles.length})`);
-  const css = readFileSync(`dist/assets/${cssFiles[0]}`, "utf-8");
+  assert(cssFiles.length >= 1, `dist/assets has CSS bundles (got ${cssFiles.length})`);
+  // 代码分包可能拆出多个 CSS，把所有内容合并后统一校验 token。
+  const css = cssFiles.map((name) => readFileSync(`dist/assets/${name}`, "utf-8")).join("\n");
   assert(css.includes('data-theme=porcelain]') || css.includes('data-theme="porcelain"]'), "CSS has porcelain skin");
   assert(css.includes('data-theme=graphite]') || css.includes('data-theme="graphite"]'), "CSS has graphite skin");
   assert(css.includes('data-theme=system]') || css.includes('data-theme="system"]'), "CSS has system skin");
