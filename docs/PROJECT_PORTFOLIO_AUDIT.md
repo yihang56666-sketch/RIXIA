@@ -2,8 +2,8 @@
 
 | 项目 | 当前判断 | 已验证证据 | 仍需人工验收 |
 | --- | --- | --- | --- |
-| 博客 `D:\boke` | 可展示，已修复 canonical 和归档内容回归 | Playwright 13/13 通过 | GitHub Pages 线上部署和 CDN 网络环境 |
-| BEID `clock` | 代码和测试完整度高，工作区仍有大量未提交改动 | 580 tests passed；typecheck/build/跨视口检查通过 | 真实 B 站扫码/Android 播放 |
+| 博客 `D:\boke` | 可展示，已修复 canonical 和归档内容回归 | Playwright 15/15 通过 | GitHub Pages 线上部署和 CDN 网络环境 |
+| BEID `clock` | 代码和测试完整度高，文档计数已同步实测结果 | 591 tests passed；typecheck/build/跨视口检查通过 | 真实 B 站扫码/Android 播放 |
 | Hardware Butler | 非硬件路径完成，文档契约已修复 | ruff 通过；mypy 72 文件通过；739 passed、4 skipped | 真实板卡、探针、编译器和供电环境 |
 | 子智能体 Skill | 契约完整，可作为方法论项目展示 | unittest 20/20 通过 | 支持原生 spawn_agent 的实际协作演练 |
 
