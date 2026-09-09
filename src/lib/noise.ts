@@ -39,13 +39,27 @@ function createNoiseBuffer(ctx: AudioContext, kind: NoiseKind): AudioBuffer {
 
 export function startAmbience(kind: NoiseKind, volume: number): void {
   stopAmbience();
+  let ownedContext: AudioContext | undefined;
+  let ownedEngine: Engine | undefined;
+  let closed = false;
+  const closeContext = () => {
+    const context = ownedContext;
+    if (!context || closed) return;
+    closed = true;
+    void Promise.resolve().then(() => context.close()).catch((error) => console.warn("氛围音资源清理失败", error));
+  };
   try {
     const Ctor =
       window.AudioContext ??
       (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
     const ctx = new Ctor();
-    void ctx.resume?.();
+    ownedContext = ctx;
+    void ctx.resume?.().catch((error) => {
+      console.warn("氛围音未能启动", error);
+      if (engine === ownedEngine) engine = null;
+      closeContext();
+    });
 
     const source = ctx.createBufferSource();
     source.buffer = createNoiseBuffer(ctx, kind);
@@ -84,7 +98,7 @@ export function startAmbience(kind: NoiseKind, volume: number): void {
 
     source.start();
 
-    engine = {
+    ownedEngine = {
       kind,
       setVolume: (value) => {
         gain.gain.setTargetAtTime(value, ctx.currentTime, 0.1);
@@ -102,13 +116,14 @@ export function startAmbience(kind: NoiseKind, volume: number): void {
         } catch {
           // ignore
         }
-        window.setTimeout(() => {
-          void ctx.close().catch(() => undefined);
-        }, 200);
+        window.setTimeout(closeContext, 200);
       },
     };
-  } catch {
-    engine = null;
+    engine = ownedEngine;
+  } catch (error) {
+    console.warn("氛围音初始化失败", error);
+    if (engine === ownedEngine) engine = null;
+    closeContext();
   }
 }
 

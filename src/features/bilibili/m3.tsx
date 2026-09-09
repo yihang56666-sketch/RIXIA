@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -116,7 +117,8 @@ export function M3Dialog({
   onClose?: () => void;
 }) {
   // Escape 只由全局浮层栈派发给栈顶浮层，避免多层弹窗被一次按键全部关闭。
-  useOverlayInteraction(true, onClose);
+  const titleId = useId();
+  const dialogRef = useOverlayInteraction<HTMLDivElement>(true, onClose);
 
   return (
     <div
@@ -125,9 +127,9 @@ export function M3Dialog({
         if (event.target === event.currentTarget) onClose?.();
       }}
     >
-      <div className="m3-dialog" role="alertdialog">
+      <div ref={dialogRef} tabIndex={-1} className="m3-dialog" role="alertdialog" aria-modal="true" aria-labelledby={titleId}>
         {icon && <div className="m3-dialog-icon">{icon}</div>}
-        <h2 className="m3-dialog-title">{title}</h2>
+        <h2 id={titleId} className="m3-dialog-title">{title}</h2>
         {children && (
           <div className={centerContent ? "m3-dialog-content center" : "m3-dialog-content"}>{children}</div>
         )}

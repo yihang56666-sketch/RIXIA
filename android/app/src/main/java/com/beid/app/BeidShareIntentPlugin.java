@@ -15,7 +15,13 @@ public class BeidShareIntentPlugin extends Plugin {
     @Override
     protected void handleOnNewIntent(Intent intent) {
         super.handleOnNewIntent(intent);
-        String text = sharedText(intent);
+        String text;
+        try {
+            text = sharedText(intent);
+        } catch (RuntimeException error) {
+            android.util.Log.w("BeidShareIntent", "Rejected malformed share extras", error);
+            return;
+        }
         if (text == null) return;
 
         synchronized (BeidShareIntentPlugin.class) {
@@ -42,9 +48,9 @@ public class BeidShareIntentPlugin extends Plugin {
     private String sharedText(Intent intent) {
         if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return null;
         if (!"text/plain".equals(intent.getType())) return null;
-        String text = intent.getStringExtra(Intent.EXTRA_TEXT);
-        if (text == null) return null;
-        text = text.trim();
+        CharSequence shared = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+        if (shared == null) return null;
+        String text = shared.toString().trim();
         return text.isEmpty() ? null : text;
     }
 }

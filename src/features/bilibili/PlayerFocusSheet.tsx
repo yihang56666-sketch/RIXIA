@@ -151,12 +151,12 @@ export function PlayerFocusSheet({
   const canStart = timer.ready && goal.trim().length > 0;
 
   // 登记浮层栈：系统返回/Escape 先关专注面板，而不是退回资料库丢掉专注状态。
-  useOverlayInteraction(true, onClose);
+  const dialogRef = useOverlayInteraction<HTMLDivElement>(true, onClose);
 
   return (
     <>
       <div className="fb-player-sheet-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-        <div className="fb-player-sheet" role="dialog" aria-label="播放器专注">
+        <div ref={dialogRef} tabIndex={-1} className="fb-player-sheet" role="dialog" aria-modal="true" aria-label="播放器专注">
           <div className="fb-player-sheet-handle" />
           <div className="fb-player-sheet-head">
             <strong className="fb-player-sheet-title">播放器专注</strong>

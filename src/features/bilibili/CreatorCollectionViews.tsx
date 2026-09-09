@@ -105,7 +105,7 @@ function VideoRow({
         className="bilibili-account-row creator-video-row"
         onClick={() => { if (!opening) onOpen(); }}
         onKeyDown={(event) => {
-          if (opening) return;
+          if (opening || event.target !== event.currentTarget) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             onOpen();
@@ -245,6 +245,7 @@ export function CreatorProfileView({ mid, initialName, initialAvatarUrl, initial
   const activePartCountLookups = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const requestGeneration = useRef(0);
+  const profileGeneration = useRef(0);
   const videosRef = useRef<CreatorVideo[]>([]);
   videosRef.current = videos;
 
@@ -258,22 +259,35 @@ export function CreatorProfileView({ mid, initialName, initialAvatarUrl, initial
   }, [watchHistoryService]);
 
   const loadProfile = useCallback(() => {
+    const generation = ++profileGeneration.current;
     setLoadingProfile(true);
+    setProfile(null);
     setProfileError(null);
     service.loadCreatorProfile(mid).then((result) => {
+      if (generation !== profileGeneration.current) return;
       setProfile(result);
       setLoadingProfile(false);
     }).catch((error) => {
+      if (generation !== profileGeneration.current) return;
       setProfileError(error instanceof Error ? error.message : String(error));
       setLoadingProfile(false);
     });
   }, [mid, service]);
 
-  useEffect(() => { loadProfile(); }, [loadProfile]);
+  useEffect(() => {
+    loadProfile();
+    return () => { profileGeneration.current += 1; };
+  }, [loadProfile]);
 
   const loadFirstContentPage = useCallback(() => {
     const generation = ++requestGeneration.current;
     setLoadingContent(true);
+    setLoadingMore(false);
+    setOpeningBvid(null);
+    setVideos([]);
+    setArticles([]);
+    setCollections([]);
+    setTotalCount(0);
     setContentError(null);
     setPage(0);
     setHasMore(true);
@@ -295,11 +309,15 @@ export function CreatorProfileView({ mid, initialName, initialAvatarUrl, initial
     }).catch((error) => {
       if (generation !== requestGeneration.current) return;
       setContentError(error instanceof Error ? error.message : String(error));
+      setHasMore(false);
       setLoadingContent(false);
     });
   }, [activeTab, mid, service, submittedKeyword, videoOrder]);
 
-  useEffect(() => { loadFirstContentPage(); }, [loadFirstContentPage]);
+  useEffect(() => {
+    loadFirstContentPage();
+    return () => { requestGeneration.current += 1; };
+  }, [loadFirstContentPage]);
 
   const loadMore = useCallback(() => {
     if (loadingContent || loadingMore || !hasMore) return;
@@ -373,11 +391,14 @@ export function CreatorProfileView({ mid, initialName, initialAvatarUrl, initial
 
   function openVideo(item: CreatorVideo) {
     if (openingBvid || addingBvid) return;
+    const generation = requestGeneration.current;
     setOpeningBvid(item.bvid);
     service.lookupVideo(item.bvid).then((video) => {
+      if (generation !== requestGeneration.current) return;
       setOpeningBvid(null);
       onOpenVideo(video.bvid, video.title);
     }).catch((error) => {
+      if (generation !== requestGeneration.current) return;
       setOpeningBvid(null);
       showMessage("无法打开视频：" + (error instanceof Error ? error.message : String(error)));
     });
@@ -402,13 +423,19 @@ export function CreatorProfileView({ mid, initialName, initialAvatarUrl, initial
         positionSeconds: 0,
         status: "not-started",
       };
-      return learningListService.add(entry);
+      return learningListService.add(entry).then(async (saved) => {
+        if (saved) return;
+        const entries = await learningListService.list();
+        if (!entries.some((current) => current.bvid === entry.bvid && (current.partCid ?? 0) === entry.partCid)) {
+          throw new Error("本机存储写入失败。");
+        }
+      });
     }).then(() => {
       setAddingBvid(null);
       showMessage("已加入学习清单，可在首页继续学习。");
     }).catch(() => {
       setAddingBvid(null);
-      showMessage("加入学习清单失败，请检查网络后重试。");
+      showMessage("加入学习清单失败，请检查网络或本机存储后重试。");
     });
   }
 
@@ -636,29 +663,41 @@ export function CollectionDetailView({ collection, onBack, onOpenVideo }: { coll
   const [openingBvid, setOpeningBvid] = useState<string | null>(null);
   const [addingBvid, setAddingBvid] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const requestGeneration = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadFirstPage = useCallback(() => {
+    const generation = ++requestGeneration.current;
     setLoading(true);
+    setLoadingMore(false);
+    setOpeningBvid(null);
+    setVideos([]);
+    setPage(0);
+    setHasMore(false);
     setMessage(null);
     service.listCollectionVideos(collection.ownerMid, collection.id, 1).then((result) => {
-      if (cancelled) return;
+      if (generation !== requestGeneration.current) return;
       setVideos(result.items);
       setPage(result.page);
       setHasMore(result.hasMore);
       setLoading(false);
     }).catch((error) => {
-      if (cancelled) return;
+      if (generation !== requestGeneration.current) return;
       setMessage(error instanceof Error ? error.message : String(error));
       setLoading(false);
     });
-    return () => { cancelled = true; };
   }, [collection.id, collection.ownerMid, service]);
+
+  useEffect(() => {
+    loadFirstPage();
+    return () => { requestGeneration.current += 1; };
+  }, [loadFirstPage]);
 
   const loadMore = useCallback(() => {
     if (loading || loadingMore || !hasMore) return;
+    const generation = requestGeneration.current;
     setLoadingMore(true);
     service.listCollectionVideos(collection.ownerMid, collection.id, page + 1).then((result) => {
+      if (generation !== requestGeneration.current) return;
       setVideos((current) => {
         const keys = new Set(current.map((item) => item.bvid));
         return [...current, ...result.items.filter((item) => !keys.has(item.bvid) && keys.add(item.bvid))];
@@ -667,6 +706,7 @@ export function CollectionDetailView({ collection, onBack, onOpenVideo }: { coll
       setHasMore(result.hasMore);
       setLoadingMore(false);
     }).catch((error) => {
+      if (generation !== requestGeneration.current) return;
       setLoadingMore(false);
       showMessage("加载更多失败：" + (error instanceof Error ? error.message : String(error)));
     });
@@ -681,11 +721,14 @@ export function CollectionDetailView({ collection, onBack, onOpenVideo }: { coll
 
   function openVideo(item: CreatorVideo) {
     if (openingBvid || addingBvid) return;
+    const generation = requestGeneration.current;
     setOpeningBvid(item.bvid);
     service.lookupVideo(item.bvid).then((video) => {
+      if (generation !== requestGeneration.current) return;
       setOpeningBvid(null);
       onOpenVideo(video.bvid, video.title);
     }).catch((error) => {
+      if (generation !== requestGeneration.current) return;
       setOpeningBvid(null);
       showMessage("无法打开视频：" + (error instanceof Error ? error.message : String(error)));
     });
@@ -710,13 +753,19 @@ export function CollectionDetailView({ collection, onBack, onOpenVideo }: { coll
         positionSeconds: 0,
         status: "not-started",
       };
-      return learningListService.add(entry);
+      return learningListService.add(entry).then(async (saved) => {
+        if (saved) return;
+        const entries = await learningListService.list();
+        if (!entries.some((current) => current.bvid === entry.bvid && (current.partCid ?? 0) === entry.partCid)) {
+          throw new Error("本机存储写入失败。");
+        }
+      });
     }).then(() => {
       setAddingBvid(null);
       showMessage("已加入学习清单，可在首页继续学习。");
     }).catch(() => {
       setAddingBvid(null);
-      showMessage("加入学习清单失败，请检查网络后重试。");
+      showMessage("加入学习清单失败，请检查网络或本机存储后重试。");
     });
   }
 
@@ -738,7 +787,10 @@ export function CollectionDetailView({ collection, onBack, onOpenVideo }: { coll
         {loading ? (
           <p className="muted">加载中…</p>
         ) : message && videos.length === 0 ? (
-          <p className="muted">{message}</p>
+          <div className="stack">
+            <p className="muted">{message}</p>
+            <button className="m3-outlined-btn" onClick={loadFirstPage}>重试</button>
+          </div>
         ) : videos.length === 0 ? (
           <p className="empty">这个合集暂时没有可播放视频</p>
         ) : (

@@ -48,7 +48,7 @@ export function PersonalizationSettingsView() {
   const currentTheme = useAppStore((state) => state.theme);
 
   const [preferences, setPreferences] = useState<PlaybackPreferences | null>(null);
-  const [saving] = useState(false);
+  const [saving, setSaving] = useState(false);
   const updatePreferences = useMemo(() => createAppUpdatePreferencesService(), []);
   const { checkNow } = useAppUpdateController();
   const [updateCheckEnabled, setUpdateCheckEnabled] = useState(() => updatePreferences.loadStartupCheckEnabled());
@@ -66,9 +66,13 @@ export function PersonalizationSettingsView() {
   }, [preferencesService]);
 
   async function persist(next: PlaybackPreferences) {
+    const previous = preferences;
     setPreferences(next);
     const saved = await preferencesService.save(next);
-    if (!saved) showMessage("设置保存失败，请稍后重试。");
+    if (!saved) {
+      setPreferences(previous);
+      showMessage("设置保存失败，请稍后重试。");
+    }
   }
 
   const themeMode = skinToThemeMode(currentTheme);
@@ -101,12 +105,18 @@ export function PersonalizationSettingsView() {
         <QualityTile
           forWifi
           value={preferences.wifiDefaultQuality}
-          onChange={(value) => void persist({ ...preferences, wifiDefaultQuality: value })}
+          onChange={(value) => {
+            setSaving(true);
+            void persist({ ...preferences, wifiDefaultQuality: value }).finally(() => setSaving(false));
+          }}
         />
         <hr className="m3-divider" style={{ margin: 0 }} />
         <QualityTile
           value={preferences.mobileDefaultQuality}
-          onChange={(value) => void persist({ ...preferences, mobileDefaultQuality: value })}
+          onChange={(value) => {
+            setSaving(true);
+            void persist({ ...preferences, mobileDefaultQuality: value }).finally(() => setSaving(false));
+          }}
         />
         <hr className="m3-divider" style={{ margin: 0 }} />
         <div className="m3-list-tile" style={{ minHeight: 72 }}>
@@ -116,7 +126,14 @@ export function PersonalizationSettingsView() {
             <span className="m3-body-sm">关闭后，双击视频画面的任何位置都会切换播放或暂停。</span>
           </span>
           <span className="m3-tile-trailing">
-            <SwitchCheck checked={preferences.enableDoubleTapSeek} onChange={(v) => void persist({ ...preferences, enableDoubleTapSeek: v })} />
+            <SwitchCheck
+              checked={preferences.enableDoubleTapSeek}
+              disabled={saving}
+              onChange={(v) => {
+                setSaving(true);
+                void persist({ ...preferences, enableDoubleTapSeek: v }).finally(() => setSaving(false));
+              }}
+            />
           </span>
         </div>
       </section>
@@ -211,11 +228,17 @@ export function PersonalizationSettingsView() {
               checked={updateCheckEnabled}
               disabled={savingUpdate}
               onChange={(v) => {
-                setSavingUpdate(true);
-                updatePreferences.saveStartupCheckEnabled(v);
-                setUpdateCheckEnabled(v);
-                setSavingUpdate(false);
-                if (v) void checkNow();
+                void (async () => {
+                  setSavingUpdate(true);
+                  const saved = updatePreferences.saveStartupCheckEnabled(v);
+                  if (!saved) {
+                    showMessage("设置保存失败，请稍后重试。");
+                  } else {
+                    setUpdateCheckEnabled(v);
+                    if (v) void checkNow();
+                  }
+                  setSavingUpdate(false);
+                })();
               }}
             />
           </span>

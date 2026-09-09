@@ -43,6 +43,7 @@ import {
   todayFocusedMs as calcTodayFocusedMs,
 } from "../../lib/bilibili/focusStatisticsModel";
 import { createFocusNotificationService, nativeFocusNotification } from "../../lib/focusNotifications";
+import { COMPANION_RESTORED_EVENT } from "../../lib/companionBackup";
 
 const MAX_GOAL_CHARS = 60;
 const MIN_DURATION_MS = 60_000;
@@ -104,8 +105,8 @@ export interface UseFocusTimer {
   extendCompletedFocus: (extensionMs: number) => Promise<boolean>;
   endFocusEarly: (reason?: string) => Promise<void>;
   dismissLastFinishedSession: () => void;
-  deleteHistoryEntry: (id: string) => Promise<void>;
-  clearHistory: () => Promise<void>;
+  deleteHistoryEntry: (id: string) => Promise<boolean>;
+  clearHistory: () => Promise<boolean>;
   todayFocusedMs: number;
   todayCompletedCount: number;
 }
@@ -121,6 +122,7 @@ class FocusTimerController {
   private playingPartCid: number | null = null;
   private videoPlaying = false;
   private backgroundInterruptionRecorded = false;
+  private reloadRevision = 0;
 
   ready = false;
   version = 0;
@@ -129,14 +131,34 @@ class FocusTimerController {
   history: FullFocusSession[] = [];
 
   constructor() {
-    void this.storage.loadState().then((state: FocusStoredState) => {
+    void this.reloadFromStorage();
+    window.addEventListener(COMPANION_RESTORED_EVENT, () => { void this.reloadFromStorage(); });
+    document.addEventListener("visibilitychange", () => this.handleVisibility());
+  }
+
+  private async reloadFromStorage(): Promise<void> {
+    const revision = ++this.reloadRevision;
+    this.ready = false;
+    this.notify();
+    try {
+      const state: FocusStoredState = await this.storage.loadState();
+      if (revision !== this.reloadRevision) return;
+      const previousId = this.activeSession?.id;
       this.activeSession = state.activeSession;
       this.history = state.history;
-      this.ready = true;
-      this.syncTicker();
-      this.notify();
-    });
-    document.addEventListener("visibilitychange", () => this.handleVisibility());
+      this.lastFinishedSession = null;
+      this.backgroundInterruptionRecorded = false;
+      if (previousId && previousId !== state.activeSession?.id) {
+        void this.notificationService.cancelReminder(previousId);
+      }
+    } catch (error) {
+      console.warn("[beid] 无法重新载入专注记录", error);
+    } finally {
+      if (revision === this.reloadRevision) {
+        this.ready = true;
+        this.notify();
+      }
+    }
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -152,8 +174,8 @@ class FocusTimerController {
     for (const listener of this.listeners) listener();
   }
 
-  private persist(active: FullFocusSession | null, history: FullFocusSession[]): void {
-    void this.storage.saveState(active, history);
+  private persist(active: FullFocusSession | null, history: FullFocusSession[]): Promise<boolean> {
+    return this.storage.saveState(active, history);
   }
 
   private syncTicker(): void {
@@ -420,19 +442,37 @@ class FocusTimerController {
   };
 
   deleteHistoryEntry: UseFocusTimer["deleteHistoryEntry"] = async (id) => {
+    const previousHistory = this.history;
+    const previousLastFinished = this.lastFinishedSession;
     this.history = this.history.filter((s) => s.id !== id);
     if (this.lastFinishedSession?.id === id) {
       this.lastFinishedSession = null;
     }
-    this.persist(this.activeSession, this.history);
+    const saved = await this.persist(this.activeSession, this.history);
+    if (!saved) {
+      this.history = previousHistory;
+      this.lastFinishedSession = previousLastFinished;
+      this.notify();
+      return false;
+    }
     this.notify();
+    return true;
   };
 
   clearHistory: UseFocusTimer["clearHistory"] = async () => {
+    const previousHistory = this.history;
+    const previousLastFinished = this.lastFinishedSession;
     this.history = [];
     this.lastFinishedSession = null;
-    this.persist(this.activeSession, []);
+    const saved = await this.persist(this.activeSession, []);
+    if (!saved) {
+      this.history = previousHistory;
+      this.lastFinishedSession = previousLastFinished;
+      this.notify();
+      return false;
+    }
     this.notify();
+    return true;
   };
 
   getDerived(): {

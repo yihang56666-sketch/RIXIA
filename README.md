@@ -63,7 +63,7 @@ UI 直接调用内置的 B 站服务：公开搜索与元数据走 Web API 适�
 - Zustand 5（持久化，v3 格式，支持 v1/v2 迁移）
 - Lucide React 图标
 - Capacitor 8 Android 运行时（内置 Media3 播放器插件）
-- Vitest 单元测试（112 个测试文件 / 591 个测试）
+- Vitest 单元测试（126 个测试文件 / 762 个测试；另有 Electron 与发布边界 Node 测试）
 - Electron（Windows 桌面打包）
 
 主状态模型位于 `src/store/useAppStore.ts`；功能页面组织在 `src/features` 下；共享的 B 站服务与播放代码位于 `src/lib/bilibili/`。
@@ -103,7 +103,7 @@ npm run dev
 提交改动前：
 
 ```bash
-npm test            # 591 tests
+npm test            # 762 Vitest tests + 32 Node tests
 npm run typecheck
 npm run build
 ```

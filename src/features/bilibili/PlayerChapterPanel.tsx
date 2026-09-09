@@ -20,10 +20,10 @@ export function PlayerChapterPanel({
   onClose: () => void;
 }) {
   // 登记浮层栈：系统返回/Escape 先关分段信息，而不是退回资料库。
-  useOverlayInteraction(true, onClose);
+  const dialogRef = useOverlayInteraction(true, onClose);
   return (
     <div className="modal-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="modal-card player-chapter-panel" role="dialog" aria-modal="true" aria-label="分段信息">
+      <section ref={dialogRef} tabIndex={-1} className="modal-card player-chapter-panel" role="dialog" aria-modal="true" aria-label="分段信息">
         <header className="player-chapter-panel-header">
           <h2>分段信息</h2>
           <label className="player-chapter-panel-toggle">

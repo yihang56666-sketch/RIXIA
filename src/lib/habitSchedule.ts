@@ -9,15 +9,17 @@ function parseDayKey(key: string): Date {
 }
 
 function shiftDayKey(key: string, days: number): string {
-  return todayKey(new Date(parseDayKey(key).getTime() + days * DAY));
+  const date = parseDayKey(key);
+  date.setDate(date.getDate() + days);
+  return todayKey(date);
 }
 
 /** 以周一为一周起点，返回包含 today 的那一周的 7 个日期键（旧→新）。 */
 export function weekDatesContaining(today: string): string[] {
   const base = parseDayKey(today);
   const weekdayIndex = (base.getDay() + 6) % 7; // 周一 = 0
-  const monday = base.getTime() - weekdayIndex * DAY;
-  return Array.from({ length: 7 }, (_, index) => todayKey(new Date(monday + index * DAY)));
+  const monday = shiftDayKey(today, -weekdayIndex);
+  return Array.from({ length: 7 }, (_, index) => shiftDayKey(monday, index));
 }
 
 function countCheckedInRange(habit: HabitItem, startKey: string, endKey: string): number {

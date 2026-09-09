@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FocusView } from "./FocusView";
 import { useAppStore } from "../../store/useAppStore";
+import { requestWakeLock } from "../../lib/wakeLock";
 
 const { startAmbience, stopAmbience, setAmbienceVolume } = vi.hoisted(() => ({
   startAmbience: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock("../../lib/focusNotifications", () => ({
 describe("FocusView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(requestWakeLock).mockReset().mockResolvedValue(null);
     useAppStore.setState({
       view: "focus",
       focusMinutes: 25,
@@ -42,6 +44,43 @@ describe("FocusView", () => {
       focusRounds: { workMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, longBreakEvery: 4 },
       activeFocus: null,
     } as Partial<ReturnType<typeof useAppStore.getState>>);
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("releases a wake lock that resolves after a newly started timer unmounts", async () => {
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    let resolveLock!: (release: () => void) => void;
+    const pendingLock = new Promise<() => void>((resolve) => { resolveLock = resolve; });
+    const release = vi.fn();
+    vi.mocked(requestWakeLock).mockReturnValueOnce(pendingLock);
+    const { unmount } = render(<FocusView />);
+    fireEvent.click(screen.getByRole("button", { name: "开始专注" }));
+    expect(requestWakeLock).toHaveBeenCalledTimes(1);
+
+    unmount();
+    await act(async () => { resolveLock(release); });
+
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases the visibility effect's pending wake lock after restored timer unmount", async () => {
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    let resolveLock!: (release: () => void) => void;
+    const pendingLock = new Promise<() => void>((resolve) => { resolveLock = resolve; });
+    const release = vi.fn();
+    vi.mocked(requestWakeLock).mockReturnValueOnce(pendingLock);
+    useAppStore.setState({ activeFocus: {
+      startedAt: new Date().toISOString(), mode: "countdown", running: true,
+      endsAtMs: Date.now() + 60_000,
+    } });
+    const { unmount } = render(<FocusView />);
+    expect(requestWakeLock).toHaveBeenCalledTimes(2);
+
+    unmount();
+    await act(async () => { resolveLock(release); });
+
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   it("stops the selected ambience instead of switching to white noise", () => {
@@ -53,6 +92,28 @@ describe("FocusView", () => {
     expect(startAmbience).toHaveBeenCalledTimes(1);
     expect(startAmbience).toHaveBeenCalledWith("rain", 0.4);
     expect(stopAmbience).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([0, 3])("skips a zero-minute break after %i previously completed rounds", (completedRounds) => {
+    vi.useFakeTimers();
+    try {
+      useAppStore.setState({
+        focusRounds: { workMinutes: 25, shortBreakMinutes: 0, longBreakMinutes: 0, longBreakEvery: 4 },
+        activeFocus: {
+          startedAt: new Date(Date.now() - 25 * 60_000).toISOString(),
+          mode: "countdown", phase: "focus", running: true,
+          endsAtMs: Date.now() - 1, completedRounds,
+        },
+      });
+      render(<FocusView />);
+
+      expect(useAppStore.getState().focusSessions).toHaveLength(1);
+      expect(screen.queryByRole("button", { name: "继续休息" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "开始专注" })).toBeInTheDocument();
+      expect(screen.getByText("25:00")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps the countdown running across unmount/remount via the persisted anchor", async () => {

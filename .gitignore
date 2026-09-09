@@ -25,5 +25,9 @@ release
 .output
 output
 .readonly-focubili
+.claude/
 
 device-screen.png
+
+# Environment expansion accident: a past tool wrote %SystemDrive% as a literal folder name.
+%SystemDrive%/

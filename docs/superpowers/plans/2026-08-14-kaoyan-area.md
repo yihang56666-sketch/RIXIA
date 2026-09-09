@@ -169,8 +169,8 @@ Expected: all commands pass.
 - [ ] **Step 2: Sync and build Android debug APK with installed JDK/SDK**
 
 ```powershell
-$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.8-hotspot"
-$env:ANDROID_HOME = "C:\Users\35182\AppData\Local\Android\Sdk"
+$env:JAVA_HOME = "<jdk-home>"
+$env:ANDROID_HOME = "<user-home>\AppData\Local\Android\Sdk"
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 npx cap sync android
 Push-Location android

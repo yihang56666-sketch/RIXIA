@@ -468,6 +468,13 @@ body {
 }
 
 .app-update-notice > span { min-width: 0; }
+
+.item.is-focused {
+  outline: 2px solid var(--accent, #2f6f4e);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
 .app-background[data-has-background="true"] .app-overlay {
   display: none;
   position: fixed;

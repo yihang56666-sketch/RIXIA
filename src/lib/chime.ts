@@ -1,12 +1,24 @@
 /** 完成提示音：Web Audio 合成，无音频资源依赖，失败时静默 */
 export function playChime(): void {
+  let ownedContext: AudioContext | undefined;
+  let closed = false;
+  const closeContext = () => {
+    const context = ownedContext;
+    if (!context || closed) return;
+    closed = true;
+    void Promise.resolve().then(() => context.close()).catch((error) => console.warn("提示音资源清理失败", error));
+  };
   try {
     const Ctor =
       window.AudioContext ??
       (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
     const ctx = new Ctor();
-    void ctx.resume?.();
+    ownedContext = ctx;
+    void ctx.resume?.().catch((error) => {
+      console.warn("提示音未能启动", error);
+      closeContext();
+    });
     const base = ctx.currentTime;
     [523.25, 783.99].forEach((frequency, index) => {
       const start = base + index * 0.16;
@@ -22,8 +34,9 @@ export function playChime(): void {
       osc.start(start);
       osc.stop(start + 0.65);
     });
-    window.setTimeout(() => void ctx.close(), 1200);
-  } catch {
-    // 静默降级
+    window.setTimeout(closeContext, 1200);
+  } catch (error) {
+    console.warn("提示音初始化失败", error);
+    closeContext();
   }
 }

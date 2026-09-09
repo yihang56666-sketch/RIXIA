@@ -1,0 +1,20 @@
+gradle.projectsLoaded {
+    def androidRoot = gradle.rootProject.projectDir.canonicalFile.toPath()
+    gradle.rootProject.allprojects { project ->
+        if (!project.projectDir.canonicalFile.toPath().startsWith(androidRoot)) {
+            project.layout.buildDirectory.set(new File(androidRoot.toFile(), "build/native-audit-dependencies/${project.name}"))
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    def unitTests = gradle.rootProject.project(':app').tasks.named('testDebugUnitTest').get()
+    gradle.rootProject.tasks.register('nativeAuditClasspath') {
+        dependsOn(unitTests.classpath)
+        doLast {
+            def evidence = new File(gradle.rootProject.projectDir, 'build/native-audit-test-classpath.txt')
+            evidence.parentFile.mkdirs()
+            evidence.setText(unitTests.classpath.asPath, 'UTF-8')
+        }
+    }
+}

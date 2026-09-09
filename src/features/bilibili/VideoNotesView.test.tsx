@@ -2,9 +2,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VideoNotesView } from "./VideoNotesView";
 import { useAppStore } from "../../store/useAppStore";
+import { M3FeedbackProvider } from "./m3";
 
 const remove = vi.fn().mockResolvedValue(true);
 const save = vi.fn().mockResolvedValue(true);
+const lookupVideo = vi.fn().mockResolvedValue({ bvid: "BV1xx411c7mD", title: "线性代数第一讲", thumbnailUrl: "" });
 const list = vi.fn().mockResolvedValue([
   {
     id: "note-1",
@@ -29,7 +31,7 @@ vi.mock("../../lib/bilibili/services", () => ({
 
 vi.mock("../../lib/bilibili/publicContentService", () => ({
   createBilibiliPublicContentService: () => ({
-    lookupVideo: vi.fn().mockResolvedValue({ bvid: "BV1xx411c7mD", title: "线性代数第一讲", thumbnailUrl: "" }),
+    lookupVideo,
   }),
 }));
 
@@ -115,5 +117,40 @@ describe("VideoNotesView", () => {
     fireEvent.click(screen.getByText("矩阵秩"));
     expect(screen.getByText(/已选择 1 条/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /导出文件/ })).toBeEnabled();
+  });
+
+  it("keeps the deletion confirmation open and reports a failed local delete", async () => {
+    remove.mockResolvedValueOnce(false);
+    render(<M3FeedbackProvider><VideoNotesView /></M3FeedbackProvider>);
+    fireEvent.click(await screen.findByRole("button", { name: "笔记操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(/删除笔记失败/);
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByText("矩阵秩")).toBeInTheDocument();
+  });
+
+  it("does not show an unsaved backfilled cover as persisted", async () => {
+    lookupVideo.mockResolvedValueOnce({ bvid: NOTE.bvid, title: NOTE.videoTitle, thumbnailUrl: "https://example.test/new-cover.jpg" });
+    save.mockResolvedValueOnce(false);
+    const { container } = render(<VideoNotesView />);
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(container.querySelector('img[src="https://example.test/new-cover.jpg"]')).not.toBeInTheDocument();
+  });
+
+  it("opens a note with the keyboard", async () => {
+    render(<VideoNotesView />);
+    const note = await screen.findByRole("button", { name: "矩阵秩" });
+    fireEvent.keyDown(note, { key: "Enter" });
+    expect(screen.getByRole("dialog", { name: "笔记详情" })).toBeInTheDocument();
+  });
+
+  it("offers keyboard-accessible export format buttons", async () => {
+    render(<VideoNotesView />);
+    await screen.findByText("矩阵秩");
+    fireEvent.click(screen.getByRole("button", { name: "导出" }));
+    fireEvent.click(screen.getByText("矩阵秩"));
+    fireEvent.click(screen.getByRole("button", { name: "导出文件" }));
+    expect(screen.getByRole("button", { name: /导出为 JSON/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /导出为 Markdown/ })).toBeEnabled();
   });
 });

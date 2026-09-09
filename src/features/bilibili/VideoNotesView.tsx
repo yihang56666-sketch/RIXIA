@@ -56,12 +56,12 @@ export function VideoNotesView() {
       const items = await service.list();
       setNotes(items);
       setLoading(false);
-      void backfillMissingCovers(items);
+      void backfillMissingCovers(items).catch(() => showMessage("无法补全笔记封面，已有笔记仍可查看。"));
     } catch {
       setError("暂时无法读取本机笔记，请稍后重试。");
       setLoading(false);
     }
-  }, [service]);
+  }, [service, showMessage]);
 
   useEffect(() => {
     void loadNotes();
@@ -96,7 +96,7 @@ export function VideoNotesView() {
           const latest = await service.list();
           const current = latest.find((n) => n.id === id);
           if (!current || current.videoCoverUrl) continue;
-          await service.save({ ...current, videoCoverUrl: coverUrl });
+          if (!await service.save({ ...current, videoCoverUrl: coverUrl })) continue;
           setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, videoCoverUrl: coverUrl } : n)));
         }
       }
@@ -140,9 +140,15 @@ export function VideoNotesView() {
   }
 
   async function confirmDelete(note: VideoNote) {
-    setPendingDelete(null);
-    await service.remove(note.id);
-    await loadNotes();
+    try {
+      if (!await service.remove(note.id)) throw new Error("本机存储写入失败。");
+      setPendingDelete(null);
+      await loadNotes();
+      return true;
+    } catch {
+      showMessage("删除笔记失败，请检查本机存储后重试。");
+      return false;
+    }
   }
 
   async function runExport(format: VideoNoteExportFormat, share: boolean) {
@@ -193,8 +199,17 @@ export function VideoNotesView() {
       <section className="m3-card">
         <div
           className="m3-list-tile"
+          role="button"
+          tabIndex={0}
+          aria-label={note.title}
+          aria-pressed={selectionMode ? selected : undefined}
           style={{ padding: 12, alignItems: "flex-start", cursor: "pointer", borderRadius: 12 }}
           onClick={() => (selectionMode ? toggleSelection(note) : setDetailNote(note))}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
+            event.preventDefault();
+            event.currentTarget.click();
+          }}
           onContextMenu={(e) => {
             e.preventDefault();
             if (!selectionMode) startSelection(note);
@@ -343,20 +358,20 @@ export function VideoNotesView() {
         <div className="m3-dialog-scrim" style={{ alignItems: "flex-end" }} onMouseDown={(e) => { if (e.target === e.currentTarget) setFormatSheet(null); }}>
           <div className="m3-dialog" style={{ width: "min(100%, 480px)", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: "8px 0 16px" }}>
             <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--m3-outline-variant)", margin: "8px auto 8px" }} />
-            <div className="m3-list-tile" onClick={() => void runExport(VideoNoteExportFormat.markdown, formatSheet === "share")}>
+            <button type="button" className="m3-list-tile" onClick={() => void runExport(VideoNoteExportFormat.markdown, formatSheet === "share")}>
               <span className="m3-tile-leading"><Mi name="description" /></span>
               <span className="m3-tile-body">
                 <span className="m3-body-lg">导出为 Markdown</span>
                 <span className="m3-body-sm">适合 Obsidian、Notion 等笔记软件读取</span>
               </span>
-            </div>
-            <div className="m3-list-tile" onClick={() => void runExport(VideoNoteExportFormat.json, formatSheet === "share")}>
+            </button>
+            <button type="button" className="m3-list-tile" onClick={() => void runExport(VideoNoteExportFormat.json, formatSheet === "share")}>
               <span className="m3-tile-leading"><Mi name="data_object" /></span>
               <span className="m3-tile-body">
                 <span className="m3-body-lg">导出为 JSON</span>
                 <span className="m3-body-sm">保留完整字段，便于备份与回导</span>
               </span>
-            </div>
+            </button>
           </div>
         </div>
       )}
@@ -394,9 +409,8 @@ export function VideoNotesView() {
             setDetailNote(null);
             setSharingNote(detailNote);
           }}
-          onDelete={() => {
-            void confirmDelete(detailNote);
-            setDetailNote(null);
+          onDelete={async () => {
+            if (await confirmDelete(detailNote)) setDetailNote(null);
           }}
         />
       )}

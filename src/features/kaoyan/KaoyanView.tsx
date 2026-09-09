@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import {
   currentExamDate, dateKeysInRange, DEFAULT_KAOYAN_WORDS, kaoyanExamLabel, kaoyanMilestones, mockExamStats,
-  kaoyanCourseQuery, kaoyanPlanOverview, REVIEW_INTERVAL_DAYS, reviewStats, subjectProgress, unitProgress,
+  isReviewMastered, kaoyanCourseQuery, kaoyanPlanOverview, REVIEW_INTERVAL_DAYS, reviewStats, subjectProgress, unitProgress,
 } from "../../lib/kaoyan";
 import { Heatmap } from "../../components/Heatmap";
 import { ProgressRing } from "../../components/ProgressRing";
@@ -273,13 +273,13 @@ function ReviewTab({ today }: { today: string }) {
   const stats = reviewStats(reviewItems, today);
   const dueItems = useMemo(
     () => reviewItems
-      .filter((item) => item.dueDate <= today && !(item.stage >= REVIEW_INTERVAL_DAYS.length - 1 && item.history.at(-1)?.remembered))
+      .filter((item) => item.dueDate <= today && !isReviewMastered(item))
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
     [reviewItems, today],
   );
   const upcoming = useMemo(
     () => reviewItems
-      .filter((item) => item.dueDate > today)
+      .filter((item) => item.dueDate > today && !isReviewMastered(item))
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
       .slice(0, 6),
     [reviewItems, today],
@@ -334,7 +334,7 @@ function ReviewTab({ today }: { today: string }) {
               </div>
               <div className="kaoyan-review-actions">
                 <button className="ghost-btn compact" onClick={() => reviewReviewItem(item.id, false)} title="回到第一轮，明天再见">忘了</button>
-                <button className="primary compact" onClick={() => reviewReviewItem(item.id, true)} title={`记得，${REVIEW_INTERVAL_DAYS[Math.min(item.stage + 1, REVIEW_INTERVAL_DAYS.length - 1)]} 天后再复习`}>记得</button>
+                <button className="primary compact" onClick={() => reviewReviewItem(item.id, true)} title={item.stage === REVIEW_INTERVAL_DAYS.length - 1 ? "记得，完成全部复习周期" : `记得，${REVIEW_INTERVAL_DAYS[item.stage + 1]} 天后再复习`}>记得</button>
               </div>
             </article>;
           })}
@@ -508,20 +508,18 @@ function WordsTab({ today }: { today: string }) {
 
   const wordById = useMemo(() => new Map(kaoyanWords.map((entry) => [entry.id, entry])), [kaoyanWords]);
   const wordReviews = useMemo(() => reviewItems.filter((item) => item.sourceType === "word"), [reviewItems]);
-  const isMastered = (item: (typeof wordReviews)[number]) =>
-    item.stage >= REVIEW_INTERVAL_DAYS.length - 1 && item.history.at(-1)?.remembered === true;
 
   // 计数用未截断的完整待复习队列，并剔除已被删除的单词留下的孤儿复习项；
   // 展示列表再截前 10 条。
   const dueQueue = useMemo(
     () => wordReviews
-      .filter((item) => item.dueDate <= today && !isMastered(item) && wordById.has(item.sourceId ?? ""))
+      .filter((item) => item.dueDate <= today && !isReviewMastered(item) && wordById.has(item.sourceId ?? ""))
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [today, wordReviews, wordById],
   );
   const dueWords = useMemo(() => dueQueue.slice(0, 10), [dueQueue]);
-  const masteredCount = wordReviews.filter((item) => isMastered(item) && wordById.has(item.sourceId ?? "")).length;
+  const masteredCount = wordReviews.filter((item) => isReviewMastered(item) && wordById.has(item.sourceId ?? "")).length;
 
   function submitWord(event: FormEvent) {
     event.preventDefault();
@@ -570,7 +568,7 @@ function WordsTab({ today }: { today: string }) {
               <div className="kaoyan-review-actions">
                 <button className="ghost-btn compact" onClick={() => { reviewReviewItem(item.id, false); setShowAnswerId(null); }} title="忘了，明天重新来过">忘了</button>
                 <button className="ghost-btn compact" onClick={() => setShowAnswerId(revealed ? null : item.id)} title="查看释义">{revealed ? "收起释义" : "看释义"}</button>
-                <button className="primary compact" onClick={() => { reviewReviewItem(item.id, true); setShowAnswerId(null); }} title={`记得，${REVIEW_INTERVAL_DAYS[Math.min(item.stage + 1, REVIEW_INTERVAL_DAYS.length - 1)]} 天后再复习`}>记得</button>
+                <button className="primary compact" onClick={() => { reviewReviewItem(item.id, true); setShowAnswerId(null); }} title={item.stage === REVIEW_INTERVAL_DAYS.length - 1 ? "记得，完成全部复习周期" : `记得，${REVIEW_INTERVAL_DAYS[item.stage + 1]} 天后再复习`}>记得</button>
               </div>
             </article>;
           })}

@@ -58,6 +58,7 @@ describe("PlayerFocusSheet", () => {
       />,
     );
     expect(screen.getByRole("dialog", { name: "播放器专注" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "播放器专注" })).toContainElement(document.activeElement as HTMLElement);
     expect(screen.getByText("测试课程 · P1 P1")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "25 分钟" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "45 分钟" })).toBeInTheDocument();

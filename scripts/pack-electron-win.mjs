@@ -1,9 +1,8 @@
 import { cpSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { spawn } from "node:child_process";
+import { projectRoot, releaseVersion, run, resetReleaseDirectory, validateWebDist, validateElectronRuntime, assertSafeReleasePath, writeReleaseManifest, archiveRelease } from "./release-utils.mjs";
 
-const projectRoot = process.cwd();
 // Electron dist 跟随当前工程解析：优先 BEID_ELECTRON_DIST 环境变量，
 // 其次本仓库 node_modules 里的 electron 包，不再硬编码某台打包机的盘符路径。
 const electronDist =
@@ -11,17 +10,24 @@ const electronDist =
   path.dirname(createRequire(path.join(projectRoot, "package.json")).resolve("electron/package.json")) +
     path.sep +
     "dist";
-const outDir = path.join(projectRoot, "release", "BEID-0.3.0-windows-app");
-const zipPath = path.join(projectRoot, "release", "BEID-0.3.0-windows-app.zip");
+const version = releaseVersion();
+const outDir = path.join(projectRoot, "release", `BEID-${version}-windows-app`);
+const zipPath = `${outDir}.zip`;
+const setupPath = path.join(projectRoot, "release", `BEID-${version}-windows-setup.cmd`);
 
 if (!existsSync(path.join(electronDist, "electron.exe"))) {
   throw new Error(`electron.exe missing at ${electronDist}`);
 }
+validateElectronRuntime(electronDist);
+if (!process.argv.includes("--prepared")) await run(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build"]);
 if (!existsSync(path.join(projectRoot, "dist", "index.html"))) {
   throw new Error("frontend dist missing");
 }
 
-rmSync(outDir, { recursive: true, force: true });
+validateWebDist(path.join(projectRoot, "dist"));
+assertSafeReleasePath(projectRoot, zipPath);
+assertSafeReleasePath(projectRoot, setupPath);
+resetReleaseDirectory(projectRoot, outDir);
 mkdirSync(path.dirname(outDir), { recursive: true });
 cpSync(electronDist, outDir, { recursive: true });
 copyFileSync(path.join(outDir, "electron.exe"), path.join(outDir, "BEID.exe"));
@@ -37,7 +43,7 @@ writeFileSync(
   JSON.stringify(
     {
       name: "beid",
-      version: "0.3.0",
+      version,
       private: true,
       type: "module",
       main: "electron/main.mjs",
@@ -50,13 +56,13 @@ writeFileSync(
 cpSync(path.join(projectRoot, "dist"), path.join(outDir, "resources", "dist"), { recursive: true });
 
 writeFileSync(
-  path.join(projectRoot, "release", "BEID-0.3.0-windows-setup.cmd"),
+  setupPath,
   [
     "@echo off",
     "setlocal",
-    "set SRC=%~dp0BEID-0.3.0-windows-app",
-    "if not exist \"%SRC%\\BEID.exe\" set SRC=%~dp0BEID-0.3.0-windows-portable",
-    "set DEST=%LOCALAPPDATA%\\Programs\\BEID",
+    `set "SRC=%~dp0BEID-${version}-windows-app"`,
+    `if not exist "%SRC%\\BEID.exe" set "SRC=%~dp0BEID-${version}-windows-portable"`,
+    'set "DEST=%LOCALAPPDATA%\\Programs\\BEID"',
     "if not exist \"%SRC%\\BEID.exe\" if not exist \"%SRC%\\启动BEID.vbs\" (",
     "  echo 未找到 Windows 安装内容",
     "  pause",
@@ -64,6 +70,7 @@ writeFileSync(
     ")",
     "mkdir \"%DEST%\" >nul 2>nul",
     "xcopy /e /y /q \"%SRC%\\*\" \"%DEST%\\\" >nul",
+    "if errorlevel 1 exit /b 1",
     "if exist \"%DEST%\\BEID.exe\" (",
     "  set TARGET=%DEST%\\BEID.exe",
     ") else (",
@@ -77,14 +84,6 @@ writeFileSync(
   "utf8",
 );
 
-function run(command, args) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: projectRoot, stdio: "inherit", shell: true });
-    child.on("error", reject);
-    child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`exit ${code}`))));
-  });
-}
-
-if (existsSync(zipPath)) rmSync(zipPath);
-await run("powershell.exe", ["-NoProfile", "-Command", `Compress-Archive -LiteralPath '${outDir}' -DestinationPath '${zipPath}' -Force`]);
+writeReleaseManifest(outDir, version, "electron-windows");
+await archiveRelease(projectRoot, outDir, zipPath);
 console.log(JSON.stringify({ ok: true, outDir, zipPath }, null, 2));

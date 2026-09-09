@@ -79,7 +79,10 @@ export function createBilibiliQrLoginService(): BilibiliQrLoginService {
       url.searchParams.set("qrcode_key", normalized);
       const response = await requestJsonWithHeaders(url.toString());
       const data = readSuccessfulData(response.body);
-      const code = readInteger(data.code);
+      if (typeof data.code !== "number" || !Number.isInteger(data.code)) {
+        throw new BilibiliQrLoginError("扫码登录服务返回了无效状态码，请重试。");
+      }
+      const code = data.code;
       let status: BilibiliQrLoginStatus;
       let message: string;
       switch (code) {
@@ -377,13 +380,20 @@ export function createBilibiliAccountDataService(
     if (current.signedIn && current.mid && current.mid > 0 && current.mid !== 2 ** 31) {
       return current.mid;
     }
+    const cookieAtRequest = cookieStore.getCookieHeader();
     try {
       const text = await authenticatedFetch(`https://${ACCOUNT_API_HOST}/x/web-interface/nav`);
+      const latest = auth.currentState();
+      if (!latest.signedIn) throw signedOutError();
+      if (cookieStore.getCookieHeader() !== cookieAtRequest || latest.mid !== current.mid) {
+        throw new AccountDataError(AccountDataLoadStatus.unavailable, "账号已切换，请刷新后重试。");
+      }
       const profile = parseCurrentUser(text);
       if (profile?.mid) {
-        auth.signIn(cookieStore.getCookieHeader(), profile);
+        auth.signIn(cookieAtRequest, profile);
         return profile.mid;
       }
+      throw classifyCurrentUserResponse(text);
     } catch (err) {
       if (err instanceof AccountDataError) throw err;
       // nav 解析失败时交给各调用方按"账号信息缺失"提示。

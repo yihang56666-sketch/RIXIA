@@ -301,7 +301,7 @@ function parseVideoSearchPage(responseText: string, requestedPage: number): Vide
     throw new BilibiliLookupError("视频搜索接口返回的数据格式不正确。");
   }
   const root = decoded as Record<string, unknown>;
-  const code = readInteger(root.code);
+  const code = readSignedInteger(root.code);
   if (code !== 0) {
     const message = readText(root.message, "视频搜索失败");
     throw new BilibiliLookupError(`${message}（错误码：${code}）。`);
@@ -348,7 +348,7 @@ function parseUserSearchPage(responseText: string, requestedPage: number): UserS
     throw new BilibiliLookupError("用户搜索接口返回的数据格式不正确。");
   }
   const root = decoded as Record<string, unknown>;
-  const code = readInteger(root.code);
+  const code = readSignedInteger(root.code);
   if (code !== 0) {
     const message = readText(root.message, "用户搜索失败");
     throw new BilibiliLookupError(`${message}（错误码：${code}）。`);
@@ -591,7 +591,7 @@ function parseVideoInfo(responseText: string, requestedBvid: string): VideoPrevi
     throw new BilibiliLookupError("视频详情接口返回的数据格式不正确。");
   }
   const root = decoded as Record<string, unknown>;
-  const code = readInteger(root.code);
+  const code = readSignedInteger(root.code);
   if (code !== 0) {
     const serverMessage = typeof root.message === "string" ? (root.message as string) : "";
     throw new BilibiliLookupError(

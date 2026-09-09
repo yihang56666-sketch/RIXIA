@@ -31,8 +31,13 @@ public class BeidFocusNotificationReceiver extends BroadcastReceiver {
     }
 
     static void post(Context context, int notificationId, String title, String body) {
+        post(context, null, notificationId, title, body);
+    }
+
+    private static void post(Context context, String tag, int notificationId, String title, String body) {
         ensureChannel(context);
         Intent launch = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+        if (launch != null && tag != null) launch.setAction("com.beid.app.FOCUS_OPEN." + tag);
         PendingIntent contentIntent = launch == null ? null : PendingIntent.getActivity(
                 context, notificationId, launch,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -47,7 +52,7 @@ public class BeidFocusNotificationReceiver extends BroadcastReceiver {
                 .setContentIntent(contentIntent)
                 .build();
         try {
-            NotificationManagerCompat.from(context).notify(notificationId, notification);
+            NotificationManagerCompat.from(context).notify(tag, notificationId, notification);
         } catch (SecurityException ignored) {
             // Android 13+ may deny notifications; the timer itself remains valid.
         }
@@ -61,6 +66,6 @@ public class BeidFocusNotificationReceiver extends BroadcastReceiver {
         if (reason == null || reason.trim().isEmpty()) reason = "回来继续你的专注任务";
         String id = intent == null ? "" : intent.getStringExtra(EXTRA_ID);
         int notificationId = id == null ? title.hashCode() : id.hashCode();
-        post(context, notificationId, title, reason);
+        post(context, "reminder:" + id, notificationId, title, reason);
     }
 }

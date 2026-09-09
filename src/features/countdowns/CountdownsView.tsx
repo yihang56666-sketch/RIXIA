@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { daysUntil, formatShortDate, todayKey } from "../../lib/time";
+import { daysUntil, formatShortDate } from "../../lib/time";
+import { useCalendarDay } from "../../lib/useCalendarDay";
 import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
 
@@ -8,7 +9,7 @@ export function CountdownsView({ embedded = false }: { embedded?: boolean } = {}
   const { countdowns, addCountdown, removeCountdown } = useAppStore();
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
-  const today = todayKey();
+  const today = useCalendarDay();
 
   const valid = title.trim().length > 0 && date !== "";
 

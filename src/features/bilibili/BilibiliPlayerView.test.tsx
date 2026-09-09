@@ -1,15 +1,16 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BilibiliPlayerView } from "./BilibiliPlayerView";
 import { useAppStore } from "../../store/useAppStore";
 
 // MSE DASH 播放器替身：浏览器模式下控制面由 DashPlayer 驱动，测试断言它
 // 收到的控制命令（音量 / 加载 / 跳转），覆盖当前项目自身的播放器控制面。
-const { dashSetVolume, dashLoad, dashInstances, saveVideoNote, nativePlayerTest } = vi.hoisted(() => ({
+const { dashSetVolume, dashLoad, dashInstances, saveVideoNote, removeVideoNote, nativePlayerTest } = vi.hoisted(() => ({
   dashSetVolume: vi.fn(),
   dashLoad: vi.fn().mockResolvedValue({ videoTrack: {}, audioTrack: null }),
   dashInstances: [] as Array<{ seek: ReturnType<typeof vi.fn> }>,
   saveVideoNote: vi.fn().mockResolvedValue(true),
+  removeVideoNote: vi.fn().mockResolvedValue(true),
   nativePlayerTest: {
     enabled: false,
     open: vi.fn().mockResolvedValue(undefined),
@@ -82,7 +83,7 @@ vi.mock("../../lib/bilibili/danmakuFetchService", () => ({
 vi.mock("../../lib/bilibili/services", () => ({
   createDanmakuPreferencesService: () => ({ load: vi.fn().mockResolvedValue({ enabled: true, opacity: 1, fontSize: 20, displayArea: 1, showScrolling: true, showTop: true, showBottom: true, mergeRepeated: true, laneCount: 12, scrollDurationSeconds: 9, blockedKeywords: [] }), save: vi.fn() }),
   createPlaybackPreferencesService: () => ({ load: vi.fn().mockResolvedValue(playbackPreferences), save: vi.fn().mockResolvedValue(true) }),
-  createVideoNoteService: () => ({ listByVideo: vi.fn().mockResolvedValue([]), save: saveVideoNote, remove: vi.fn().mockResolvedValue(true) }),
+  createVideoNoteService: () => ({ listByVideo: vi.fn().mockResolvedValue([]), save: saveVideoNote, remove: removeVideoNote }),
   createLearningListService: () => ({ add: vi.fn().mockResolvedValue(true), list: vi.fn().mockResolvedValue([]), markCompleted: vi.fn().mockResolvedValue(true) }),
 }));
 
@@ -166,6 +167,10 @@ vi.mock("../../lib/bilibili/nativeMediaPlayer", () => ({
 }));
 
 describe("BilibiliPlayerView", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     nativePlayerTest.enabled = false;
@@ -638,6 +643,49 @@ describe("BilibiliPlayerView", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: /待删除/ })).not.toBeInTheDocument());
   });
 
+  it("does not list a note or claim success when the note service rejects the save", async () => {
+    saveVideoNote.mockResolvedValueOnce(false);
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+
+    fireEvent.change(await screen.findByLabelText("笔记标题"), { target: { value: "失败笔记" } });
+    fireEvent.change(screen.getByLabelText("笔记正文"), { target: { value: "不能假装成功" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(saveVideoNote).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("button", { name: /失败笔记/ })).not.toBeInTheDocument();
+    expect(await screen.findByText(/保存失败/)).toBeInTheDocument();
+  });
+
+  it("keeps an edited note visible when the service cannot persist deletion", async () => {
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+
+    fireEvent.change(await screen.findByLabelText("笔记标题"), { target: { value: "保留笔记" } });
+    fireEvent.change(screen.getByLabelText("笔记正文"), { target: { value: "删除应失败" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await screen.findByRole("button", { name: /保留笔记/ });
+
+    removeVideoNote.mockResolvedValueOnce(false);
+    fireEvent.click(screen.getByLabelText("删除笔记"));
+    fireEvent.click(await screen.findByRole("button", { name: "删除" }));
+
+    await waitFor(() => expect(removeVideoNote).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: /保留笔记/ })).toBeInTheDocument();
+    expect(screen.getByText(/删除失败/)).toBeInTheDocument();
+  });
+
+  it("keeps an undone note in the list when the removal cannot be persisted", async () => {
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+
+    fireEvent.change(await screen.findByLabelText("笔记标题"), { target: { value: "撤销失败" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await screen.findByText(/已保存 · /);
+    removeVideoNote.mockResolvedValueOnce(false);
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+
+    await waitFor(() => expect(screen.getByText("撤销失败，笔记仍在列表中")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /撤销失败/ })).toBeInTheDocument();
+  });
+
   it("opens the player focus sheet with goal input and duration choices when the topbar focus button is clicked", async () => {
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
     await screen.findByRole("button", { name: "专注观看" });
@@ -751,6 +799,18 @@ describe("BilibiliPlayerView", () => {
     await waitFor(() => expect(screen.queryByText(/已保存 · /)).not.toBeInTheDocument());
     expect(screen.getByLabelText("笔记标题")).toHaveValue("");
     expect(saveVideoNote).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears the note feedback timer when the player unmounts", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    const { unmount } = render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    fireEvent.change(await screen.findByLabelText("笔记标题"), { target: { value: "卸载清理" } });
+    fireEvent.click(screen.getByRole("button", { name: /^保存$/ }));
+    await waitFor(() => expect(screen.getByText(/已保存 · /)).toBeInTheDocument());
+
+    unmount();
+    vi.advanceTimersByTime(7000);
   });
 
   it("keeps a persistent back button reachable while the control layer is hidden", async () => {

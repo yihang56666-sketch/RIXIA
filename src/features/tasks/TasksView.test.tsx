@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TasksView } from "./TasksView";
 import { useAppStore } from "../../store/useAppStore";
 import { daysUntil, todayKey } from "../../lib/time";
@@ -7,6 +7,10 @@ import { daysUntil, todayKey } from "../../lib/time";
 describe("TasksView", () => {
   beforeEach(() => {
     useAppStore.setState({ view: "tasks", tasks: [] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("renders the tasks page and the empty today state", () => {
@@ -28,6 +32,21 @@ describe("TasksView", () => {
     expect(screen.getByText("完成今日复盘")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /^今天/ })).toHaveAttribute("aria-selected", "true");
     expect(useAppStore.getState().tasks[0]?.due).toBe(todayKey());
+  });
+
+  it("assigns the current date when a task is submitted after midnight", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 8, 5, 23, 59, 59));
+    render(<TasksView />);
+    fireEvent.change(screen.getByPlaceholderText("添加今天要做的事"), {
+      target: { value: "午夜后的任务" },
+    });
+
+    vi.setSystemTime(new Date(2026, 8, 6, 0, 0, 1));
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    expect(useAppStore.getState().tasks[0]?.due).toBe("2026-09-06");
+    expect(screen.getByText("午夜后的任务")).toBeInTheDocument();
   });
 
   it("toggles a task and shows the completion state", () => {

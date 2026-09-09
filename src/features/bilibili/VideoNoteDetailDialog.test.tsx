@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { VideoNoteDetailDialog } from "./VideoNoteDetailDialog";
 import type { VideoNote } from "../../lib/bilibili/types";
@@ -139,5 +139,26 @@ describe("VideoNoteDetailDialog", () => {
     // Reset button should restore scale to 1.
     fireEvent.click(within(viewer).getByRole("button", { name: "重置缩放" }));
     expect(image.getAttribute("style")).toContain("scale(1)");
+  });
+
+  it("recovers the editor after saving rejects", async () => {
+    render(<VideoNoteDetailDialog note={NOTE} onClose={vi.fn()} onSave={vi.fn().mockRejectedValue(new Error("存储失败"))} onOpenVideo={vi.fn()} onShare={vi.fn()} onDelete={vi.fn()} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "笔记正文" }), { target: { value: "保留未保存的正文" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存笔记修改" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("保存失败");
+    expect(screen.getByRole("textbox", { name: "笔记正文" })).toHaveValue("保留未保存的正文");
+    expect(screen.getByRole("button", { name: "保存笔记修改" })).toBeEnabled();
+  });
+
+  it("does not navigate after the source lookup outlives the dialog", async () => {
+    let resolve!: (value: { bvid: string; title: string; thumbnailUrl: string }) => void;
+    const pending = new Promise<{ bvid: string; title: string; thumbnailUrl: string }>((onResolve) => { resolve = onResolve; });
+    lookupVideo.mockReturnValueOnce(pending);
+    const onOpenVideo = vi.fn();
+    const { unmount } = render(<VideoNoteDetailDialog note={NOTE} onClose={vi.fn()} onSave={vi.fn()} onOpenVideo={onOpenVideo} onShare={vi.fn()} onDelete={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /线性代数第一讲/ }));
+    unmount();
+    await act(async () => resolve({ bvid: NOTE.bvid, title: NOTE.videoTitle, thumbnailUrl: "" }));
+    expect(onOpenVideo).not.toHaveBeenCalled();
   });
 });

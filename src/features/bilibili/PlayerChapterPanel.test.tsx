@@ -21,6 +21,7 @@ describe("PlayerChapterPanel", () => {
       />,
     );
     const active = screen.getByText("正片").closest("button");
+    expect(screen.getByRole("dialog", { name: "分段信息" })).toContainElement(document.activeElement as HTMLElement);
     expect(active).toHaveClass("active");
   });
 

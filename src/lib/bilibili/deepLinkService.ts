@@ -17,6 +17,20 @@ export type DeepLinkTarget =
 
 const BVID_PATTERN = /BV[0-9A-Za-z]{10}/;
 
+function positiveIdentifier(value: string | null | undefined): number | undefined {
+  if (!value || !/^\d+$/.test(value)) return undefined;
+  const identifier = Number(value);
+  return Number.isSafeInteger(identifier) && identifier > 0 ? identifier : undefined;
+}
+
+function decodeLinkText(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
 export interface BilibiliDeepLinkService {
   parse(input: string): DeepLinkTarget;
   apply(target: DeepLinkTarget, callbacks: {
@@ -33,24 +47,22 @@ export function createBilibiliDeepLinkService(): BilibiliDeepLinkService {
       const bvidMatch = trimmed.match(BVID_PATTERN);
       if (bvidMatch) {
         const bvid = bvidMatch[0]!;
-        const cidMatch = trimmed.match(/[?&]cid=(\d+)/);
-        const pageMatch = trimmed.match(/[?&]page=(\d+)/);
-        const pMatch = trimmed.match(/[?&]p=(\d+)/);
-        const cid = cidMatch ? Number.parseInt(cidMatch[1]!, 10) : undefined;
-        const page = pageMatch
-          ? Number.parseInt(pageMatch[1]!, 10)
-          : pMatch
-            ? Number.parseInt(pMatch[1]!, 10)
-            : undefined;
+        const cidMatch = trimmed.match(/[?&]cid=([^&#\s]+)/);
+        const pageMatch = trimmed.match(/[?&]page=([^&#\s]+)/);
+        const pMatch = trimmed.match(/[?&]p=([^&#\s]+)/);
+        const cid = positiveIdentifier(cidMatch?.[1]);
+        const page = positiveIdentifier(pageMatch?.[1] ?? pMatch?.[1]);
         return { kind: "video", bvid, cid, page };
       }
       const searchMatch = trimmed.match(/[?&]keyword=([^&]+)/) ?? trimmed.match(/search\/all\?keyword=([^&]+)/);
       if (searchMatch) {
-        return { kind: "search", keyword: decodeURIComponent(searchMatch[1]!) };
+        const keyword = decodeLinkText(searchMatch[1]!.replace(/\+/g, " "));
+        if (keyword !== null) return { kind: "search", keyword };
       }
       const userMatch = trimmed.match(/space\.bilibili\.com\/(\d+)/) ?? trimmed.match(/[?&]mid=(\d+)/);
       if (userMatch) {
-        return { kind: "user", mid: Number.parseInt(userMatch[1]!, 10) };
+        const mid = positiveIdentifier(userMatch[1]);
+        if (mid !== undefined) return { kind: "user", mid };
       }
       return { kind: "unknown", raw: trimmed };
     },
@@ -116,10 +128,11 @@ export function attachDeepLinkHandler(handlers: {
     const [path, query] = hash.slice(1).split("?");
     const parts = path!.split("/");
     const params = new URLSearchParams(query ?? "");
-    if (parts[0] === "video" && parts[1]) {
-      handlers.openVideo?.(parts[1]!, params.get("cid") ? Number.parseInt(params.get("cid")!, 10) : undefined, params.get("p") ? Number.parseInt(params.get("p")!, 10) : undefined);
+    if (parts[0] === "video" && parts[1] && /^BV[0-9A-Za-z]{10}$/.test(parts[1])) {
+      handlers.openVideo?.(parts[1], positiveIdentifier(params.get("cid")), positiveIdentifier(params.get("p")));
     } else if (parts[0] === "search" && parts[1]) {
-      handlers.openSearch?.(decodeURIComponent(parts[1]!));
+      const keyword = decodeLinkText(parts[1]);
+      if (keyword !== null) handlers.openSearch?.(keyword);
     }
   }
   window.addEventListener("hashchange", onHashChange);

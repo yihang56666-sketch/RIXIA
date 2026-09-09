@@ -46,14 +46,14 @@ export function formatTime(totalSeconds: number): string {
 
 export function habitStreak(checkedDates: string[], today = todayKey()): number {
   const set = new Set(checkedDates);
-  let cursor = new Date(`${today}T00:00:00`);
+  const cursor = new Date(`${today}T00:00:00`);
   if (!set.has(todayKey(cursor))) {
-    cursor = new Date(cursor.getTime() - DAY);
+    cursor.setDate(cursor.getDate() - 1);
   }
   let streak = 0;
   while (set.has(todayKey(cursor))) {
     streak += 1;
-    cursor = new Date(cursor.getTime() - DAY);
+    cursor.setDate(cursor.getDate() - 1);
   }
   return streak;
 }
@@ -74,10 +74,12 @@ export function bestStreak(checkedDates: string[]): number {
 
 /** 以 today 结尾（含 today）的连续 n 个日期键，旧到新排列 */
 export function lastNDates(count: number, today = todayKey()): string[] {
-  const base = new Date(`${today}T00:00:00`).getTime();
+  const base = new Date(`${today}T00:00:00`);
   const dates: string[] = [];
   for (let offset = count - 1; offset >= 0; offset -= 1) {
-    dates.push(todayKey(new Date(base - offset * DAY)));
+    const date = new Date(base.getTime());
+    date.setDate(date.getDate() - offset);
+    dates.push(todayKey(date));
   }
   return dates;
 }

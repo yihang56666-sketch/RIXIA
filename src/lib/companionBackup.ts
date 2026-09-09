@@ -7,6 +7,8 @@ import {
 } from "./bilibili/services";
 import { STORAGE_KEY as LOCAL_WATCH_HISTORY_KEY } from "./bilibili/watchHistoryService";
 
+export const COMPANION_RESTORED_EVENT = "beid:companion-restored";
+
 /**
  * 兄弟存储的备份采集层。主 store（rixia-v1）之外，专注历史、视频笔记、
  * 学习清单和两份观看历史各自治持久化在独立 localStorage 键里；备份导出/导入
@@ -59,8 +61,9 @@ export function sanitizeCompanionBackup(input: unknown): CompanionBackupData | n
 /** 导入：把 companion 数据写回设备存储。写入失败（配额等）不阻塞主备份恢复。 */
 export function importCompanionBackup(
   data: CompanionBackupData,
-  storage: Storage = localStorage,
-): void {
+  storage?: Storage,
+): string[] {
+  const targetStorage = storage ?? localStorage;
   const writes: Array<[string, string | null]> = [
     [ACTIVE_KEY, data.focusActiveSession === null ? null : JSON.stringify(data.focusActiveSession)],
     [FOCUS_HISTORY_KEY, JSON.stringify(data.focusHistory)],
@@ -69,14 +72,20 @@ export function importCompanionBackup(
     [LEARNING_LIST_KEY, JSON.stringify(data.learningList)],
     [LOCAL_WATCH_HISTORY_KEY, JSON.stringify(data.localWatchHistory)],
   ];
+  const failedKeys: string[] = [];
   for (const [key, raw] of writes) {
     try {
-      if (raw === null) storage.removeItem(key);
-      else storage.setItem(key, raw);
+      if (raw === null) targetStorage.removeItem(key);
+      else targetStorage.setItem(key, raw);
     } catch {
+      failedKeys.push(key);
       // 单键失败（配额/隐私模式）不影响其余键；服务读取路径会容忍缺失。
     }
   }
+  if (storage === undefined && typeof window !== "undefined") {
+    window.dispatchEvent(new Event(COMPANION_RESTORED_EVENT));
+  }
+  return failedKeys;
 }
 
 function asArray(value: unknown): unknown[] {

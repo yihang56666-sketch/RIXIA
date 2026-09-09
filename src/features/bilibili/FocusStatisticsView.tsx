@@ -386,7 +386,7 @@ export function FocusStatisticsView() {
     );
   }
 
-  function RecordFilters() {
+  function renderRecordFilters() {
     return (
       <div>
         <div className="m3-field">
@@ -522,7 +522,7 @@ export function FocusStatisticsView() {
     );
   }
 
-  function HistoryPane() {
+  function renderHistoryPane() {
     return (
       <>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
@@ -530,7 +530,7 @@ export function FocusStatisticsView() {
           <span className="m3-body-md">{visibleHistory.length} 条</span>
         </div>
         <div style={{ height: 10 }} />
-        <RecordFilters />
+        {renderRecordFilters()}
         <div style={{ height: 10 }} />
         {visibleHistory.length === 0 ? (
           <section className="m3-card" style={{ padding: 28, textAlign: "center" }}>
@@ -573,7 +573,7 @@ export function FocusStatisticsView() {
           <div style={{ display: "grid", gap: 12, padding: "8px 16px 32px" }}>
             <OverviewPane />
             <div style={{ height: 10 }} />
-            <HistoryPane />
+            {renderHistoryPane()}
           </div>
         </div>
         <div className="fb-statistics-wide">
@@ -583,7 +583,7 @@ export function FocusStatisticsView() {
             </div>
             <span className="m3-vertical-divider" style={{ width: 1 }} />
             <div className="fb-scroll-page" style={{ flex: 5, padding: "8px 16px 32px 14px", display: "grid", gap: 10, alignContent: "start" }}>
-              <HistoryPane />
+              {renderHistoryPane()}
             </div>
           </div>
         </div>
@@ -598,8 +598,12 @@ export function FocusStatisticsView() {
               <button className="m3-text-btn" onClick={() => setPendingDelete(null)}>取消</button>
               <button
                 className="m3-tonal-btn"
-                onClick={() => {
-                  void timer.deleteHistoryEntry(pendingDelete.id);
+                onClick={async () => {
+                  const deleted = await timer.deleteHistoryEntry(pendingDelete.id);
+                  if (!deleted) {
+                    showMessage("删除失败，请重试。");
+                    return;
+                  }
                   setPendingDelete(null);
                 }}
               >
@@ -621,8 +625,12 @@ export function FocusStatisticsView() {
               <button className="m3-text-btn" onClick={() => setConfirmClear(false)}>取消</button>
               <button
                 className="m3-tonal-btn"
-                onClick={() => {
-                  void timer.clearHistory();
+                onClick={async () => {
+                  const cleared = await timer.clearHistory();
+                  if (!cleared) {
+                    showMessage("清空失败，请稍后重试。");
+                    return;
+                  }
                   setConfirmClear(false);
                   showMessage("已清空全部专注历史");
                 }}

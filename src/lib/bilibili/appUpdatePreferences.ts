@@ -4,7 +4,7 @@ type StorageLike = Pick<Storage, "getItem" | "setItem">;
 
 export interface AppUpdatePreferencesService {
   loadStartupCheckEnabled(): boolean;
-  saveStartupCheckEnabled(enabled: boolean): void;
+  saveStartupCheckEnabled(enabled: boolean): boolean;
   checkAtStartup<T>(checker: () => Promise<T>): Promise<T | undefined>;
 }
 
@@ -22,8 +22,10 @@ export function createAppUpdatePreferencesService(
     saveStartupCheckEnabled(enabled) {
       try {
         storage.setItem(STARTUP_UPDATE_CHECK_KEY, String(enabled));
+        return true;
       } catch {
         // A blocked storage environment must not stop the app from loading.
+        return false;
       }
     },
     async checkAtStartup(checker) {

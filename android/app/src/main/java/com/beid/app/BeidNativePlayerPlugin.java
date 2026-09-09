@@ -58,7 +58,9 @@ public class BeidNativePlayerPlugin extends Plugin {
             try {
                 if (player == null) return;
                 if (danmakuView != null) danmakuView.setPositionSeconds(player.getCurrentPosition() / 1000f);
-                emitState(player.isPlaying() ? "playing" : "paused", null);
+                if (player.getPlaybackState() == Player.STATE_READY) {
+                    emitState(player.isPlaying() ? "playing" : "paused", null);
+                }
                 stateHandler.postDelayed(this, 500L);
             } catch (Throwable error) {
                 android.util.Log.e("BeidNativePlayer", "stateTicker crashed", error);
@@ -76,7 +78,7 @@ public class BeidNativePlayerPlugin extends Plugin {
     private static final long OPEN_TIMEOUT_MS = 15_000L;
     private static final String DESKTOP_UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
-    private final Runnable openTimeout = () -> completeOpen("视频加载超时", true);
+    private final Runnable openTimeout = () -> failOpen("视频加载超时");
 
     private interface UiTask {
         void run() throws Exception;
@@ -96,7 +98,9 @@ public class BeidNativePlayerPlugin extends Plugin {
                 // Error 不接住的话会直接闪退。
                 android.util.Log.e("BeidNativePlayer", "plugin call failed", error);
                 String message = error.getMessage();
-                call.reject(message == null || message.isEmpty() ? "原生播放器异常" : message);
+                message = message == null || message.isEmpty() ? "原生播放器异常" : message;
+                if (pendingOpenCall == call) failOpen(message);
+                else call.reject(message);
             }
         });
     }
@@ -288,12 +292,18 @@ public class BeidNativePlayerPlugin extends Plugin {
         Runnable cleanup = () -> {
             try {
                 releasePlayer();
-                if (mediaCache != null) {
-                    mediaCache.release();
-                    mediaCache = null;
-                }
             } catch (Throwable error) {
                 android.util.Log.e("BeidNativePlayer", "destroy cleanup crashed", error);
+            } finally {
+                SimpleCache releasingCache = mediaCache;
+                mediaCache = null;
+                if (releasingCache != null) {
+                    try {
+                        releasingCache.release();
+                    } catch (Throwable error) {
+                        android.util.Log.e("BeidNativePlayer", "cache cleanup failed", error);
+                    }
+                }
             }
         };
         android.app.Activity activity = getActivity();
@@ -369,7 +379,6 @@ public class BeidNativePlayerPlugin extends Plugin {
             public void onPlaybackStateChanged(int state) {
                 try {
                     if (state == Player.STATE_READY) {
-                        player.play();
                         completeOpen(null, false);
                         emitState(player.isPlaying() ? "playing" : "ready", null);
                     }
@@ -485,6 +494,19 @@ public class BeidNativePlayerPlugin extends Plugin {
         }
     }
 
+    private void failOpen(String message) {
+        if (pendingOpenCall == null) return;
+        try {
+            if (player != null) player.stop();
+            if (playerView != null) playerView.setVisibility(View.INVISIBLE);
+            if (danmakuView != null) danmakuView.setVisibility(View.INVISIBLE);
+        } catch (RuntimeException error) {
+            android.util.Log.e("BeidNativePlayer", "failed open cleanup failed", error);
+        } finally {
+            completeOpen(message, true);
+        }
+    }
+
     private DataSource.Factory cachedDataSource(DefaultHttpDataSource.Factory http) {
         if (mediaCache == null) {
             File cacheDirectory = new File(getContext().getCacheDir(), "beid-media");
@@ -555,18 +577,28 @@ public class BeidNativePlayerPlugin extends Plugin {
     private void releasePlayer() {
         completeOpen("播放器已释放", true);
         stateHandler.removeCallbacks(stateTicker);
-        if (playerView != null) {
-            View parent = (View) playerView.getParent();
-            if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(playerView);
-        }
-        if (danmakuView != null) {
-            View parent = (View) danmakuView.getParent();
-            if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(danmakuView);
-        }
-        if (player != null) player.release();
+        ExoPlayer releasingPlayer = player;
+        PlayerView releasingView = playerView;
+        BeidDanmakuView releasingDanmaku = danmakuView;
         player = null;
         playerView = null;
         danmakuView = null;
         playerLayout = null;
+        try {
+            if (releasingView != null) {
+                releasingView.setPlayer(null);
+                View parent = (View) releasingView.getParent();
+                if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(releasingView);
+            }
+        } finally {
+            try {
+                if (releasingDanmaku != null) {
+                    View parent = (View) releasingDanmaku.getParent();
+                    if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(releasingDanmaku);
+                }
+            } finally {
+                if (releasingPlayer != null) releasingPlayer.release();
+            }
+        }
     }
 }

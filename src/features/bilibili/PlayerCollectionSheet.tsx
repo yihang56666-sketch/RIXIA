@@ -21,7 +21,7 @@ export function PlayerCollectionSheet({
   const [keyword, setKeyword] = useState("");
   const [order, setOrder] = useState<CollectionOrder>("original");
   // 登记浮层栈：系统返回/Escape 先关合集，而不是退回资料库。
-  useOverlayInteraction(true, onClose);
+  const dialogRef = useOverlayInteraction(true, onClose);
   const entries = useMemo(() => filterAndSortEntries(collection.entries, keyword, order), [collection.entries, keyword, order]);
   const currentEntryRef = useRef<HTMLButtonElement | null>(null);
 
@@ -32,7 +32,7 @@ export function PlayerCollectionSheet({
 
   return (
     <div className="modal-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="modal-card player-collection-sheet" role="dialog" aria-modal="true" aria-label={`合集 · ${collection.title}`}>
+      <section ref={dialogRef} tabIndex={-1} className="modal-card player-collection-sheet" role="dialog" aria-modal="true" aria-label={`合集 · ${collection.title}`}>
         <header className="player-collection-header">
           <div>
             <h2>合集 · {collection.title}</h2>

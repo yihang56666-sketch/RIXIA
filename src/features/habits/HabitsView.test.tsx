@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { HabitsView } from "./HabitsView";
 import { useAppStore } from "../../store/useAppStore";
-import { todayKey } from "../../lib/time";
+import { lastNDates, todayKey } from "../../lib/time";
 
 describe("HabitsView", () => {
   beforeEach(() => {
@@ -22,6 +22,22 @@ describe("HabitsView", () => {
     expect(screen.getByText("早起背单词")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "今日打卡" }));
     expect(useAppStore.getState().habits[0]?.checkedDates).toContain(todayKey());
+  });
+
+  it("labels interval habit streaks as rounds rather than consecutive days", () => {
+    const dates = lastNDates(5);
+    useAppStore.setState({
+      habits: [{
+        id: "interval-habit",
+        title: "隔日复习",
+        createdAt: "2026-08-01T00:00:00.000Z",
+        checkedDates: [dates[0], dates[2], dates[4]],
+        frequency: { type: "interval-days", interval: 2 },
+      }],
+    });
+    render(<HabitsView />);
+
+    expect(screen.queryByText("3 轮", { selector: ".due-chip" })).toBeInTheDocument();
   });
 
   it("checks all due habits when the bulk action is clicked", () => {

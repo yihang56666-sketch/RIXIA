@@ -161,10 +161,11 @@ export function FocusView() {
   // 浏览器在页面隐藏时会自动释放 sentinel，回到前台且仍在计时则重新申请；
   // 申请是异步的，期间若已暂停/卸载，拿到句柄后立即释放（避免泄漏常亮）。
   useEffect(() => {
+    let cancelled = false;
     const acquire = () => {
       void requestWakeLock().then((release) => {
         if (!release) return;
-        if (!activeRef.current || document.visibilityState !== "visible") {
+        if (cancelled || !activeRef.current || document.visibilityState !== "visible") {
           release();
           return;
         }
@@ -183,6 +184,7 @@ export function FocusView() {
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      cancelled = true;
       document.removeEventListener("visibilitychange", onVisibility);
       releaseWakeLock.current?.();
       releaseWakeLock.current = null;
@@ -198,15 +200,17 @@ export function FocusView() {
       return;
     }
     if (document.visibilityState !== "visible") return; // 回前台时由 visibilitychange 补申请
+    let cancelled = false;
     void requestWakeLock().then((release) => {
       if (!release) return;
-      if (!activeRef.current || document.visibilityState !== "visible") {
+      if (cancelled || !activeRef.current || document.visibilityState !== "visible") {
         release();
         return;
       }
       releaseWakeLock.current?.();
       releaseWakeLock.current = release;
     });
+    return () => { cancelled = true; };
   }, [active]);
 
   // 离开页面时停止氛围音
@@ -232,8 +236,8 @@ export function FocusView() {
       const isLongBreak = newCompleted % focusRounds.longBreakEvery === 0;
       const nextPhase: Phase = isLongBreak ? "long-break" : "short-break";
       const nextSeconds = (isLongBreak ? focusRounds.longBreakMinutes : focusRounds.shortBreakMinutes) * 60;
-      setPhase(nextPhase);
-      setSeconds(nextSeconds);
+      setPhase(nextSeconds > 0 ? nextPhase : "focus");
+      setSeconds(nextSeconds > 0 ? nextSeconds : focusMinutes * 60);
       if (nextSeconds > 0) {
         autoStartTimerRef.current = window.setTimeout(() => {
           autoStartTimerRef.current = null;
@@ -339,7 +343,7 @@ export function FocusView() {
   const percent =
     mode === "countup"
       ? Math.round(((upSeconds % COUNTUP_LAP_SECONDS) / COUNTUP_LAP_SECONDS) * 100)
-      : Math.round((seconds / phaseTotal) * 100);
+      : phaseTotal > 0 ? Math.round((seconds / phaseTotal) * 100) : 0;
   const todaySessions = focusSessions.filter((item) => item.date === today);
   const todayMinutes = todaySessions.reduce((sum, item) => sum + item.minutes, 0);
   const totalMinutes = focusSessions.reduce((sum, item) => sum + item.minutes, 0);

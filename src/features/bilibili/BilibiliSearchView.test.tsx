@@ -1,7 +1,9 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BilibiliSearchView } from "./BilibiliSearchView";
 import { useAppStore } from "../../store/useAppStore";
+import { M3FeedbackProvider } from "./m3";
+import type { LearningListEntry, VideoSearchResult } from "../../lib/bilibili/types";
 
 const searchUsers = vi.fn().mockResolvedValue({
   page: 1,
@@ -38,6 +40,11 @@ const clearHistory = vi.fn().mockImplementation(async () => {
   storedHistory = [];
   return true;
 });
+const learningList = {
+  list: vi.fn<() => Promise<LearningListEntry[]>>().mockResolvedValue([]),
+  add: vi.fn().mockResolvedValue(true),
+  remove: vi.fn().mockResolvedValue(true),
+};
 
 const lookupVideo = vi.fn().mockResolvedValue({
   aid: 1,
@@ -83,17 +90,14 @@ vi.mock("../../lib/bilibili/services", () => ({
     remove: vi.fn().mockResolvedValue(undefined),
     clear: clearHistory,
   }),
-  createLearningListService: () => ({
-    list: vi.fn().mockResolvedValue([]),
-    add: vi.fn().mockResolvedValue(true),
-    remove: vi.fn().mockResolvedValue(true),
-  }),
+  createLearningListService: () => learningList,
 }));
 
 describe("BilibiliSearchView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     storedHistory = [];
+    learningList.list.mockResolvedValue([]);
     useAppStore.setState({ view: "search", resources: [], pendingBilibiliSearch: null });
   });
 
@@ -222,5 +226,134 @@ describe("BilibiliSearchView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "播放多" }));
     await waitFor(() => expect(searchVideos).toHaveBeenLastCalledWith("线性代数", 1, expect.objectContaining({ order: "mostplayed" })));
+  });
+
+  it("ignores an older keyword suggestion response", async () => {
+    const older = deferred<string[]>();
+    const newer = deferred<string[]>();
+    suggestKeywords.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+    render(<BilibiliSearchView />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "旧词" } });
+    await waitFor(() => expect(suggestKeywords).toHaveBeenCalledWith("旧词"));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "新词" } });
+    await waitFor(() => expect(suggestKeywords).toHaveBeenCalledWith("新词"));
+    await act(async () => newer.resolve(["新词建议"]));
+    await act(async () => older.resolve(["旧词建议"]));
+    expect(screen.queryByRole("option", { name: "旧词建议" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "新词建议" })).toBeInTheDocument();
+  });
+
+  it("invalidates an in-flight search when the input is cleared", async () => {
+    const pending = deferred<{ page: number; totalPages: number; results: VideoSearchResult[] }>();
+    searchVideos.mockReturnValueOnce(pending.promise);
+    render(<BilibiliSearchView />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "旧词" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await waitFor(() => expect(searchVideos).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "清空" }));
+    expect(screen.getByText("搜索你真正想看的内容")).toBeInTheDocument();
+    await act(async () => pending.resolve({ page: 1, totalPages: 1, results: [] }));
+    expect(screen.getByText("搜索你真正想看的内容")).toBeInTheDocument();
+  });
+
+  it.each(["Enter", " "])("opens a video result with the %s key", async (key) => {
+    render(<BilibiliSearchView />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "线性代数" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    fireEvent.keyDown(await screen.findByRole("button", { name: "线性代数第一讲" }), { key });
+    await waitFor(() => expect(useAppStore.getState().view).toBe("bilibili-player"));
+  });
+
+  it("opens a user result with the keyboard", async () => {
+    render(<BilibiliSearchView />);
+    fireEvent.click(screen.getByRole("button", { name: "用户" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "考研老师" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    fireEvent.keyDown(await screen.findByRole("button", { name: "考研老师" }), { key: "Enter" });
+    expect(useAppStore.getState().view).toBe("creator-profile");
+  });
+
+  it("does not navigate after a pending video lookup outlives the view", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof lookupVideo>>>();
+    lookupVideo.mockReturnValueOnce(pending.promise);
+    const { unmount } = render(<BilibiliSearchView />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "线性代数" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    fireEvent.click(await screen.findByRole("button", { name: "线性代数第一讲" }));
+    unmount();
+    useAppStore.setState({ view: "settings" });
+    await act(async () => pending.reject(new Error("请求已过期")));
+    expect(useAppStore.getState().view).toBe("settings");
+  });
+
+  it("removes the persisted learning entry by its real id", async () => {
+    learningList.list.mockResolvedValue([{
+      id: "persisted-entry-id", bvid: "BV1xx411c7mD", partCid: 7, title: "线性代数第一讲",
+      ownerName: "老师", coverUrl: "", durationSeconds: 1200, addedAt: "2026-09-06T00:00:00.000Z",
+    }]);
+    render(<BilibiliSearchView />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "BV1xx411c7mD" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    fireEvent.click(await screen.findByRole("button", { name: "更多选项" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消加入" }));
+    await waitFor(() => expect(learningList.remove).toHaveBeenCalledWith("persisted-entry-id"));
+  });
+
+  it("reports a failed learning-list write instead of silently clearing the busy state", async () => {
+    learningList.add.mockResolvedValueOnce(false);
+    render(<M3FeedbackProvider><BilibiliSearchView /></M3FeedbackProvider>);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "BV1xx411c7mD" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    fireEvent.click(await screen.findByRole("button", { name: "更多选项" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(/加入学习清单失败/);
+  });
+
+  it("reports a failed learning-list removal", async () => {
+    learningList.list.mockResolvedValue([{
+      id: "persisted-entry-id", bvid: "BV1xx411c7mD", partCid: 7, title: "线性代数第一讲",
+      ownerName: "老师", coverUrl: "", durationSeconds: 1200, addedAt: "2026-09-06T00:00:00.000Z",
+    }]);
+    learningList.remove.mockResolvedValueOnce(false);
+    render(<M3FeedbackProvider><BilibiliSearchView /></M3FeedbackProvider>);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "BV1xx411c7mD" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    fireEvent.click(await screen.findByRole("button", { name: "更多选项" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消加入" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(/移出学习清单失败/);
+  });
+
+  it("keeps the history confirmation open when clearing storage fails", async () => {
+    storedHistory = ["高等数学"];
+    clearHistory.mockResolvedValueOnce(false);
+    render(<M3FeedbackProvider><BilibiliSearchView /></M3FeedbackProvider>);
+    fireEvent.click(await screen.findByRole("button", { name: "清空搜索历史" }));
+    fireEvent.click(screen.getByRole("button", { name: "清除" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(/清除搜索记录失败/);
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  it("allows the next search to paginate while an older page request is pending", async () => {
+    const result: VideoSearchResult = {
+      bvid: "BV1xx411c7mD", title: "分页结果", ownerName: "老师", durationSeconds: 60,
+      thumbnailUrl: "", playCount: 0, danmakuCount: 0, episodeCountText: "",
+    };
+    const older = deferred<{ page: number; totalPages: number; results: VideoSearchResult[] }>();
+    searchVideos.mockResolvedValueOnce({ page: 1, totalPages: 2, results: [result] })
+      .mockReturnValueOnce(older.promise)
+      .mockResolvedValueOnce({ page: 1, totalPages: 2, results: [result] })
+      .mockResolvedValueOnce({ page: 2, totalPages: 2, results: [] });
+    const { container } = render(<BilibiliSearchView />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "旧词" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await screen.findByText("分页结果");
+    const results = container.querySelectorAll(".fb-scroll-page");
+    fireEvent.scroll(results[results.length - 1]!);
+    await waitFor(() => expect(searchVideos).toHaveBeenCalledWith("旧词", 2, expect.any(Object)));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "新词" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await screen.findByText("分页结果");
+    fireEvent.scroll(results[results.length - 1]!);
+    await waitFor(() => expect(searchVideos).toHaveBeenCalledWith("新词", 2, expect.any(Object)));
+    await act(async () => older.resolve({ page: 2, totalPages: 2, results: [] }));
   });
 });

@@ -18,8 +18,8 @@
 ### Task 2: Repair reproducible regressions
 
 **Files:**
-- Modify: `D:/boke/assets/app.js`
-- Modify: `D:/一些有用的项目/硬件agent/README.md`
+- Modify: blog repository `assets/app.js`
+- Modify: Hardware Butler repository `README.md`
 
 - [x] Normalize blog home and not-found canonical metadata to the site origin while preserving route-specific metadata for content pages.
 - [x] Add the exact repository description required by `tools/github_launch_audit.py` to the hardware agent README.
@@ -28,11 +28,11 @@
 ### Task 3: Produce interview guides
 
 **Files:**
-- Create: `D:/boke/docs/HR_PROJECT_GUIDE.md`
-- Create: `D:/一些有用的项目/clock/docs/HR_PROJECT_GUIDE.md`
-- Create: `D:/一些有用的项目/硬件agent/docs/HR_PROJECT_GUIDE.md`
-- Create: `D:/一些有用的项目/子智能体/docs/HR_PROJECT_GUIDE.md`
-- Create: `D:/一些有用的项目/PROJECT_PORTFOLIO_AUDIT.md`
+- Create: blog repository `docs/HR_PROJECT_GUIDE.md`
+- Create: BEID repository `docs/HR_PROJECT_GUIDE.md`
+- Create: Hardware Butler repository `docs/HR_PROJECT_GUIDE.md`
+- Create: magent repository `docs/HR_PROJECT_GUIDE.md`
+- Create: portfolio root `PROJECT_PORTFOLIO_AUDIT.md`
 
 - [x] Document each project's problem, architecture, key implementation details, evidence-backed status, demo steps, likely HR questions, honest limitations, and next improvements.
 - [x] Link all guides from the portfolio audit and include exact verification commands and current results.

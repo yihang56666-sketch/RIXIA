@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ViewKey } from "../../types";
 import { TasksView } from "../tasks/TasksView";
 import { HabitsView } from "../habits/HabitsView";
 import { CountdownsView } from "../countdowns/CountdownsView";
 import { KaoyanView } from "../kaoyan/KaoyanView";
 import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
+import { useAppStore } from "../../store/useAppStore";
 
 type Tab = ViewKey;
 
@@ -21,7 +22,12 @@ const TABS: Array<{ key: Tab; label: string }> = [
  * Reuses the existing domain components; the segmentation is presentation only.
  */
 export function PlanView() {
+  const focusedTaskId = useAppStore((state) => state.focusedTaskId);
   const [tab, setTab] = useState<Tab>("tasks");
+
+  useEffect(() => {
+    if (focusedTaskId) setTab("tasks");
+  }, [focusedTaskId]);
 
   return (
     <RixiaWorkspacePage title="计划">

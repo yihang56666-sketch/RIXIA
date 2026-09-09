@@ -40,7 +40,7 @@ export function CaptureButton() {
   const [open, setOpen] = useState(false);
   const addInbox = useAppStore((state) => state.addInbox);
   const view = useAppStore((state) => state.view);
-  useOverlayInteraction(open, () => setOpen(false));
+  const dialogRef = useOverlayInteraction<HTMLDivElement>(open && !HIDE_CAPTURE.has(view), () => setOpen(false));
   if (HIDE_CAPTURE.has(view)) return null;
 
   if (open) {
@@ -51,7 +51,7 @@ export function CaptureButton() {
           onClick={() => setOpen(false)}
           role="presentation"
         />
-        <div className="capture-popover" role="dialog" aria-label="快速收集">
+        <div ref={dialogRef} tabIndex={-1} className="capture-popover" role="dialog" aria-modal="true" aria-label="快速收集">
           <div className="capture-popover-arrow" />
           <QuickAdd
             placeholder="输入想法或待办，回车保存"

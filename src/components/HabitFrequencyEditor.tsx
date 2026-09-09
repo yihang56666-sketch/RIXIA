@@ -13,7 +13,7 @@ export function HabitFrequencyEditor({ habit, onClose }: { habit: HabitItem; onC
   const updateHabitFrequency = useAppStore((state) => state.updateHabitFrequency);
   const updateHabitColor = useAppStore((state) => state.updateHabitColor);
   // 全屏编辑器也登记浮层栈：系统返回/Escape 先关编辑器，而不是丢掉编辑状态退回上级。
-  useOverlayInteraction(true, onClose);
+  const dialogRef = useOverlayInteraction<HTMLDivElement>(true, onClose);
   const [type, setType] = useState<HabitFrequency["type"]>(habit.frequency?.type ?? "daily");
   const [weeklyTarget, setWeeklyTarget] = useState(
     habit.frequency?.type === "weekly-count" ? habit.frequency.target : 3,
@@ -36,7 +36,7 @@ export function HabitFrequencyEditor({ habit, onClose }: { habit: HabitItem; onC
   }
 
   return (
-    <div className="habit-editor-overlay" role="dialog" aria-label="编辑习惯频率">
+    <div ref={dialogRef} tabIndex={-1} className="habit-editor-overlay" role="dialog" aria-modal="true" aria-label="编辑习惯频率">
       <div className="habit-editor">
         <h3>{habit.title}</h3>
 

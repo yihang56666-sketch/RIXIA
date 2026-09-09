@@ -10,7 +10,7 @@
  * 加载更多 / 没有更多内容了。全部为只读账号数据，不含任何写操作。
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createBilibiliAccountDataService,
   createBilibiliAuthService,
@@ -241,26 +241,37 @@ export function FavoriteVideosView() {
   const [videos, setVideos] = useState<FavoriteVideo[]>([]);
   const [query, setQuery] = useState("");
   const [openingBvid, setOpeningBvid] = useState<string | null>(null);
+  const requestGeneration = useRef(0);
 
   async function load() {
+    const generation = ++requestGeneration.current;
+    setLoadingMore(false);
     if (!folder) return;
     setLoading(true);
     const result = await service.listFavoriteVideos(folder.mediaId, 1);
+    if (generation !== requestGeneration.current) return;
     setPage({ status: result.status, items: result.items, page: result.page, hasMore: result.hasMore, message: result.message });
     if (result.status === AccountDataLoadStatus.success) setVideos(result.items);
     setLoading(false);
   }
 
-  useEffect(() => { void load(); }, [folder?.mediaId]);
+  useEffect(() => {
+    setQuery("");
+    setOpeningBvid(null);
+    void load();
+    return () => { requestGeneration.current += 1; };
+  }, [folder?.mediaId]);
 
   async function loadMore() {
-    if (!folder || !page || loadingMore || !page.hasMore) return;
+    if (!folder || !page || loading || loadingMore || !page.hasMore) return;
+    const generation = requestGeneration.current;
     setLoadingMore(true);
     const result = await service.listFavoriteVideos(folder.mediaId, page.page + 1);
+    if (generation !== requestGeneration.current) return;
     if (result.status === AccountDataLoadStatus.success) {
       setVideos((current) => {
         const seen = new Set(current.map((item) => item.bvid));
-        return [...current, ...result.items.filter((item) => !seen.has(item.bvid))];
+        return [...current, ...result.items.filter((item) => !seen.has(item.bvid) && seen.add(item.bvid))];
       });
       setPage({ status: result.status, items: result.items, page: result.page, hasMore: result.hasMore, message: result.message });
     } else {
@@ -271,14 +282,17 @@ export function FavoriteVideosView() {
 
   async function openVideo(video: FavoriteVideo) {
     if (!video.isAvailable || openingBvid) return;
+    const generation = requestGeneration.current;
     setOpeningBvid(video.bvid);
     try {
       const preview = await publicContentService.lookupVideo(video.bvid);
+      if (generation !== requestGeneration.current) return;
       openBilibiliVideo(preview.bvid, preview.title);
     } catch {
+      if (generation !== requestGeneration.current) return;
       openBilibiliVideo(video.bvid, video.title);
     } finally {
-      setOpeningBvid(null);
+      if (generation === requestGeneration.current) setOpeningBvid(null);
     }
   }
 
@@ -335,7 +349,10 @@ export function FavoriteVideosView() {
           ) : videos.length === 0 ? (
             <AccountEmptyState icon="video_library" text="这个收藏夹还没有视频" />
           ) : filtered.length === 0 ? (
-            <p className="m3-body-md" style={{ textAlign: "center", padding: "48px 0" }}>没有匹配的收藏视频</p>
+            <>
+              <p className="m3-body-md" style={{ textAlign: "center", padding: "48px 0" }}>没有匹配的收藏视频</p>
+              <AccountLoadMoreFooter hasMore={page.hasMore} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
+            </>
           ) : (
             <>
               <ul className="account-two-column">
@@ -389,14 +406,18 @@ export function BilibiliFollowedView() {
   const service = useMemo(() => createBilibiliAccountDataService(auth), [auth]);
   const setView = useAppStore((state) => state.setView);
   const openBilibiliCreator = useAppStore((state) => state.openBilibiliCreator);
+  const showMessage = useM3Feedback().showMessage;
 
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState<{ status: AccountDataLoadStatus; page: number; hasMore: boolean; message?: string } | null>(null);
   const [creators, setCreators] = useState<FollowedCreator[]>([]);
   const [query, setQuery] = useState("");
+  const requestGeneration = useRef(0);
 
   async function load() {
+    const generation = ++requestGeneration.current;
+    setLoadingMore(false);
     if (!auth.currentState().signedIn) {
       setPage({ status: AccountDataLoadStatus.signedOut, page: 1, hasMore: false, message: "请先登录后查看。" });
       setCreators([]);
@@ -405,24 +426,35 @@ export function BilibiliFollowedView() {
     }
     setLoading(true);
     const result = await service.listFollowedCreators(1);
+    if (generation !== requestGeneration.current) return;
     setPage({ status: result.status, page: result.page, hasMore: result.hasMore, message: result.message });
     if (result.status === AccountDataLoadStatus.success) setCreators(result.items);
     setLoading(false);
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    return () => { requestGeneration.current += 1; };
+  }, []);
 
   async function loadMore() {
-    if (!page || loadingMore || !page.hasMore) return;
+    if (!page || loading || loadingMore || !page.hasMore) return;
+    const generation = requestGeneration.current;
     setLoadingMore(true);
     const result = await service.listFollowedCreators(page.page + 1);
+    if (generation !== requestGeneration.current) return;
     if (result.status === AccountDataLoadStatus.success) {
       setCreators((current) => {
         const seen = new Set(current.map((item) => item.mid));
-        return [...current, ...result.items.filter((item) => !seen.has(item.mid))];
+        return [...current, ...result.items.filter((item) => !seen.has(item.mid) && seen.add(item.mid))];
       });
+      setPage({ status: result.status, page: result.page, hasMore: result.hasMore, message: result.message });
+    } else {
+      showMessage(result.message ?? "加载更多关注失败，请稍后重试。");
+      if (result.status === AccountDataLoadStatus.signedOut || result.status === AccountDataLoadStatus.expired) {
+        setPage({ status: result.status, page: result.page, hasMore: result.hasMore, message: result.message });
+      }
     }
-    setPage({ status: result.status, page: result.page, hasMore: result.hasMore, message: result.message });
     setLoadingMore(false);
   }
 
@@ -459,7 +491,10 @@ export function BilibiliFollowedView() {
           ) : creators.length === 0 ? (
             <AccountEmptyState icon="people" text="还没有已关注的 UP 主" />
           ) : filtered.length === 0 ? (
-            <p className="m3-body-md" style={{ textAlign: "center", padding: "48px 0" }}>没有匹配的已关注 UP 主</p>
+            <>
+              <p className="m3-body-md" style={{ textAlign: "center", padding: "48px 0" }}>没有匹配的已关注 UP 主</p>
+              <AccountLoadMoreFooter hasMore={page.hasMore} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
+            </>
           ) : (
             <>
               <ul className="account-two-column">
@@ -508,8 +543,11 @@ export function BilibiliSubscribedCollectionsView() {
   const [page, setPage] = useState<{ status: AccountDataLoadStatus; page: number; hasMore: boolean; message?: string } | null>(null);
   const [collections, setCollections] = useState<SubscribedCollection[]>([]);
   const [query, setQuery] = useState("");
+  const requestGeneration = useRef(0);
 
   async function load() {
+    const generation = ++requestGeneration.current;
+    setLoadingMore(false);
     if (!auth.currentState().signedIn) {
       setPage({ status: AccountDataLoadStatus.signedOut, page: 1, hasMore: false, message: "请先登录后查看。" });
       setCollections([]);
@@ -518,24 +556,35 @@ export function BilibiliSubscribedCollectionsView() {
     }
     setLoading(true);
     const result = await service.listSubscribedCollections(1);
+    if (generation !== requestGeneration.current) return;
     setPage({ status: result.status, page: result.page, hasMore: result.hasMore, message: result.message });
     if (result.status === AccountDataLoadStatus.success) setCollections(result.items);
     setLoading(false);
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    return () => { requestGeneration.current += 1; };
+  }, []);
 
   async function loadMore() {
-    if (!page || loadingMore || !page.hasMore) return;
+    if (!page || loading || loadingMore || !page.hasMore) return;
+    const generation = requestGeneration.current;
     setLoadingMore(true);
     const result = await service.listSubscribedCollections(page.page + 1);
+    if (generation !== requestGeneration.current) return;
     if (result.status === AccountDataLoadStatus.success) {
       setCollections((current) => {
         const seen = new Set(current.map((item) => item.id));
-        return [...current, ...result.items.filter((item) => !seen.has(item.id))];
+        return [...current, ...result.items.filter((item) => !seen.has(item.id) && seen.add(item.id))];
       });
+      setPage({ status: result.status, page: result.page, hasMore: result.hasMore, message: result.message });
+    } else {
+      showMessage(result.message ?? "加载更多订阅失败，请稍后重试。");
+      if (result.status === AccountDataLoadStatus.signedOut || result.status === AccountDataLoadStatus.expired) {
+        setPage({ status: result.status, page: result.page, hasMore: result.hasMore, message: result.message });
+      }
     }
-    setPage({ status: result.status, page: result.page, hasMore: result.hasMore, message: result.message });
     setLoadingMore(false);
   }
 
@@ -587,7 +636,10 @@ export function BilibiliSubscribedCollectionsView() {
               )}
             </div>
           ) : filtered.length === 0 ? (
-            <p className="m3-body-md" style={{ textAlign: "center", padding: "48px 0" }}>没有匹配的订阅合集</p>
+            <>
+              <p className="m3-body-md" style={{ textAlign: "center", padding: "48px 0" }}>没有匹配的订阅合集</p>
+              <AccountLoadMoreFooter hasMore={page.hasMore} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
+            </>
           ) : (
             <>
               <ul className="account-two-column">

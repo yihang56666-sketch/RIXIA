@@ -1,136 +1,68 @@
-import { existsSync, mkdirSync, copyFileSync, cpSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, copyFileSync, cpSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { projectRoot, releaseVersion, run, resetReleaseDirectory, validateWebDist, assertSafeReleasePath, writeReleaseManifest, archiveRelease } from "./release-utils.mjs";
 
-const root = process.cwd();
-const distIndex = path.join(root, "dist", "index.html");
-const outDir = path.join(root, "release", "BEID-0.3.0-windows-portable");
-const zipPath = path.join(root, "release", "BEID-0.3.0-windows-portable.zip");
-const setupPath = path.join(root, "release", "BEID-0.3.0-windows-setup.cmd");
+if (process.platform !== "win32") throw new Error("The portable Node runtime must be packaged on Windows");
+const version = releaseVersion();
+const outDir = path.join(projectRoot, "release", `BEID-${version}-windows-portable`);
+const zipPath = `${outDir}.zip`;
+const setupPath = path.join(projectRoot, "release", `BEID-${version}-windows-portable-setup.cmd`);
 
-function run(command, args) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: root, stdio: "inherit", shell: process.platform === "win32" });
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${command} ${args.join(" ")} exited with ${code}`));
-    });
-  });
-}
-
-if (!existsSync(distIndex)) {
-  await run(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build"]);
-}
-
-rmSync(outDir, { recursive: true, force: true });
+if (!process.argv.includes("--prepared")) await run("npm.cmd", ["run", "build"]);
+validateWebDist(path.join(projectRoot, "dist"));
+assertSafeReleasePath(projectRoot, zipPath);
+assertSafeReleasePath(projectRoot, setupPath);
+resetReleaseDirectory(projectRoot, outDir);
 mkdirSync(path.join(outDir, "runtime"), { recursive: true });
-mkdirSync(path.join(outDir, "app"), { recursive: true });
-
+mkdirSync(path.join(outDir, "app", "electron"), { recursive: true });
 copyFileSync(process.execPath, path.join(outDir, "runtime", "node.exe"));
-cpSync(path.join(root, "dist"), path.join(outDir, "app", "dist"), { recursive: true });
-copyFileSync(path.join(root, "electron", "desktop-server.mjs"), path.join(outDir, "app", "desktop-server.mjs"));
-if (existsSync(path.join(root, "public", "beid-icon.png"))) {
-  copyFileSync(path.join(root, "public", "beid-icon.png"), path.join(outDir, "beid-icon.png"));
+const nodeLicense = path.join(path.dirname(process.execPath), "LICENSE");
+if (existsSync(nodeLicense)) copyFileSync(nodeLicense, path.join(outDir, "runtime", "LICENSE"));
+cpSync(path.join(projectRoot, "dist"), path.join(outDir, "app", "dist"), { recursive: true });
+for (const filename of ["desktop-server.mjs", "portable-launcher.mjs"]) {
+  copyFileSync(path.join(projectRoot, "electron", filename), path.join(outDir, "app", "electron", filename));
+}
+if (existsSync(path.join(projectRoot, "public", "beid-icon.png"))) {
+  copyFileSync(path.join(projectRoot, "public", "beid-icon.png"), path.join(outDir, "beid-icon.png"));
 }
 
-writeFileSync(
-  path.join(outDir, "BEID.cmd"),
-  [
-    "@echo off",
-    "setlocal",
-    "cd /d \"%~dp0\"",
-    "set BEID_DESKTOP_PORT=4173",
-    "start \"BEID-runtime\" /min \"%~dp0runtime\\node.exe\" \"%~dp0app\\desktop-server.mjs\"",
-    "powershell -NoProfile -Command \"Start-Sleep -Milliseconds 800\"",
-    "if exist \"%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe\" (",
-    "  start \"\" \"%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe\" --app=http://127.0.0.1:4173/",
-    ") else if exist \"%ProgramFILES%\\Google\\Chrome\\Application\\chrome.exe\" (",
-    "  start \"\" \"%PROGRAMFILES%\\Google\\Chrome\\Application\\chrome.exe\" --app=http://127.0.0.1:4173/",
-    ") else (",
-    "  start \"\" http://127.0.0.1:4173/",
-    ")",
-    "",
-  ].join("\r\n"),
-  "utf8",
-);
+writeFileSync(path.join(outDir, "BEID.cmd"), [
+  "@echo off", "setlocal", 'wscript.exe "%~dp0launch.vbs"', "",
+].join("\r\n"), "utf8");
 
-writeFileSync(
-  path.join(outDir, "启动BEID.vbs"),
-  [
-    "Set sh = CreateObject(\"Wscript.Shell\")",
-    "Set fso = CreateObject(\"Scripting.FileSystemObject\")",
-    "dir = fso.GetParentFolderName(WScript.ScriptFullName)",
-    "sh.CurrentDirectory = dir",
-    "sh.Environment(\"Process\")(\"BEID_DESKTOP_PORT\") = \"4173\"",
-    "sh.Run \"\"\"\" & dir & \"\\runtime\\node.exe\"\" \"\"\" & dir & \"\\app\\desktop-server.mjs\"\"\", 0, False",
-    "WScript.Sleep 800",
-    "edge = sh.ExpandEnvironmentStrings(\"%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe\")",
-    "chrome = sh.ExpandEnvironmentStrings(\"%PROGRAMFILES%\\Google\\Chrome\\Application\\chrome.exe\")",
-    "If fso.FileExists(edge) Then",
-    "  sh.Run \"\"\"\" & edge & \"\"\" --app=http://127.0.0.1:4173/\", 1, False",
-    "ElseIf fso.FileExists(chrome) Then",
-    "  sh.Run \"\"\"\" & chrome & \"\"\" --app=http://127.0.0.1:4173/\", 1, False",
-    "Else",
-    "  sh.Run \"http://127.0.0.1:4173/\", 1, False",
-    "End If",
-    "",
-  ].join("\r\n"),
-  "utf8",
-);
+writeFileSync(path.join(outDir, "启动BEID.vbs"), "\ufeff" + [
+  'Set sh = CreateObject("Wscript.Shell")',
+  'Set fso = CreateObject("Scripting.FileSystemObject")',
+  'dir = fso.GetParentFolderName(WScript.ScriptFullName)',
+  'sh.CurrentDirectory = dir',
+  'result = sh.Run("""" & dir & "\\runtime\\node.exe"" """ & dir & "\\app\\electron\\portable-launcher.mjs""", 0, True)',
+  'If result <> 0 Then MsgBox "BEID 启动失败。请确认 4173 端口空闲，并已安装 Edge 或 Chrome。", 16, "BEID"',
+  "",
+].join("\r\n"), "utf16le");
+copyFileSync(path.join(outDir, "启动BEID.vbs"), path.join(outDir, "launch.vbs"));
 
-writeFileSync(
-  path.join(outDir, "使用说明.txt"),
-  [
-    "BEID 0.3.0 Windows 便携版",
-    "",
-    "双击「启动BEID.vbs」或 BEID.cmd 即可使用。",
-    "会在本机 127.0.0.1:4173 启动带 B 站媒体代理的本地服务，并用 Edge/Chrome 应用窗口打开。",
-    "手机/平板请安装同目录上一级的 BEID-0.3.0-android-debug.apk。",
-    "",
-  ].join("\r\n"),
-  "utf8",
-);
+writeFileSync(path.join(outDir, "使用说明.txt"), [
+  `BEID ${version} Windows 便携版`, "",
+  "双击「启动BEID.vbs」或 BEID.cmd。仅在本地服务成功监听后打开应用。",
+  "本地服务使用 127.0.0.1:4173；端口被占用时停止，不连接到已有服务。",
+  "需要 Edge 或 Chrome，使用 LOCALAPPDATA/BEID/portable-browser 独立资料目录，不读取默认浏览器账户。",
+  "与旧版本默认浏览器资料目录相互隔离；旧数据请先在旧版本导出后导入。",
+  "首次启动请检查系统防护提示；此版本没有代码签名。", "",
+].join("\r\n"), "utf8");
 
-writeFileSync(
-  setupPath,
-  [
-    "@echo off",
-    "setlocal",
-    "set SRC=%~dp0BEID-0.3.0-windows-portable",
-    "set DEST=%LOCALAPPDATA%\\Programs\\BEID",
-    "if not exist \"%SRC%\\启动BEID.vbs\" (",
-    "  echo 未找到便携版目录: %SRC%",
-    "  pause",
-    "  exit /b 1",
-    ")",
-    "mkdir \"%DEST%\" >nul 2>nul",
-    "xcopy /e /y /q \"%SRC%\\*\" \"%DEST%\\\" >nul",
-    "powershell -NoProfile -Command \"$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\\BEID.lnk'); $s.TargetPath=$env:LOCALAPPDATA+'\\Programs\\BEID\\启动BEID.vbs'; $s.WorkingDirectory=$env:LOCALAPPDATA+'\\Programs\\BEID'; $s.WindowStyle=7; $s.Save(); $sm=[Environment]::GetFolderPath('StartMenu')+'\\Programs'; New-Item -ItemType Directory -Force -Path $sm | Out-Null; $s2=(New-Object -ComObject WScript.Shell).CreateShortcut($sm+'\\BEID.lnk'); $s2.TargetPath=$env:LOCALAPPDATA+'\\Programs\\BEID\\启动BEID.vbs'; $s2.WorkingDirectory=$env:LOCALAPPDATA+'\\Programs\\BEID'; $s2.Save()\"",
-    "echo 已安装到 %DEST%",
-    "echo 桌面和开始菜单已创建 BEID 快捷方式。",
-    "start \"\" \"%DEST%\\启动BEID.vbs\"",
-    "",
-  ].join("\r\n"),
-  "utf8",
-);
+writeFileSync(setupPath, [
+  "@echo off", "setlocal",
+  `set "SRC=%~dp0BEID-${version}-windows-portable"`,
+  'set "DEST=%LOCALAPPDATA%\\Programs\\BEID-portable"',
+  'if not exist "%SRC%\\launch.vbs" exit /b 1',
+  'mkdir "%DEST%" >nul 2>nul',
+  'xcopy /e /y /q "%SRC%\\*" "%DEST%\\" >nul',
+  "if errorlevel 1 exit /b 1",
+  'powershell -NoProfile -Command "$ErrorActionPreference=\'Stop\'; $dest=Join-Path $env:LOCALAPPDATA \'Programs\\BEID-portable\'; $shortcut=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath(\'Desktop\')) \'BEID portable.lnk\')); $shortcut.TargetPath=Join-Path $dest \'launch.vbs\'; $shortcut.WorkingDirectory=$dest; $shortcut.Save()"',
+  "if errorlevel 1 exit /b 1",
+  'start "" "%DEST%\\launch.vbs"', "",
+].join("\r\n"), "utf8");
 
-if (existsSync(zipPath)) rmSync(zipPath);
-await run("powershell.exe", [
-  "-NoProfile",
-  "-Command",
-  `Compress-Archive -LiteralPath '${outDir}' -DestinationPath '${zipPath}' -Force`,
-]);
-
-console.log(
-  JSON.stringify(
-    {
-      ok: true,
-      portableDir: outDir,
-      zipPath,
-      setupPath,
-    },
-    null,
-    2,
-  ),
-);
+writeReleaseManifest(outDir, version, "browser-portable-windows");
+await archiveRelease(projectRoot, outDir, zipPath);
+console.log(JSON.stringify({ ok: true, portableDir: outDir, zipPath, setupPath }, null, 2));

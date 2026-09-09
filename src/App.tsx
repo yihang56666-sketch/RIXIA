@@ -51,6 +51,18 @@ import { attachNativeShareIntent, getNativeShareIntent } from "./lib/bilibili/na
 import { createDiagnosticsService } from "./lib/bilibili/diagnosticsService";
 import { AppUpdateStatus } from "./lib/bilibili/miscServices";
 
+function StorageWriteBanner() {
+  const failed = useAppStore((state) => state.storageWriteFailed);
+  const clear = useAppStore((state) => state.clearStorageWriteFailed);
+  if (!failed) return null;
+  return (
+    <aside className="app-update-notice" role="alert">
+      <span>本机存储已满或不可写，刚才的更改只留在当前会话，关闭应用后会丢失。</span>
+      <button className="ghost-btn compact" onClick={clear}>知道了</button>
+    </aside>
+  );
+}
+
 function AppUpdateBanner() {
   const { result, hasUpdate } = useAppUpdateController();
   const [dismissed, setDismissed] = useState(false);
@@ -83,42 +95,66 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const isDark = Boolean(THEMES.find((item) => item.key === theme)?.dark);
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.dataset.m3Mode = isDark ? "dark" : "light";
-    document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+    const systemPreference = theme === "system"
+      ? window.matchMedia("(prefers-color-scheme: dark)")
+      : undefined;
+    const applyTheme = () => {
+      const isDark = systemPreference?.matches ?? Boolean(THEMES.find((item) => item.key === theme)?.dark);
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.dataset.m3Mode = isDark ? "dark" : "light";
+      document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+    };
+    applyTheme();
+    systemPreference?.addEventListener("change", applyTheme);
+    return () => systemPreference?.removeEventListener("change", applyTheme);
   }, [theme]);
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-
-    const route = (url: string) => void routeIncomingBilibiliUrlAsync(url, {
-      openVideo: (bvid) => useAppStore.getState().openBilibiliVideo(bvid),
-      openSearch: () => useAppStore.getState().setView("search"),
-    });
-
-    void CapacitorApp.getLaunchUrl().then((result) => {
-      if (result?.url) route(result.url);
-    });
-    const listener = CapacitorApp.addListener("appUrlOpen", ({ url }) => route(url));
-    return () => {
-      void listener.then((handle) => handle.remove());
+    let disposed = false;
+    const cancellation = new AbortController();
+    const cleanups: Array<() => Promise<void>> = [];
+    const diagnostics = createDiagnosticsService();
+    const reportError = (error: unknown) => {
+      if (disposed && error instanceof DOMException && error.name === "AbortError") return;
+      diagnostics.record(error, "native-intent");
     };
-  }, []);
-
-  useEffect(() => {
-    if (Capacitor.getPlatform() !== "android") return;
-    let detach: (() => Promise<void>) | undefined;
-    void attachNativeShareIntent(getNativeShareIntent(), (text) => {
-      void routeIncomingBilibiliUrlAsync(text, {
-        openVideo: (bvid) => useAppStore.getState().openBilibiliVideo(bvid),
-        openSearch: () => useAppStore.getState().setView("search"),
-      });
-    }).then((cleanup) => {
-      detach = cleanup;
-    });
+    const runCleanup = (remove: () => Promise<void>) => {
+      void Promise.resolve().then(remove).catch(reportError);
+    };
+    const retainCleanup = (remove: () => Promise<void>) => {
+      if (disposed) runCleanup(remove);
+      else cleanups.push(remove);
+    };
+    const route = (url: string) => {
+      if (disposed) return;
+      void routeIncomingBilibiliUrlAsync(url, {
+        openVideo: (bvid) => {
+          if (!disposed) useAppStore.getState().openBilibiliVideo(bvid);
+        },
+        openSearch: () => {
+          if (!disposed) useAppStore.getState().setView("search");
+        },
+      }).catch(reportError);
+    };
+    void (async () => {
+      const result = await CapacitorApp.getLaunchUrl();
+      if (result?.url) route(result.url);
+    })().catch(reportError);
+    void (async () => {
+      const listener = await CapacitorApp.addListener("appUrlOpen", ({ url }) => route(url));
+      retainCleanup(() => listener.remove());
+    })().catch(reportError);
+    if (Capacitor.getPlatform() === "android") {
+      void (async () => {
+        const detach = await attachNativeShareIntent(getNativeShareIntent(), route, cancellation.signal);
+        retainCleanup(detach);
+      })().catch(reportError);
+    }
     return () => {
-      void detach?.();
+      disposed = true;
+      cancellation.abort();
+      cleanups.forEach(runCleanup);
     };
   }, []);
 
@@ -133,6 +169,7 @@ export default function App() {
         <M3FeedbackProvider>
         <AppUpdateProvider>
         <AppUpdateBanner />
+        <StorageWriteBanner />
         <Shell>
           {view === "today" && <TodayView />}
         {view === "plan" && <PlanView />}

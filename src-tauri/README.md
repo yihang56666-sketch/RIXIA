@@ -1,42 +1,17 @@
-# FocuBili Desktop (Tauri)
+# BEID Tauri — historical scaffold, not a release target
 
-Tauri 2 configuration for packaging FocuBili as a native Windows application.
+Status verified against main `46ff23c` during the native audit dated 2026-09-05 (checks continued on 2026-09-06).
 
-When the app runs in this environment, it can:
+The supported desktop entry in the root package is `electron/main.mjs`; `npm run desktop:win` runs the Windows packaging scripts in `scripts/`. Nothing in that release chain invokes this directory. Android uses Capacitor independently.
 
-- Bypass browser CORS restrictions via @tauri-apps/plugin-http
-- Handle bilibili:// and focubili:// protocol deep links via @tauri-apps/plugin-deep-link
-- Play DASH video streams directly via HTML5 video + MSE (no iframe needed)
-- Receive native notifications and use system services
+This directory preserves an earlier Tauri experiment. Do not treat its old configuration, plugin registration, broad CSP, or frontend Tauri detection branches as evidence of a functioning or security-reviewed Tauri release:
 
-## Prerequisites
+- `Cargo.toml` declares a library, but `src/lib.rs` is absent. Only `src/main.rs` is present.
+- There is no checked-in Cargo lockfile or Tauri capability definition.
+- The previous README claimed notification support, although the Rust entry only registers deep-link, HTTP and shell plugins.
+- The JavaScript config is not evidence that the installed Tauri CLI supports that entry; the root project does not install or call this nested CLI.
+- Rust/Cargo were not available in the audit environment. No Tauri compilation, bundling, protocol registration, capability grant, or device validation was performed.
 
-- Rust 1.70+ (https://rustup.rs/)
-- Node.js 20+
-- Microsoft Visual Studio 2022 with Desktop development with C++ workload
-- WebView2 Runtime (bundled with Windows 11)
+No permissions or capabilities were added to make the scaffold appear operational. Reviving it needs an explicit product decision, a working and locked build, least-privilege Tauri capabilities, protocol/origin validation, and separate regression tests. Use the Electron release path for current desktop work.
 
-## Build
-
-    cd src-tauri
-    npm install
-    npm run build
-
-Output: target/release/bundle/msi or nsis installer.
-
-## Architecture
-
-The Rust main process (src/main.rs) registers three Tauri plugins:
-- tauri-plugin-deep-link: registers bilibili:// and focubili:// URI schemes
-- tauri-plugin-http: provides @tauri-apps/plugin-http for CORS-free HTTP from frontend
-- tauri-plugin-shell: opens external URLs in default browser
-
-The frontend (src/lib/bilibili/httpAdapter.ts) auto-detects the Tauri environment
-via window.__TAURI__ and switches HTTP requests from fetch to Tauri HTTP plugin.
-The same codebase works in browser/PWA, Capacitor Android, and Tauri desktop
-without modification; only the transport layer changes.
-
-## License boundary
-
-Tauri configuration files are part of the FocuBili repository and follow its license.
-Tauri framework itself is MIT/Apache-2.0 dual-licensed.
+See `../docs/NATIVE_AUDIT_2026-09-05.md` for scope, evidence and remaining native release gates.

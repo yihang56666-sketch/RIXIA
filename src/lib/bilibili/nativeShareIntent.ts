@@ -22,16 +22,69 @@ export function getNativeShareIntent(): NativeShareIntentPlugin {
 export async function attachNativeShareIntent(
   plugin: NativeShareIntentPlugin,
   onShare: (text: string) => void,
+  signal?: AbortSignal,
 ): Promise<() => Promise<void>> {
+  const abortError = () => new DOMException("分享监听已取消", "AbortError");
+  if (signal?.aborted) throw abortError();
+  let stopped = false;
   let receivedFromRetainedEvent = false;
-  const listener = await plugin.addListener("shareReceived", ({ text }) => {
-    if (!text?.trim()) return;
-    receivedFromRetainedEvent = true;
-    onShare(text);
+  let listener: Awaited<ReturnType<NativeShareIntentPlugin["addListener"]>> | undefined;
+  let removal: Promise<void> | undefined;
+  let rejectAbort: (error: DOMException) => void = () => undefined;
+  const cancellation = new Promise<never>((_resolve, reject) => {
+    rejectAbort = reject;
   });
-  const pending = await plugin.getPendingText();
-  if (!receivedFromRetainedEvent && pending.text?.trim()) {
-    onShare(pending.text);
+
+  function removeListener(): Promise<void> {
+    if (!listener) return Promise.resolve();
+    removal ??= Promise.resolve().then(() => listener!.remove());
+    return removal;
   }
-  return async () => listener.remove();
+
+  function reportCleanupError(error: unknown): void {
+    console.error("原生分享监听清理失败", error);
+  }
+
+  async function detach(): Promise<void> {
+    stopped = true;
+    signal?.removeEventListener("abort", onAbort);
+    await removeListener();
+  }
+
+  function onAbort(): void {
+    void detach().catch(reportCleanupError);
+    rejectAbort(abortError());
+  }
+
+  signal?.addEventListener("abort", onAbort, { once: true });
+  const initialize = async () => {
+    listener = await plugin.addListener("shareReceived", ({ text }) => {
+      if (stopped || typeof text !== "string" || !text.trim()) return;
+      receivedFromRetainedEvent = true;
+      onShare(text);
+    });
+    if (stopped) {
+      await removeListener().catch(reportCleanupError);
+      throw abortError();
+    }
+    const pending = await plugin.getPendingText();
+    if (stopped) throw abortError();
+    if (!receivedFromRetainedEvent && typeof pending.text === "string" && pending.text.trim()) {
+      onShare(pending.text);
+    }
+    return detach;
+  };
+
+  try {
+    return await Promise.race([initialize(), cancellation]);
+  } catch (error) {
+    if (!stopped) {
+      try {
+        await detach();
+      } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], "原生分享初始化与监听清理失败");
+      }
+    }
+    throw error;
+  }
 }

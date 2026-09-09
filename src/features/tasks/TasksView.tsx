@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { Modal } from "../../components/Modal";
 import { QuickAdd } from "../../components/QuickAdd";
-import { dueLabel, lastNDates, todayKey } from "../../lib/time";
+import { dueLabel, lastNDates } from "../../lib/time";
+import { useCalendarDay } from "../../lib/useCalendarDay";
 import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
 import type { TaskItem } from "../../types";
 
 type Filter = "today" | "open" | "all";
 
-function TaskRow({ item, today }: { item: TaskItem; today: string }) {
+function TaskRow({ item, today, focused = false }: { item: TaskItem; today: string; focused?: boolean }) {
   const { toggleTask, removeTask, updateTask } = useAppStore();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(item.title);
@@ -16,7 +17,7 @@ function TaskRow({ item, today }: { item: TaskItem; today: string }) {
   const dueInfo = dueLabel(item.due, today);
 
   return (
-    <div className="item">
+    <div className={focused ? "item is-focused" : "item"}>
       <button
         className={item.done ? "check on" : "check"}
         onClick={() => toggleTask(item.id)}
@@ -75,9 +76,10 @@ function TaskRow({ item, today }: { item: TaskItem; today: string }) {
 }
 
 export function TasksView({ embedded = false }: { embedded?: boolean } = {}) {
-  const { tasks, addTask, toggleTask } = useAppStore();
-  const [filter, setFilter] = useState<Filter>("today");
-  const today = todayKey();
+  const { tasks, addTask, toggleTask, focusedTaskId } = useAppStore();
+  const today = useCalendarDay();
+  const focusedTask = tasks.find((item) => item.id === focusedTaskId) ?? null;
+  const [filter, setFilter] = useState<Filter>(focusedTask && focusedTask.due !== today ? "open" : "today");
 
   const todayTasks = tasks.filter((item) => item.due === today);
   const openTasks = tasks.filter((item) => !item.done);
@@ -92,7 +94,7 @@ export function TasksView({ embedded = false }: { embedded?: boolean } = {}) {
     <RixiaWorkspacePage title="任务" embedded={embedded}>
     <div className="stack">
       <section className="card">
-        <QuickAdd placeholder="添加今天要做的事" onSubmit={(text) => addTask(text, today)} />
+        <QuickAdd placeholder="添加今天要做的事" onSubmit={addTask} />
       </section>
 
       <section className="card">
@@ -138,7 +140,7 @@ export function TasksView({ embedded = false }: { embedded?: boolean } = {}) {
             {filter === "today" ? "今天没有任务，享受当下或安排一件小事" : filter === "open" ? "没有待办任务，都完成啦" : "还没有任务，先添加一项吧"}
           </p>
         ) : (
-          visible.map((item) => <TaskRow key={item.id} item={item} today={today} />)
+          visible.map((item) => <TaskRow key={item.id} item={item} today={today} focused={item.id === focusedTaskId} />)
         )}
       </section>
 

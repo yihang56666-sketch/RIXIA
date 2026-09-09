@@ -15,7 +15,8 @@ import { useMemo, useState } from "react";
 import { ProgressRing } from "../../components/ProgressRing";
 import { buildTodaySummary, chooseNextAction } from "../../lib/today";
 import { frequencyAwareStreak, frequencyAwareStrength, isHabitDueToday } from "../../lib/habitSchedule";
-import { lastNDates, todayKey } from "../../lib/time";
+import { lastNDates } from "../../lib/time";
+import { useCalendarDay } from "../../lib/useCalendarDay";
 import {
   focusMinutesByDay,
   habitCheckinsByDay,
@@ -75,10 +76,13 @@ export function TodayView() {
     activeFocus,
     resources,
     setView,
+    focusTask,
+    openBilibiliVideo,
+    openCloudResource,
     toggleTask,
     toggleHabitToday,
   } = useAppStore();
-  const today = todayKey();
+  const today = useCalendarDay();
   const [showReviewChart, setShowReviewChart] = useState(false);
 
   const summary = useMemo(
@@ -130,10 +134,19 @@ export function TodayView() {
       return;
     }
     if (action.kind === "task") {
-      setView("plan");
+      focusTask(action.taskId);
       return;
     }
     if (action.kind === "resource") {
+      const resource = resources.find((item) => item.id === action.resourceId);
+      if (resource?.url) {
+        openCloudResource(resource.id);
+        return;
+      }
+      if (resource?.bvid) {
+        openBilibiliVideo(resource.bvid, resource.title);
+        return;
+      }
       setView("library");
       return;
     }
@@ -141,7 +154,7 @@ export function TodayView() {
       setView("inbox");
       return;
     }
-    setView("inbox");
+    setView("plan");
   }
 
   const doneHabits = habits.filter((h) => h.checkedDates.includes(today));
@@ -172,7 +185,7 @@ export function TodayView() {
           <ListTodo size={15} />
           <span><strong>{summary.tasksDone}/{summary.tasksTotal}</strong> 任务</span>
         </button>
-        <button className="status-pill" onClick={() => setView("plan")}>
+        <button className="status-pill" onClick={() => setView("habits")}>
           <Flame size={15} />
           <span><strong>{summary.habitsChecked}/{summary.habitsTotal}</strong> 习惯</span>
         </button>
@@ -185,7 +198,7 @@ export function TodayView() {
           <span><strong>{summary.inboxCount}</strong> 收集</span>
         </button>
         {summary.nextCountdown && summary.nextCountdownDays !== null && (
-          <button className="status-pill" onClick={() => setView("plan")}>
+          <button className="status-pill" onClick={() => setView("countdowns")}>
             <Hourglass size={15} />
             <span><strong>{summary.nextCountdownDays}</strong> 天 · {summary.nextCountdown.title}</span>
           </button>
@@ -262,7 +275,7 @@ export function TodayView() {
         <section className="card">
           <div className="row" style={{ marginBottom: 10 }}>
             <h2>今日习惯</h2>
-            <button className="chip" onClick={() => setView("plan")}>管理</button>
+            <button className="chip" onClick={() => setView("habits")}>管理</button>
           </div>
           {pendingHabits.length === 0 ? (
             <p className="empty">{habits.length === 0 ? "还没有添加习惯" : `${doneHabits.length} 项已打卡`}</p>
@@ -284,7 +297,7 @@ export function TodayView() {
                       {frequencyAwareStrength(item, lastNDates(30, today))}
                     </span>
                   </ProgressRing>
-                  <span className="muted" style={{ fontSize: 13 }}>连续 {frequencyAwareStreak(item, today)} {item.frequency?.type === "weekly-count" ? "周" : "天"}</span>
+                  <span className="muted" style={{ fontSize: 13 }}>连续 {frequencyAwareStreak(item, today)} {item.frequency?.type === "weekly-count" ? "周" : item.frequency?.type === "interval-days" ? "轮" : "天"}</span>
                 </div>
               </div>
             ))

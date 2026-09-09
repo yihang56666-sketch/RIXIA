@@ -96,9 +96,11 @@ export function SettingsView() {
     void focusPreferencesService.saveDoNotDisturbEnabled(enabled);
   }
 
-  function updateStartupUpdateCheck(enabled: boolean) {
+  async function updateStartupUpdateCheck(enabled: boolean) {
+    const previous = startupUpdateCheck;
     setStartupUpdateCheck(enabled);
-    appUpdatePreferencesService.saveStartupCheckEnabled(enabled);
+    const saved = appUpdatePreferencesService.saveStartupCheckEnabled(enabled);
+    if (!saved) setStartupUpdateCheck(previous);
   }
 
   async function selectBackground(file: File | undefined) {

@@ -11,11 +11,13 @@ export function Modal({
   onClose: () => void;
   children: ReactNode;
 }) {
-  useOverlayInteraction(true, onClose);
+  const dialogRef = useOverlayInteraction(true, onClose);
 
   return (
     <div className="modal-overlay" onClick={onClose} role="presentation">
       <section
+        ref={dialogRef}
+        tabIndex={-1}
         className="card modal-card"
         role="dialog"
         aria-modal="true"

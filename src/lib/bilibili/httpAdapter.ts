@@ -125,7 +125,7 @@ export function createJsonRequest(): JsonRequest {
         Origin: "https://www.bilibili.com",
         Accept: "application/json",
       };
-      if (cookie) headers.Cookie = cookie;
+      if (cookie && isAuthenticatedApiUrl(url)) headers.Cookie = cookie;
       const response = await capacitorHttp.request({
         url,
         method: "GET",
@@ -146,7 +146,7 @@ export function createJsonRequest(): JsonRequest {
     };
     // 已登录时把 Cookie 交给代理转发（playurl 等接口可返回登录态清晰度）。
     // 只在请求确实走了本地代理时附加，避免直连 B 站时触发不必要的预检。
-    if (proxiedUrl !== url) {
+    if (proxiedUrl !== url && isAuthenticatedApiUrl(url)) {
       const cookie = readStoredBilibiliCookie();
       if (cookie) headers["X-Beid-Cookie"] = cookie;
     }
@@ -195,7 +195,7 @@ export async function requestJsonWithHeaders(url: string): Promise<HeaderedJsonR
     return {
       body: typeof response.data === "string" ? response.data : JSON.stringify(response.data),
       header(name: string) {
-        const value = headers[name] ?? headers[name.toLowerCase()];
+        const value = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
         return typeof value === "string" && value.length > 0 ? value : null;
       },
     };
@@ -230,14 +230,31 @@ export function readStoredBilibiliCookie(): string | null {
  * 在开发模式下把 B 站 API URL 转换为 Vite 代理路径。
  * 生产模式下直接返回原始 URL（用户需要自行部署反代或使用 Tauri/Capacitor）。
  */
-function proxyUrl(url: string): string {  // 只在 localhost 开发环境下代理
+function isAuthenticatedApiUrl(url: string): boolean {
+  try {
+    const target = new URL(url);
+    return target.origin === "https://api.bilibili.com" && !target.username && !target.password;
+  } catch {
+    return false;
+  }
+}
+
+function proxyUrl(url: string): string {
   const isDev = typeof window !== "undefined" &&
     (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
   if (!isDev) return url;
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return url;
+  }
+  if (target.username || target.password) return url;
+  const route = (prefix: string) => `${prefix}${target.pathname}${target.search}`;
 
-  if (url.startsWith("https://api.bilibili.com")) {
-    if (url.includes("/x/web-interface/wbi/search/type")) {
-      return url.replace("https://api.bilibili.com", "/bili-search-api");
+  if (target.origin === "https://api.bilibili.com") {
+    if (target.pathname === "/x/web-interface/wbi/search/type") {
+      return route("/bili-search-api");
     }
     if (
       url.includes("/x/web-interface/wbi/view") ||
@@ -246,21 +263,21 @@ function proxyUrl(url: string): string {  // 只在 localhost 开发环境下代
       url.includes("/x/player/wbi/playurl") ||
       url.includes("/x/player/playurl")
     ) {
-      return url.replace("https://api.bilibili.com", "/bili-video-api");
+      return route("/bili-video-api");
     }
-    return url.replace("https://api.bilibili.com", "/bili-api");
+    return route("/bili-api");
   }
-  if (url.startsWith("https://s.search.bilibili.com")) {
-    return url.replace("https://s.search.bilibili.com", "/bili-suggest");
+  if (target.origin === "https://s.search.bilibili.com") {
+    return route("/bili-suggest");
   }
-  if (url.startsWith("https://comment.bilibili.com")) {
-    return url.replace("https://comment.bilibili.com", "/bili-comment");
+  if (target.origin === "https://comment.bilibili.com") {
+    return route("/bili-comment");
   }
-  if (url.startsWith("https://aisubtitle.hdslb.com")) {
-    return url.replace("https://aisubtitle.hdslb.com", "/bili-subtitle");
+  if (target.origin === "https://aisubtitle.hdslb.com") {
+    return route("/bili-subtitle");
   }
-  if (url.startsWith("https://passport.bilibili.com")) {
-    return url.replace("https://passport.bilibili.com", "/bili-passport");
+  if (target.origin === "https://passport.bilibili.com") {
+    return route("/bili-passport");
   }
   return url;
 }

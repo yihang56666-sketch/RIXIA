@@ -4,6 +4,11 @@ import { PersonalizationSettingsView } from "./PersonalizationSettingsView";
 import { useAppStore } from "../../store/useAppStore";
 import { AppUpdateProvider } from "./AppUpdateContext";
 import { createAppUpdatePreferencesService } from "../../lib/bilibili/appUpdatePreferences";
+import { M3FeedbackProvider } from "./m3";
+
+const { savePreferences } = vi.hoisted(() => ({
+  savePreferences: vi.fn().mockResolvedValue(true),
+}));
 
 vi.mock("../../lib/bilibili/services", () => ({
   createPlaybackPreferencesService: () => ({
@@ -12,7 +17,7 @@ vi.mock("../../lib/bilibili/services", () => ({
       defaultQualityCellular: 32,
       enableDoubleTapSeek: true,
     }),
-    save: vi.fn().mockResolvedValue(undefined),
+    save: savePreferences,
   }),
 }));
 
@@ -30,7 +35,7 @@ describe("PersonalizationSettingsView startup update toggle", () => {
   });
 
   it("reads and writes through the shared app update preferences service", async () => {
-    render(<AppUpdateProvider><PersonalizationSettingsView /></AppUpdateProvider>);
+    render(<AppUpdateProvider><M3FeedbackProvider><PersonalizationSettingsView /></M3FeedbackProvider></AppUpdateProvider>);
 
     await screen.findByText("启动时检查更新");
     let toggle = updateSwitch();
@@ -52,7 +57,7 @@ describe("PersonalizationSettingsView startup update toggle", () => {
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<AppUpdateProvider><PersonalizationSettingsView /></AppUpdateProvider>);
+    render(<AppUpdateProvider><M3FeedbackProvider><PersonalizationSettingsView /></M3FeedbackProvider></AppUpdateProvider>);
     await screen.findByText("启动时检查更新");
     let toggle = updateSwitch();
     expect(toggle).toHaveAttribute("aria-checked", "false");
@@ -65,13 +70,46 @@ describe("PersonalizationSettingsView startup update toggle", () => {
   });
 
   it("exposes the appearance and backup page from personalization settings", async () => {
-    render(<AppUpdateProvider><PersonalizationSettingsView /></AppUpdateProvider>);
+    render(<AppUpdateProvider><M3FeedbackProvider><PersonalizationSettingsView /></M3FeedbackProvider></AppUpdateProvider>);
     expect(await screen.findByText("外观、密度与备份")).toBeInTheDocument();
   });
 
   it("opens the appearance and backup page from a real button", async () => {
-    render(<AppUpdateProvider><PersonalizationSettingsView /></AppUpdateProvider>);
+    render(<AppUpdateProvider><M3FeedbackProvider><PersonalizationSettingsView /></M3FeedbackProvider></AppUpdateProvider>);
     fireEvent.click(await screen.findByRole("button", { name: "外观、密度与备份" }));
     expect(useAppStore.getState().view).toBe("preferences");
+  });
+
+  it("reverts a playback preference and reports failure when saving fails", async () => {
+    savePreferences.mockResolvedValueOnce(false);
+    render(<AppUpdateProvider><M3FeedbackProvider><PersonalizationSettingsView /></M3FeedbackProvider></AppUpdateProvider>);
+    await screen.findByText("启用双击快进快退");
+
+    const tile = screen.getByText("启用双击快进快退").closest(".m3-list-tile") as HTMLElement;
+    const toggle = tile.querySelector("[role=switch]") as HTMLElement;
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(screen.getByText("设置保存失败，请稍后重试。")).toBeInTheDocument());
+    const reverted = screen.getByText("启用双击快进快退").closest(".m3-list-tile") as HTMLElement;
+    expect(reverted.querySelector("[role=switch]")).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("reverts the startup update toggle when the preference cannot be saved", async () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    render(<AppUpdateProvider><M3FeedbackProvider><PersonalizationSettingsView /></M3FeedbackProvider></AppUpdateProvider>);
+    await screen.findByText("启动时检查更新");
+
+    let toggle = updateSwitch();
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(screen.getByText("设置保存失败，请稍后重试。")).toBeInTheDocument());
+    toggle = updateSwitch();
+    expect(toggle).toHaveAttribute("aria-checked", "true");
   });
 });

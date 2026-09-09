@@ -179,7 +179,7 @@ export function BilibiliSearchView() {
   const [userFilter, setUserFilter] = useState({ ...DEFAULT_USER_SEARCH_FILTER });
   const [openingBvid, setOpeningBvid] = useState<string | null>(null);
   const [addingBvid, setAddingBvid] = useState<string | null>(null);
-  const [learningTaskIds, setLearningTaskIds] = useState<Set<string>>(new Set());
+  const [learningTaskIds, setLearningTaskIds] = useState<Map<string, string>>(new Map());
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [userFilterSheetOpen, setUserFilterSheetOpen] = useState(false);
   const [clearHistoryConfirm, setClearHistoryConfirm] = useState(false);
@@ -188,8 +188,14 @@ export function BilibiliSearchView() {
 
   const suggestionDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchGeneration = useRef(0);
+  const suggestionGeneration = useRef(0);
   const resultScrollRef = useRef<HTMLDivElement | null>(null);
   const knownInitialPartCids = useRef(new Map<string, number>());
+
+  useEffect(() => () => {
+    searchGeneration.current += 1;
+    suggestionGeneration.current += 1;
+  }, []);
 
   useEffect(() => {
     const onResize = () => setWorkspace(window.innerWidth >= 900 && window.innerWidth > window.innerHeight);
@@ -198,7 +204,7 @@ export function BilibiliSearchView() {
   }, []);
 
   const replaceLearningTaskIds = useCallback((entries: LearningListEntry[]) => {
-    setLearningTaskIds(new Set(entries.map((entry) => `${entry.bvid}:${entry.partCid ?? 0}`)));
+    setLearningTaskIds(new Map(entries.map((entry) => [`${entry.bvid}:${entry.partCid ?? 0}`, entry.id])));
   }, []);
 
   useEffect(() => {
@@ -207,6 +213,7 @@ export function BilibiliSearchView() {
   }, [historyService, learningListService, replaceLearningTaskIds]);
 
   useEffect(() => {
+    const generation = ++suggestionGeneration.current;
     if (suggestionDebounce.current) clearTimeout(suggestionDebounce.current);
     const input = keyword.trim();
     if (mode === "users" || input.length === 0 || BV_PATTERN.test(input)) {
@@ -217,13 +224,14 @@ export function BilibiliSearchView() {
       void service
         .suggestKeywords(input)
         .then((values) => {
-          if (keyword.trim() === input) setSuggestions(values);
+          if (generation === suggestionGeneration.current) setSuggestions(values);
         })
         .catch(() => {
-          if (keyword.trim() === input) setSuggestions([]);
+          if (generation === suggestionGeneration.current) setSuggestions([]);
         });
     }, 350);
     return () => {
+      suggestionGeneration.current += 1;
       if (suggestionDebounce.current) clearTimeout(suggestionDebounce.current);
     };
   }, [keyword, mode, service]);
@@ -242,9 +250,12 @@ export function BilibiliSearchView() {
       const effectiveUserFilter = userFilterOverride ?? userFilter;
       const searchMode = modeOverride ?? mode;
       const generation = ++searchGeneration.current;
+      suggestionGeneration.current += 1;
       setFocused(false);
       if (suggestionDebounce.current) clearTimeout(suggestionDebounce.current);
       setLoading(true);
+      setLoadingMore(false);
+      setOpeningBvid(null);
       setHasSubmitted(true);
       setError(null);
       setDirectResult(null);
@@ -334,7 +345,7 @@ export function BilibiliSearchView() {
     } catch {
       // 失败时保留已显示的搜索结果。
     } finally {
-      setLoadingMore(false);
+      if (generation === searchGeneration.current) setLoadingMore(false);
     }
   }
 
@@ -361,24 +372,32 @@ export function BilibiliSearchView() {
     };
     void learningListService
       .add(entry)
-      .then(() => learningListService.list())
-      .then((entries) => {
+      .then(async (saved) => {
+        const entries = await learningListService.list();
+        if (!saved && !entries.some((item) => item.bvid === entry.bvid && (item.partCid ?? 0) === entry.partCid)) {
+          throw new Error("本机存储写入失败。");
+        }
         replaceLearningTaskIds(entries);
-        setAddingBvid(null);
       })
-      .catch(() => setAddingBvid(null));
+      .catch(() => showTransient("加入学习清单失败，请检查本机存储后重试。"))
+      .finally(() => setAddingBvid(null));
   }
 
   function removeVideoFromLearningList(bvid: string, cid: number) {
     if (addingBvid || openingBvid) return;
+    const entryId = learningTaskIds.get(`${bvid}:${cid}`);
+    if (!entryId) return;
     setAddingBvid(bvid);
     void learningListService
-      .remove(`${bvid}:${cid}`)
+      .remove(entryId)
       // 与 add 路径同步刷新 learningTaskIds，否则移除后卡片永远停留在
       // "已在学习清单"状态，无法从搜索结果重新加入。
-      .then(() => learningListService.list())
+      .then((removed) => {
+        if (!removed) throw new Error("本机存储写入失败。");
+        return learningListService.list();
+      })
       .then((entries) => replaceLearningTaskIds(entries))
-      .catch(() => {})
+      .catch(() => showTransient("移出学习清单失败，请检查本机存储后重试。"))
       .finally(() => setAddingBvid(null));
   }
 
@@ -389,13 +408,16 @@ export function BilibiliSearchView() {
 
   async function openSearchResult(result: VideoSearchResult) {
     if (openingBvid || addingBvid) return;
+    const generation = searchGeneration.current;
     setOpeningBvid(result.bvid);
     try {
       const video = await service.lookupVideo(result.bvid);
+      if (generation !== searchGeneration.current) return;
       knownInitialPartCids.current.set(result.bvid, video.parts[0]?.cid ?? 0);
       setOpeningBvid(null);
       openVideo(video);
     } catch (err) {
+      if (generation !== searchGeneration.current) return;
       setOpeningBvid(null);
       openBilibiliVideo(result.bvid, result.title);
     }
@@ -431,6 +453,11 @@ export function BilibiliSearchView() {
 
   function changeMode(next: Mode) {
     if (next === mode) return;
+    searchGeneration.current += 1;
+    suggestionGeneration.current += 1;
+    setLoading(false);
+    setLoadingMore(false);
+    setOpeningBvid(null);
     setMode(next);
     setDirectResult(null);
     setVideoResults([]);
@@ -446,6 +473,11 @@ export function BilibiliSearchView() {
   }
 
   function clearInput() {
+    searchGeneration.current += 1;
+    suggestionGeneration.current += 1;
+    setLoading(false);
+    setLoadingMore(false);
+    setOpeningBvid(null);
     if (suggestionDebounce.current) clearTimeout(suggestionDebounce.current);
     setKeyword("");
     setDirectResult(null);
@@ -608,6 +640,11 @@ export function BilibiliSearchView() {
             if (isDirect && directResult) openVideo(directResult);
             else void openSearchResult(result);
           }}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
+            event.preventDefault();
+            event.currentTarget.click();
+          }}
         >
           <Thumbnail result={result} episodeCountText={episodeText} />
           <span style={{ width: 12 }} />
@@ -646,7 +683,11 @@ export function BilibiliSearchView() {
   function UserResultCard({ result }: { result: UserSearchResult }) {
     return (
       <section className="m3-card">
-        <div className="m3-list-tile" role="button" tabIndex={0} aria-label={result.name} style={{ padding: "8px 12px", cursor: "pointer" }} onClick={() => void openUserResult(result)}>
+        <div className="m3-list-tile" role="button" tabIndex={0} aria-label={result.name} style={{ padding: "8px 12px", cursor: "pointer" }} onClick={() => void openUserResult(result)} onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.currentTarget.click();
+        }}>
           <span className="m3-avatar" style={{ width: 56, height: 56 }}>
             {result.avatarUrl ? <img src={result.avatarUrl} alt="" referrerPolicy="no-referrer" /> : <Mi name="person" />}
           </span>
@@ -880,10 +921,13 @@ export function BilibiliSearchView() {
               <button
                 className="m3-filled-btn"
                 onClick={() => {
-                  void historyService.clear().then(() => historyService.list()).then((values) => {
+                  void historyService.clear().then((cleared) => {
+                    if (!cleared) throw new Error("本机存储写入失败。");
+                    return historyService.list();
+                  }).then((values) => {
                     setHistory(values);
                     setClearHistoryConfirm(false);
-                  });
+                  }).catch(() => showTransient("清除搜索记录失败，请检查本机存储后重试。"));
                 }}
               >
                 清除

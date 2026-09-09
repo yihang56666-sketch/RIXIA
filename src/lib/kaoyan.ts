@@ -93,7 +93,11 @@ export function nextReviewDue(fromDate: string, stage: number): string {
 /** 复习一次后的新阶段：记得 → 下一档（走完最后一档视为掌握）；忘了 → 归零。 */
 export function nextReviewStage(stage: number, remembered: boolean): number {
   if (!remembered) return 0;
-  return Math.min(stage + 1, REVIEW_INTERVAL_DAYS.length - 1);
+  return Math.min(stage + 1, REVIEW_INTERVAL_DAYS.length);
+}
+
+export function isReviewMastered(item: ReviewItem): boolean {
+  return item.stage >= REVIEW_INTERVAL_DAYS.length && item.history.at(-1)?.remembered === true;
 }
 
 export interface ReviewStats {
@@ -108,7 +112,7 @@ export function reviewStats(items: ReviewItem[], today: string): ReviewStats {
   let upcoming = 0;
   let mastered = 0;
   for (const item of items) {
-    if (item.stage >= REVIEW_INTERVAL_DAYS.length - 1 && item.history.at(-1)?.remembered) {
+    if (isReviewMastered(item)) {
       mastered += 1;
       continue;
     }

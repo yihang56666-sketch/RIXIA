@@ -47,13 +47,12 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const inputRef = useRef<HTMLInputElement>(null);
   const activeItemRef = useRef<HTMLButtonElement | null>(null);
 
-  useOverlayInteraction(open, onClose);
+  const dialogRef = useOverlayInteraction(open, onClose);
 
   useEffect(() => {
     if (open) {
       setQuery("");
       setActiveIndex(0);
-      window.setTimeout(() => inputRef.current?.focus(), 30);
     }
   }, [open]);
 
@@ -213,6 +212,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   return (
     <div className="palette-overlay" onClick={onClose} role="presentation" onKeyDown={handleKeyDown}>
       <section
+        ref={dialogRef}
+        tabIndex={-1}
         className="card palette-card"
         role="dialog"
         aria-modal="true"

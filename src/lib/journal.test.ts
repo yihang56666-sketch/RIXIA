@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { extractTags, extractWikiLinks } from "./journal";
 
 describe("extractTags", () => {
+  it("accepts one-character Chinese and ASCII tags", () => {
+    expect(extractTags("#数 #A #数")).toEqual(["数", "A"]);
+  });
+
   it("extracts #tags from markdown text", () => {
     const tags = extractTags("今天 #学习 了 #运动 一下");
     expect(tags).toEqual(["学习", "运动"]);

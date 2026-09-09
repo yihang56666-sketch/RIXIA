@@ -23,6 +23,7 @@ import { THEME_MIGRATION, VIEW_TITLES } from "../catalog";
 import { enforceDataUrlBudget } from "./backgroundImage";
 import { sanitizeCompanionBackup } from "./companionBackup";
 import { identifyResourceSource, normalizeResourceLink } from "./resourceSources";
+import { REVIEW_INTERVAL_DAYS } from "./kaoyan";
 
 const NEW_THEME_KEYS = new Set<ThemeName>([
   "porcelain", "graphite", "sage", "aurora", "rosewood",
@@ -37,10 +38,22 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function migrateDayKeys(value: unknown): string[] {
+  return [...new Set(asArray<unknown>(value, []).filter((entry): entry is string => {
+    if (typeof entry !== "string" || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(entry)) return false;
+    const date = new Date(entry + "T00:00:00.000Z");
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === entry;
+  }))];
+}
+
 function migrateTheme(theme: unknown): ThemeName {
   if (typeof theme === "string") {
     if (NEW_THEME_KEYS.has(theme as ThemeName)) return theme as ThemeName;
-    if (THEME_MIGRATION[theme]) return THEME_MIGRATION[theme];
+    if (Object.prototype.hasOwnProperty.call(THEME_MIGRATION, theme)) return THEME_MIGRATION[theme];
   }
   return "porcelain";
 }
@@ -60,11 +73,11 @@ function migrateResource(input: unknown): CourseResource | null {
     statusRaw === "in-progress" || statusRaw === "completed" ? statusRaw : "saved";
   const lastOpenedAt = typeof input.lastOpenedAt === "string" ? input.lastOpenedAt : undefined;
   const progressSeconds =
-    typeof input.progressSeconds === "number" && input.progressSeconds >= 0
+    isFiniteNumber(input.progressSeconds) && input.progressSeconds >= 0
       ? input.progressSeconds
       : undefined;
   const durationSeconds =
-    typeof input.durationSeconds === "number" && input.durationSeconds >= 0
+    isFiniteNumber(input.durationSeconds) && input.durationSeconds >= 0
       ? input.durationSeconds
       : undefined;
   const episodeId = typeof input.episodeId === "string" ? input.episodeId : undefined;
@@ -79,7 +92,7 @@ function migrateTimestampNote(input: unknown): TimestampNote | null {
   if (!isObject(input)) return null;
   const id = typeof input.id === "string" ? input.id : "";
   const resourceId = typeof input.resourceId === "string" ? input.resourceId : "";
-  const seconds = typeof input.seconds === "number" && input.seconds >= 0 ? input.seconds : -1;
+  const seconds = isFiniteNumber(input.seconds) && input.seconds >= 0 ? input.seconds : -1;
   const body = typeof input.body === "string" ? input.body : "";
   const createdAt = typeof input.createdAt === "string" ? input.createdAt : new Date().toISOString();
   if (!id || !resourceId || seconds < 0 || !body.trim()) return null;
@@ -90,7 +103,7 @@ function migrateFocusSession(input: unknown): FocusSession | null {
   if (!isObject(input)) return null;
   const id = typeof input.id === "string" ? input.id : "";
   const date = typeof input.date === "string" ? input.date : "";
-  const minutes = typeof input.minutes === "number" && input.minutes > 0 ? input.minutes : 0;
+  const minutes = isFiniteNumber(input.minutes) && input.minutes > 0 ? input.minutes : 0;
   const completedAt = typeof input.completedAt === "string" ? input.completedAt : "";
   if (!id || !date || !completedAt || minutes <= 0) return null;
   const resourceId = typeof input.resourceId === "string" ? input.resourceId : undefined;
@@ -108,19 +121,22 @@ function migrateActiveFocus(input: unknown): ActiveFocus | null {
   const phase = input.phase === "short-break" || input.phase === "long-break"
     ? input.phase
     : "focus";
+  const endsAtMs = isFiniteNumber(input.endsAtMs) ? input.endsAtMs : null;
+  const countupStartedAtMs = isFiniteNumber(input.countupStartedAtMs) ? input.countupStartedAtMs : null;
+  const hasRunningAnchor = mode === "countup" ? countupStartedAtMs !== null : endsAtMs !== null;
   return {
     startedAt,
     mode,
     resourceId,
     episodeId,
     phase,
-    running: typeof input.running === "boolean" ? input.running : undefined,
-    endsAtMs: typeof input.endsAtMs === "number" ? input.endsAtMs : null,
+    running: typeof input.running === "boolean" ? input.running && hasRunningAnchor : undefined,
+    endsAtMs,
     remainingSeconds:
       typeof input.remainingSeconds === "number" && Number.isFinite(input.remainingSeconds) && input.remainingSeconds >= 0
         ? Math.round(input.remainingSeconds)
         : undefined,
-    countupStartedAtMs: typeof input.countupStartedAtMs === "number" ? input.countupStartedAtMs : null,
+    countupStartedAtMs,
     countupElapsedMs:
       typeof input.countupElapsedMs === "number" && Number.isFinite(input.countupElapsedMs) && input.countupElapsedMs >= 0
         ? Math.round(input.countupElapsedMs)
@@ -139,8 +155,7 @@ const LEGACY_VIEW_REDIRECTS: Record<string, AppState["view"]> = {
 
 function normalizeView(input: unknown): AppState["view"] {
   if (typeof input !== "string") return "focus-dashboard";
-  const redirected = LEGACY_VIEW_REDIRECTS[input];
-  if (redirected) return redirected;
+  if (Object.prototype.hasOwnProperty.call(LEGACY_VIEW_REDIRECTS, input)) return LEGACY_VIEW_REDIRECTS[input];
   // 未知的 view（损坏的快照或未来重命名的键）回退到默认首页，避免白屏。
   if (Object.prototype.hasOwnProperty.call(VIEW_TITLES, input)) {
     return input as AppState["view"];
@@ -161,11 +176,11 @@ function migrateHabitFrequency(input: unknown): HabitFrequency {
   if (typeof input !== "object" || input === null) return { type: "daily" };
   const obj = input as Record<string, unknown>;
   if (obj.type === "weekly-count") {
-    const target = typeof obj.target === "number" && obj.target > 0 ? Math.min(7, Math.round(obj.target)) : 3;
+    const target = isFiniteNumber(obj.target) && obj.target > 0 ? Math.max(1, Math.min(7, Math.round(obj.target))) : 3;
     return { type: "weekly-count", target };
   }
   if (obj.type === "interval-days") {
-    const interval = typeof obj.interval === "number" && obj.interval > 0 ? Math.min(365, Math.round(obj.interval)) : 1;
+    const interval = isFiniteNumber(obj.interval) && obj.interval > 0 ? Math.max(1, Math.min(365, Math.round(obj.interval))) : 1;
     return { type: "interval-days", interval };
   }
   return { type: "daily" };
@@ -181,7 +196,7 @@ function migrateHabit(input: unknown): HabitItem | null {
     id,
     title,
     createdAt,
-    checkedDates: asArray<string>(input.checkedDates, []),
+    checkedDates: migrateDayKeys(input.checkedDates),
     frequency: migrateHabitFrequency(input.frequency),
     color: typeof input.color === "string" ? input.color : undefined,
     reminderTime: typeof input.reminderTime === "string" ? input.reminderTime : undefined,
@@ -192,10 +207,10 @@ function migrateFocusRounds(input: unknown): FocusRounds {
   const fallback: FocusRounds = { workMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, longBreakEvery: 4 };
   if (!isObject(input)) return fallback;
   const obj = input as Record<string, unknown>;
-  const workRaw = typeof obj.workMinutes === "number" ? obj.workMinutes : fallback.workMinutes;
-  const shortRaw = typeof obj.shortBreakMinutes === "number" ? obj.shortBreakMinutes : fallback.shortBreakMinutes;
-  const longRaw = typeof obj.longBreakMinutes === "number" ? obj.longBreakMinutes : fallback.longBreakMinutes;
-  const everyRaw = typeof obj.longBreakEvery === "number" ? obj.longBreakEvery : fallback.longBreakEvery;
+  const workRaw = isFiniteNumber(obj.workMinutes) ? obj.workMinutes : fallback.workMinutes;
+  const shortRaw = isFiniteNumber(obj.shortBreakMinutes) ? obj.shortBreakMinutes : fallback.shortBreakMinutes;
+  const longRaw = isFiniteNumber(obj.longBreakMinutes) ? obj.longBreakMinutes : fallback.longBreakMinutes;
+  const everyRaw = isFiniteNumber(obj.longBreakEvery) ? obj.longBreakEvery : fallback.longBreakEvery;
   return {
     workMinutes: Math.max(1, Math.min(120, Math.round(workRaw))),
     shortBreakMinutes: Math.max(0, Math.min(60, Math.round(shortRaw))),
@@ -242,7 +257,7 @@ function migrateReviewItem(input: unknown): ReviewItem | null {
   const sourceType = input.sourceType === "wrong-question" || input.sourceType === "word" ? input.sourceType : "custom";
   if (!id || !title || !dueDate || !createdAt) return null;
   const stage = typeof input.stage === "number" && Number.isFinite(input.stage)
-    ? Math.max(0, Math.min(5, Math.round(input.stage)))
+    ? Math.max(0, Math.min(REVIEW_INTERVAL_DAYS.length, Math.round(input.stage)))
     : 0;
   const history = asArray<unknown>(input.history, [])
     .filter(isObject)
@@ -370,6 +385,7 @@ export function migratePersistedState(
     .filter((item): item is FocusSession => item !== null);
 
   const activeFocus = migrateActiveFocus(state.activeFocus);
+  const playbackTarget = isObject(state.activeBilibiliPlaybackTarget) ? state.activeBilibiliPlaybackTarget : null;
 
   return {
     theme,
@@ -408,7 +424,7 @@ export function migratePersistedState(
       if (!id || !subjectId || !title || !startDate || !endDate || !createdAt) return null;
       return {
         id, subjectId, title, startDate, endDate,
-        completedDates: asArray<string>(obj.completedDates, []),
+        completedDates: migrateDayKeys(obj.completedDates),
         createdAt,
       };
     }),
@@ -435,16 +451,24 @@ export function migratePersistedState(
     }),
     kaoyanExamDate: typeof state.kaoyanExamDate === "string" ? state.kaoyanExamDate : null,
     focusMinutes:
-      typeof state.focusMinutes === "number" && state.focusMinutes > 0
-        ? state.focusMinutes
+      isFiniteNumber(state.focusMinutes) && state.focusMinutes > 0
+        ? Math.max(1, Math.min(120, state.focusMinutes))
         : 25,
     focusSessions,
     focusGoalMinutes:
-      typeof state.focusGoalMinutes === "number" && state.focusGoalMinutes > 0
-        ? state.focusGoalMinutes
+      isFiniteNumber(state.focusGoalMinutes) && state.focusGoalMinutes > 0
+        ? Math.max(15, Math.min(600, state.focusGoalMinutes))
         : 120,
     focusRounds: migrateFocusRounds(state.focusRounds),
     activeFocus,
+    activeBilibiliBvid: typeof state.activeBilibiliBvid === "string" ? state.activeBilibiliBvid : null,
+    activeBilibiliPlaybackTarget: playbackTarget ? {
+      cid: typeof playbackTarget.cid === "number" && Number.isInteger(playbackTarget.cid) && playbackTarget.cid > 0
+        ? playbackTarget.cid : 0,
+      seconds: typeof playbackTarget.seconds === "number" && Number.isFinite(playbackTarget.seconds) && playbackTarget.seconds >= 0
+        ? playbackTarget.seconds : 0,
+    } : null,
+    loginAutoOfficial: state.loginAutoOfficial === true,
     activeCloudResourceId: typeof state.activeCloudResourceId === "string" ? state.activeCloudResourceId : null,
     resources,
     timestampNotes,

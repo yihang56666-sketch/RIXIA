@@ -7,7 +7,7 @@
  * 拦截退出确认 + 删除前二次确认。
  */
 
-import { useState, type ReactNode, type WheelEvent } from "react";
+import { useEffect, useRef, useState, type ReactNode, type WheelEvent } from "react";
 import { Calendar, Clock3, Film, Loader2, Maximize2, Play, Save, Share2, Trash2, X } from "lucide-react";
 import { createBilibiliPublicContentService } from "../../lib/bilibili/publicContentService";
 import type { VideoNote } from "../../lib/bilibili/types";
@@ -80,10 +80,17 @@ export function VideoNoteDetailDialog({
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [viewingFrame, setViewingFrame] = useState(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const hasUnsavedChanges = title.trim() !== note.title || body.trim() !== note.body;
 
   async function handleSave() {
+    if (saving) return;
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
       setMessage("请填写笔记标题");
@@ -91,10 +98,14 @@ export function VideoNoteDetailDialog({
     }
     setSaving(true);
     const updated = { ...note, title: trimmedTitle, body: body.trim(), updatedAt: new Date().toISOString() };
-    const saved = await onSave(updated);
-    setSaving(false);
-    if (saved) setMessage("笔记已保存");
-    else setMessage("保存失败，请稍后重试");
+    try {
+      const saved = await onSave(updated);
+      setMessage(saved ? "笔记已保存" : "保存失败，请稍后重试");
+    } catch {
+      setMessage("保存失败，请稍后重试");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleOpenSourceVideo() {
@@ -102,9 +113,11 @@ export function VideoNoteDetailDialog({
     setOpeningVideo(true);
     try {
       await bilibiliService.lookupVideo(note.bvid);
+      if (!mounted.current) return;
       setOpeningVideo(false);
       onOpenVideo();
     } catch {
+      if (!mounted.current) return;
       setOpeningVideo(false);
       setMessage("暂时无法打开这条笔记对应的视频。");
     }

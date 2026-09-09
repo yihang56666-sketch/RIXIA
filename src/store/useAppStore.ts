@@ -37,6 +37,8 @@ import type {
 
 interface AppActions {
   setView: (view: ViewKey) => void;
+  focusTask: (taskId: string) => void;
+  clearStorageWriteFailed: () => void;
   setTheme: (theme: AppState["theme"]) => void;
   setDensity: (density: Density) => void;
   setBackgroundImage: (backgroundImage: string | null) => void;
@@ -106,6 +108,7 @@ interface AppActions {
 }
 
 const defaultTools: ToolKey[] = ["tasks", "habits", "notes", "countdowns", "focus", "videos"];
+let lastStorageWriteFailed = false;
 
 /** 配额超限等写入异常不应炸掉调用方（否则每个 store action 都会抛错）。 */
 const safeStorage: StateStorage = {
@@ -117,12 +120,24 @@ const safeStorage: StateStorage = {
     }
   },
   setItem: (name, value) => {
+    lastStorageWriteFailed = false;
     try {
       localStorage.setItem(name, value);
+      queueMicrotask(() => {
+        if (useAppStore.getState().storageWriteFailed) {
+          useAppStore.setState({ storageWriteFailed: false });
+        }
+      });
     } catch (error) {
+      lastStorageWriteFailed = true;
       // QuotaExceededError 等：保留内存态，等待下次成功写入。
       // 完全静默会让"数据早已不再落盘"无从察觉（重启后全部回退），至少留痕。
       console.warn(`[beid] 持久化写入失败（${name}），数据仅保留在内存中`, error);
+      queueMicrotask(() => {
+        if (!useAppStore.getState().storageWriteFailed) {
+          useAppStore.setState({ storageWriteFailed: true });
+        }
+      });
     }
   },
   removeItem: (name) => {
@@ -147,6 +162,8 @@ const initialState: Omit<
   activeBilibiliFavoriteFolder: null,
   loginAutoOfficial: false,
   pendingBilibiliSearch: null,
+  focusedTaskId: null,
+  storageWriteFailed: false,
   enabledTools: defaultTools,
   inbox: [],
   tasks: [],
@@ -177,7 +194,12 @@ export const useAppStore = create<AppState & AppActions>()(
   persist(
     (set, get) => ({
       ...initialState,
-      setView: (view) => set({ view }),
+      setView: (view) => set({
+        view,
+        focusedTaskId: view === "plan" ? get().focusedTaskId : null,
+      }),
+      focusTask: (taskId) => set({ view: "plan", focusedTaskId: taskId }),
+      clearStorageWriteFailed: () => set({ storageWriteFailed: false }),
       setTheme: (theme) => set({ theme }),
       setDensity: (density) => set({ density }),
       // 超预算的背景 data URL 会把整个持久化炸成静默失败，在唯一变更点拦截。
@@ -510,11 +532,10 @@ export const useAppStore = create<AppState & AppActions>()(
         },
       }),
       addResource: (input, title) => {
-        const bvid = extractBvid(input);
-        if (!bvid) {
-          const source = identifyResourceSource(input);
-          const url = source && source !== "bilibili" ? normalizeResourceLink(input) : null;
-          if (!source || source === "bilibili" || !url) return null;
+        const source = identifyResourceSource(input);
+        if (source && source !== "bilibili") {
+          const url = normalizeResourceLink(input);
+          if (!url) return null;
           if (get().resources.some((item) => item.url === url)) return null;
           const external: CourseResource = {
             id: createId(),
@@ -528,6 +549,8 @@ export const useAppStore = create<AppState & AppActions>()(
           set((state) => ({ resources: [external, ...state.resources] }));
           return external;
         }
+        const bvid = extractBvid(input);
+        if (!bvid) return null;
         if (get().resources.some((item) => item.bvid === bvid && !item.url)) return null;
         const item: CourseResource = {
           id: createId(),
@@ -662,7 +685,11 @@ export const useAppStore = create<AppState & AppActions>()(
         });
         // 播放器笔记/学习清单/专注历史/观看历史住在独立存储键里；
         // companion 块存在才覆盖（旧版备份没有这块，保留设备现有数据）。
-        if (data.companion) importCompanionBackup(data.companion);
+        const rootWriteFailed = lastStorageWriteFailed;
+        const failedKeys = data.companion ? importCompanionBackup(data.companion) : [];
+        if (rootWriteFailed || failedKeys.length > 0) {
+          throw new Error("备份未完整写入本机存储。请勿关闭应用或删除原始备份；释放存储空间后重新导入。");
+        }
       },
       exportBackup: () => {
         const state = get();
@@ -735,6 +762,10 @@ export const useAppStore = create<AppState & AppActions>()(
         journals: state.journals,
       }),
       migrate: (persisted, version) => migratePersistedState(persisted, version) as unknown as AppState & AppActions,
+      merge: (persisted, current) => {
+        if (!persisted || typeof persisted !== "object" || Array.isArray(persisted)) return current;
+        return { ...current, ...migratePersistedState(persisted, 3) };
+      },
     },
   ),
 );

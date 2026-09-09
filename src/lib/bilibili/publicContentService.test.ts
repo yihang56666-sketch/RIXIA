@@ -270,6 +270,18 @@ describe("BilibiliPublicContentService", () => {
     await expect(service.searchVideos("  ")).rejects.toBeInstanceOf(BilibiliLookupError);
   });
 
+  it.each(["searchVideos", "searchUsers"] as const)("%s preserves negative business errors", async (method) => {
+    const service = createBilibiliPublicContentService(async () => JSON.stringify({ code: -352, message: "风控校验失败" }));
+
+    await expect(service[method]("高数")).rejects.toThrow("风控校验失败（错误码：-352）");
+  });
+
+  it("lookupVideo preserves the original negative business code and message", async () => {
+    const service = createBilibiliPublicContentService(async () => JSON.stringify({ code: -404, message: "视频不存在" }));
+
+    await expect(service.lookupVideo("BV1GJ411x7h7")).rejects.toThrow("无法查询这支公开视频：视频不存在（错误码：-404）");
+  });
+
   it("searchUsers parses user results", async () => {
     const service = makeService({ "/x/web-interface/wbi/search/type": SAMPLE_USER_SEARCH });
     const page = await service.searchUsers("考研");

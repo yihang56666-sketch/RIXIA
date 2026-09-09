@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsView } from "./SettingsView";
 
 const loadStartupCheckEnabled = vi.fn().mockReturnValue(true);
-const saveStartupCheckEnabled = vi.fn();
+const saveStartupCheckEnabled = vi.fn().mockReturnValue(true);
 
 const save = vi.fn().mockResolvedValue(true);
 const saveDanmaku = vi.fn().mockResolvedValue(true);

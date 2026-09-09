@@ -89,6 +89,46 @@ describe("Bilibili QR login transport", () => {
     expect(result.status).toBe(BilibiliQrLoginStatus.scanned);
     expect(result.cookieHeader).toBe("");
   });
+
+  it("does not confirm a poll response without a status code", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 0, data: {} }), { status: 200 })));
+
+    await expect(createBilibiliQrLoginService().poll("key-1")).rejects.toThrow("状态码");
+  });
+});
+
+describe("Bilibili account request isolation", () => {
+  afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); });
+
+  it.each(["signOut", "switchAccount"])("does not restore an old profile after %s during nav resolution", async (action) => {
+    localStorage.clear();
+    const cookieStore = createBilibiliCookieStore();
+    const auth = createBilibiliAuthService(cookieStore);
+    auth.signIn("SESSDATA=old", {});
+    let releaseNav!: (response: Response) => void;
+    const fetchMock = vi.fn().mockImplementationOnce(() => new Promise<Response>((resolve) => { releaseNav = resolve; }))
+      .mockResolvedValue(new Response(JSON.stringify({ code: 0, data: { list: [], total: 0 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = createBilibiliAccountDataService(auth, cookieStore).listFollowedCreators(3);
+
+    if (action === "signOut") auth.signOut();
+    else auth.signIn("SESSDATA=new", { mid: 99, userName: "new account" });
+    releaseNav(new Response(JSON.stringify({ code: 0, data: { isLogin: true, mid: 42, uname: "old account" } }), { status: 200 }));
+    await pending;
+
+    expect(auth.currentState()).toEqual(action === "signOut" ? { signedIn: false } : { signedIn: true, mid: 99, userName: "new account", avatarUrl: undefined });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves nav business errors while resolving a missing mid", async () => {
+    localStorage.clear();
+    const cookieStore = createBilibiliCookieStore();
+    const auth = createBilibiliAuthService(cookieStore);
+    auth.signIn("SESSDATA=old", {});
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: -101, data: null }), { status: 200 })));
+
+    await expect(createBilibiliAccountDataService(auth, cookieStore).listFollowedCreators(1)).resolves.toMatchObject({ status: AccountDataLoadStatus.expired });
+  });
 });
 
 describe("Bilibili account transport", () => {

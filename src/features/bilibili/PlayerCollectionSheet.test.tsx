@@ -25,6 +25,7 @@ describe("PlayerCollectionSheet", () => {
     render(<PlayerCollectionSheet collection={collection} currentBvid="BV-current" onClose={onClose} onOpenVideo={onOpenVideo} />);
 
     expect(screen.getByRole("dialog", { name: "合集 · 前端入门合集" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "合集 · 前端入门合集" })).toContainElement(document.activeElement as HTMLElement);
     expect(screen.getByRole("button", { name: "正在播放 第一讲" })).toBeDisabled();
 
     fireEvent.change(screen.getByRole("searchbox", { name: "搜索合集视频" }), { target: { value: "第二" } });

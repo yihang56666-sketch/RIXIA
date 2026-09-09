@@ -263,6 +263,8 @@ export interface AppState {
   activeBilibiliFavoriteFolder: { mediaId: number; title: string; coverUrl: string; mediaCount: number; isAvailable: boolean } | null;
   loginAutoOfficial: boolean;
   pendingBilibiliSearch: string | null;
+  focusedTaskId: string | null;
+  storageWriteFailed: boolean;
   resources: CourseResource[];
   timestampNotes: TimestampNote[];
   journals: JournalEntry[];

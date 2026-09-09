@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createJsonRequest, refererForBiliUrl } from "./httpAdapter";
+import { createJsonRequest, refererForBiliUrl, requestJsonWithHeaders } from "./httpAdapter";
 
 describe("createJsonRequest", () => {
   afterEach(() => {
@@ -45,6 +45,36 @@ describe("createJsonRequest", () => {
     expect(nativeRequest).toHaveBeenCalledWith(expect.objectContaining({
       headers: expect.objectContaining({ Cookie: "SESSDATA=test; bili_jct=test" }),
     }));
+  });
+
+  it.each(["https://subtitle.example.test/cues.json", "https://api.bilibili.com.example.test/data"])("does not send login cookies to %s", async (url) => {
+    localStorage.setItem("rixia_bilibili_cookie_v1", "SESSDATA=test; bili_jct=test");
+    const nativeRequest = vi.fn().mockResolvedValue({ status: 200, data: "{}", headers: {} });
+    vi.stubGlobal("window", { Capacitor: { isNativePlatform: () => true }, CapacitorHttp: { request: nativeRequest } });
+
+    await createJsonRequest()(url);
+
+    expect(nativeRequest.mock.calls[0]?.[0].headers).not.toHaveProperty("Cookie");
+  });
+
+  it("does not route lookalike API hosts through the authenticated local proxy", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    localStorage.setItem("rixia_bilibili_cookie_v1", "SESSDATA=test");
+
+    await createJsonRequest()("https://api.bilibili.com.example.test/data");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.bilibili.com.example.test/data");
+    expect(fetchMock.mock.calls[0]?.[1].headers).not.toHaveProperty("X-Beid-Cookie");
+  });
+
+  it("reads native response headers case-insensitively", async () => {
+    const nativeRequest = vi.fn().mockResolvedValue({ status: 200, data: "{}", headers: { "Set-Cookie": "SESSDATA=test" } });
+    vi.stubGlobal("window", { Capacitor: { isNativePlatform: () => true }, CapacitorHttp: { request: nativeRequest } });
+
+    const response = await requestJsonWithHeaders("https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=test");
+
+    expect(response.header("set-cookie")).toBe("SESSDATA=test");
   });
 
   it("uses the registered CapacitorHttp plugin when it is exposed through Plugins", async () => {

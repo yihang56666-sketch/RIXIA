@@ -47,7 +47,8 @@ describe("Ebbinghaus review scheduling", () => {
 
   it("moves forward when remembered and resets when forgotten", () => {
     expect(nextReviewStage(2, true)).toBe(3);
-    expect(nextReviewStage(REVIEW_INTERVAL_DAYS.length - 1, true)).toBe(REVIEW_INTERVAL_DAYS.length - 1);
+    expect(nextReviewStage(REVIEW_INTERVAL_DAYS.length - 1, true)).toBe(REVIEW_INTERVAL_DAYS.length);
+    expect(nextReviewStage(REVIEW_INTERVAL_DAYS.length, true)).toBe(REVIEW_INTERVAL_DAYS.length);
     expect(nextReviewStage(4, false)).toBe(0);
   });
 
@@ -56,7 +57,7 @@ describe("Ebbinghaus review scheduling", () => {
       { id: "1", sourceType: "custom", title: "到期", dueDate: "2026-08-20", stage: 1, history: [], createdAt: "2026-08-19T00:00:00Z" },
       { id: "2", sourceType: "custom", title: "未来", dueDate: "2026-08-25", stage: 0, history: [], createdAt: "2026-08-19T00:00:00Z" },
       {
-        id: "3", sourceType: "custom", title: "已掌握", dueDate: "2026-08-10", stage: REVIEW_INTERVAL_DAYS.length - 1,
+        id: "3", sourceType: "custom", title: "已掌握", dueDate: "2026-08-10", stage: REVIEW_INTERVAL_DAYS.length,
         history: [{ date: "2026-08-19", remembered: true }], createdAt: "2026-08-01T00:00:00Z",
       },
     ];

@@ -1,43 +1,39 @@
-import { describe, expect, it } from 'vitest'
-import { playChime } from './chime'
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { playChime } from "./chime";
 
-describe('playChime', () => {
-  it('does not throw when AudioContext exists', () => {
-    const contexts: unknown[] = []
-    window.AudioContext = class MockAudioContext {
-      currentTime = 0
-      resume = () => Promise.resolve()
+beforeEach(() => vi.useFakeTimers());
+afterEach(async () => {
+  await vi.runAllTimersAsync();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe("playChime", () => {
+  it("starts both tones and releases its AudioContext", async () => {
+    const startTone = vi.fn();
+    const closeContext = vi.fn().mockResolvedValue(undefined);
+    class MockAudioContext {
+      currentTime = 0;
+      destination = {};
+      resume = () => Promise.resolve();
+      close = closeContext;
       createOscillator() {
-        const oscillator: any = {}
-        oscillator.connect = () => oscillator
-        oscillator.start = () => oscillator
-        oscillator.stop = () => oscillator
-        return oscillator
+        return { frequency: { value: 0 }, connect: vi.fn(), start: startTone, stop: vi.fn() };
       }
       createGain() {
-        const gain: any = {}
-        gain.gain = {
-          setValueAtTime() {},
-          exponentialRampToValueAtTime() {},
-        }
-        gain.connect = () => gain
-        return gain
+        return { gain: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() }, connect: vi.fn() };
       }
-      destination = {}
-      close = () => Promise.resolve()
-      constructor() {
-        contexts.push(this)
-        return this
-      }
-    } as unknown as typeof AudioContext
+    }
+    vi.stubGlobal("AudioContext", MockAudioContext);
+    playChime();
+    expect(startTone).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(closeContext).toHaveBeenCalledTimes(1);
+  });
 
-    expect(() => playChime()).not.toThrow()
-    expect(contexts).toHaveLength(1)
-
-    delete (window as any).AudioContext
-  })
-
-  it('does not throw when AudioContext is unavailable', () => {
-    expect(() => playChime()).not.toThrow()
-  })
-})
+  it("does not throw when AudioContext is unavailable", () => {
+    vi.stubGlobal("AudioContext", undefined);
+    vi.stubGlobal("webkitAudioContext", undefined);
+    expect(() => playChime()).not.toThrow();
+  });
+});

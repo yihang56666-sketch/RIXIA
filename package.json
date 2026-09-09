@@ -8,7 +8,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "vitest run",
+    "test": "vitest run && node --test --experimental-vm-modules electron/main.test.mjs electron/desktop-server.test.mjs scripts/native-configuration.test.mjs scripts/release-boundary.test.mjs",
     "typecheck": "tsc --noEmit",
     "mobile:sync": "npm run build && cap sync android",
     "mobile:doctor": "node scripts/build-android-debug-apk.mjs --doctor",

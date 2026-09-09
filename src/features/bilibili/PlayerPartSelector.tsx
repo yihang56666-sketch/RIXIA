@@ -15,14 +15,14 @@ export function PlayerPartSelector({
   onSelect: (part: VideoPart) => void;
 }) {
   // 登记浮层栈：系统返回/Escape 先关选集，而不是退回资料库。
-  useOverlayInteraction(true, onClose);
+  const dialogRef = useOverlayInteraction(true, onClose);
   const [descending, setDescending] = useState(false);
   const currentPartRef = useRef<HTMLButtonElement | null>(null);
   const visibleParts = useMemo(() => descending ? [...parts].reverse() : parts, [descending, parts]);
 
   return (
     <div className="modal-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="modal-card player-part-selector" role="dialog" aria-modal="true" aria-label="选择分 P">
+      <section ref={dialogRef} tabIndex={-1} className="modal-card player-part-selector" role="dialog" aria-modal="true" aria-label="选择分 P">
         <header className="player-part-selector-header">
           <div><h2>选择分 P</h2><p className="muted">共 {parts.length} 集</p></div>
           <div className="player-part-selector-actions">

@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createLearningListService } from "../../lib/bilibili/services";
 import type { LearningListEntry, LearningListStatus } from "../../lib/bilibili/types";
 import { useAppStore } from "../../store/useAppStore";
-import { M3Dialog, Mi } from "./m3";
+import { M3Dialog, Mi, useM3Feedback } from "./m3";
 
 const STATUS_ITEMS: Array<{ value: LearningListStatus; label: string }> = [
   { value: "not-started", label: "未开始" },
@@ -44,6 +44,7 @@ export function LearningListView() {
   const service = useMemo(() => createLearningListService(), []);
   const openBilibiliVideoAt = useAppStore((state) => state.openBilibiliVideoAt);
   const setView = useAppStore((state) => state.setView);
+  const showMessage = useM3Feedback().showMessage;
 
   const [entries, setEntries] = useState<LearningListEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,13 +87,15 @@ export function LearningListView() {
     const stableId = `${entry.bvid}:${entry.partCid ?? 0}`;
     setOpeningId(stableId);
     try {
-      await service.markOpened(entry.id);
+      if (!await service.markOpened(entry.id)) throw new Error("本机存储写入失败。");
       openBilibiliVideoAt(
         entry.bvid,
         entry.title,
         entry.partCid ?? 0,
         entry.positionSeconds ?? 0,
       );
+    } catch {
+      showMessage("继续学习失败，请检查本机存储后重试。");
     } finally {
       setOpeningId(null);
     }
@@ -103,8 +106,10 @@ export function LearningListView() {
     setUpdatingId(`${entry.bvid}:${entry.partCid ?? 0}`);
     setStatusMenuId(null);
     try {
-      await service.setStatus(entry.id, status);
+      if (!await service.setStatus(entry.id, status)) throw new Error("本机存储写入失败。");
       await reload();
+    } catch {
+      showMessage("学习状态保存失败，请检查本机存储后重试。");
     } finally {
       setUpdatingId(null);
     }
@@ -113,10 +118,12 @@ export function LearningListView() {
   async function removeEntry(entry: LearningListEntry) {
     if (updatingId || reordering) return;
     setUpdatingId(`${entry.bvid}:${entry.partCid ?? 0}`);
-    setPendingRemove(null);
     try {
-      await service.remove(entry.id);
+      if (!await service.remove(entry.id)) throw new Error("本机存储写入失败。");
+      setPendingRemove(null);
       await reload();
+    } catch {
+      showMessage("移出学习清单失败，请检查本机存储后重试。");
     } finally {
       setUpdatingId(null);
     }
@@ -134,15 +141,18 @@ export function LearningListView() {
       if (normalizedQuery.length > 0 || reordering) return;
       setReordering(true);
       try {
-        await service.reorderIncomplete(ordered.map((entry) => entry.id));
+        if (!await service.reorderIncomplete(ordered.map((entry) => entry.id))) throw new Error("本机存储写入失败。");
       } catch {
-        // 写入失败也要重新拉取，避免界面顺序与存储不一致
+        showMessage("排序保存失败，请检查本机存储后重试。");
       } finally {
-        await reload();
-        setReordering(false);
+        try {
+          await reload();
+        } finally {
+          setReordering(false);
+        }
       }
     },
-    [service, reload, normalizedQuery.length, reordering],
+    [service, reload, normalizedQuery.length, reordering, showMessage],
   );
 
   function onDragStart(event: React.PointerEvent, entry: LearningListEntry) {
@@ -192,7 +202,7 @@ export function LearningListView() {
   }
 
   // ---- 卡片 ----
-  function EntryCard({ entry, reorderable }: { entry: LearningListEntry; reorderable: boolean }) {
+  function renderEntryCard(entry: LearningListEntry, reorderable: boolean) {
     const stableId = `${entry.bvid}:${entry.partCid ?? 0}`;
     const opening = openingId === stableId;
     const updating = updatingId === stableId;
@@ -202,7 +212,7 @@ export function LearningListView() {
     const progress = durationMs > 0 ? Math.min(1, Math.max(0, positionMs / durationMs)) : 0;
     const busy = opening || updating || reordering;
     return (
-      <section className="m3-card" style={{ display: "grid" }}>
+      <section key={entry.id} className="m3-card" style={{ display: "grid" }}>
         <div
           className="m3-list-tile"
           style={{ padding: "10px 8px 4px 12px", alignItems: "flex-start", cursor: busy ? "default" : "pointer" }}
@@ -417,7 +427,7 @@ export function LearningListView() {
                       borderRadius: 20,
                     }}
                   >
-                    <EntryCard entry={entry} reorderable={query.trim().length === 0} />
+                    {renderEntryCard(entry, query.trim().length === 0)}
                   </div>
                 ))}
               </div>
@@ -432,7 +442,7 @@ export function LearningListView() {
                 </div>
                 <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
                   {completedEntries.map((entry) => (
-                    <EntryCard key={entry.id} entry={entry} reorderable={false} />
+                    renderEntryCard(entry, false)
                   ))}
                 </div>
               </div>

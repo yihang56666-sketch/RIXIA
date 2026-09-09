@@ -4,7 +4,8 @@ import { HabitFrequencyEditor } from "../../components/HabitFrequencyEditor";
 import { Heatmap } from "../../components/Heatmap";
 import { ProgressRing } from "../../components/ProgressRing";
 import { QuickAdd } from "../../components/QuickAdd";
-import { bestStreak, lastNDates, todayKey } from "../../lib/time";
+import { bestStreak, lastNDates } from "../../lib/time";
+import { useCalendarDay } from "../../lib/useCalendarDay";
 import { frequencyAwareStreak, frequencyAwareStrength, isHabitDueToday } from "../../lib/habitSchedule";
 import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
@@ -18,6 +19,7 @@ function frequencyLabel(frequency: HabitFrequency | undefined): string {
 }
 
 function streakUnit(frequency: HabitFrequency | undefined): string {
+  if (frequency?.type === "interval-days") return "轮";
   return frequency?.type === "weekly-count" ? "周" : "天";
 }
 
@@ -97,7 +99,7 @@ function HabitCard({ habit, today }: { habit: HabitItem; today: string }) {
 
 export function HabitsView({ embedded = false }: { embedded?: boolean } = {}) {
   const { habits, addHabit, toggleHabitToday } = useAppStore();
-  const today = todayKey();
+  const today = useCalendarDay();
   const dueHabits = habits.filter((item) => isHabitDueToday(item, today));
   const checkedCount = habits.filter((item) => item.checkedDates.includes(today)).length;
   // 今日待打卡：频率感知（每周 N 次未达标 / 间隔日到期才提醒）

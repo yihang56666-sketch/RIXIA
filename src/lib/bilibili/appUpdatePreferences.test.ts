@@ -26,4 +26,19 @@ describe("createAppUpdatePreferencesService", () => {
     service.saveStartupCheckEnabled(false);
     await expect(service.checkAtStartup(check)).resolves.toBeUndefined();
   });
+
+  it("reports a failed write and keeps the loaded preference unchanged", () => {
+    const storage = new Map<string, string>();
+    const service = createAppUpdatePreferencesService({
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    });
+
+    const result = service.saveStartupCheckEnabled(false);
+
+    expect(result).toBe(false);
+    expect(service.loadStartupCheckEnabled()).toBe(true);
+  });
 });

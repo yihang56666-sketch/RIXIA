@@ -1280,7 +1280,11 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     }
     setNoteFeedback(null);
     try {
-      await videoNoteService.remove(undoNoteId);
+      const removed = await videoNoteService.remove(undoNoteId);
+      if (!removed) {
+        showNoteFeedback({ text: "撤销失败，笔记仍在列表中", kind: "error" }, 4000);
+        return;
+      }
       setNotes((current) => current.filter((n) => n.id !== undoNoteId));
       if (editingNoteId === undoNoteId) startNewNote();
     } catch {
@@ -1340,7 +1344,13 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         videoCoverUrl: video.thumbnailUrl,
         ...(framePath ? { framePath } : {}),
       };
-      await videoNoteService.save(note);
+      const saved = await videoNoteService.save(note);
+      if (!saved) {
+        if (!automatic) {
+          showNoteFeedback({ text: "保存失败，请重试", kind: "error" }, 4000);
+        }
+        return;
+      }
       setNotes((current) => {
         const exists = current.some((n) => n.id === note.id);
         return exists ? current.map((n) => (n.id === note.id ? note : n)) : [...current, note];
@@ -1390,6 +1400,10 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   // 卸载兜底：离开播放器时把未落盘的草稿自动保存一次，最后几个字不丢。
   useEffect(() => {
     return () => {
+      if (noteFeedbackTimerRef.current != null) {
+        window.clearTimeout(noteFeedbackTimerRef.current);
+        noteFeedbackTimerRef.current = null;
+      }
       if (noteAutoSaveTimerRef.current != null) {
         window.clearTimeout(noteAutoSaveTimerRef.current);
         noteAutoSaveTimerRef.current = null;
@@ -1412,7 +1426,11 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     setConfirmDeleteNote(false);
     setNoteSaving(true);
     try {
-      await videoNoteService.remove(editingNoteId);
+      const removed = await videoNoteService.remove(editingNoteId);
+      if (!removed) {
+        showNoteFeedback({ text: "删除失败，请重试", kind: "error" }, 4000);
+        return;
+      }
       setNotes((current) => current.filter((n) => n.id !== editingNoteId));
       startNewNote();
     } finally {

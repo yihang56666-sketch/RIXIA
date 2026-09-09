@@ -3,7 +3,7 @@ export function extractTags(body: string): string[] {
   // 先把 `code span` 内的内容替换为空，避免识别颜色码等。
   const sanitized = body.replace(/`[^`]*`/g, "");
   // 仅匹配形如 #标签 的片段，标签前后必须是空白或行首，且不以 # 开头的 markdown 标题（# 后必须紧跟非空白字符）
-  const matches = sanitized.match(/(?:^|\s)#([^\s#][^\s]+)/gm);
+  const matches = sanitized.match(/(?:^|\s)#([^\s#][^\s]*)/gm);
   if (!matches) return [];
   const seen = new Set<string>();
   const out: string[] = [];
