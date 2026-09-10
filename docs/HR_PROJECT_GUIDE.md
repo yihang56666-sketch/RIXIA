@@ -74,6 +74,18 @@ npm run typecheck
 - 扫码真机、Android 真机播放、Windows 安装包需现场验收  
 - 生产纯 Web 部署 B 站能力受限（CORS/防盗链）  
 - 播放器组件仍偏大，是维护债不是功能缺失  
+- **两套专注体系并存**：番茄专注在 Zustand `activeFocus`，B 站学习专注在 `focusTimerController` + 独立 localStorage 键；今日仪表盘只接前者，统计看板只接后者——已知产品分裂，不是「统一工作台」  
+- **多标签页 storage 同步是整份 rehydrate 覆盖，不是字段级 merge**；companion 键不同步  
+- **播放器测试大量 mock DashPlayer/playurl**，762 绿不等于 MSE 真机可用  
+- `resumeFromLastPosition` 偏好对「观看历史恢复」路径可能仍生效（对抗审查指出，待修）  
+
+## 面试最危险 5 问（准备好）
+
+1. 多标签页冲突怎么 merge？→ 诚实：当前是覆盖，不是 CRDT/字段合并。  
+2. 播放器里的专注为何今日页看不到？→ 两套专注状态机未合并，已知债。  
+3. 762 测试等于播放稳定吗？→ 不等于；Player 大量 mock。  
+4. 关掉「从上次位置继续」真的不跳吗？→ 历史恢复路径曾绕过开关，需复验。  
+5. License 是什么？→ package.json MIT + 根目录 LICENSE；README 已对齐。
 
 ## 简历可用句
 
