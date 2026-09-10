@@ -1,5 +1,10 @@
 # BEID
 
+![React](https://img.shields.io/badge/React-19-61dafb)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6)
+![Tests](https://img.shields.io/badge/tests-762%20Vitest%20%2B%2032%20Node-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 BEID 是一个本地优先的个人节奏与学习工作台，融合个人效率工具（任务、习惯、笔记、日记、倒计时、番茄专注）与完整的 B 站学习体验（搜索、账号数据、DASH 播放、弹幕、学习清单、时间点笔记）。
 
 基于 React 19 + TypeScript 5 + Vite 7 构建，通过 Capacitor 8 打包 Android 客户端。应用不需要外部服务端、数据库或分析依赖；所有个人数据通过 Zustand 持久化在本地，B 站在线功能走当前 Web 或原生网络路径。
