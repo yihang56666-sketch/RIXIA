@@ -176,6 +176,9 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const [showPrefs, setShowPrefs] = useState(false);
   const [activePartCid, setActivePartCid] = useState<number | null>(null);
   const [requestedQuality, setRequestedQuality] = useState(80);
+  // Load pipeline uses this quality. Auto-correction after playurl resolve updates
+  // requestedQuality for UI only, so the MSE pipeline is not destroyed/rebuilt.
+  const [loadQuality, setLoadQuality] = useState(80);
   const [qualityOptions, setQualityOptions] = useState<number[]>([]);
   const [loopEnabled, setLoopEnabled] = useState(false);
   const [chapterProgressVisible, setChapterProgressVisible] = useState(true);
@@ -370,7 +373,9 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       if (cancelled) return;
       resumeFromLastPositionRef.current = p.resumeFromLastPosition;
       const connectionType = (navigator as Navigator & { connection?: { type?: string } }).connection?.type;
-      setRequestedQuality(chooseDefaultPlaybackQuality(p, connectionType));
+      const defaultQuality = chooseDefaultPlaybackQuality(p, connectionType);
+      setRequestedQuality(defaultQuality);
+      setLoadQuality(defaultQuality);
       setDoubleTapSeekEnabled(p.enableDoubleTapSeek);
       setPlaybackSpeed(p.playbackRate);
       lastAudibleVolumeRef.current = p.defaultVolume > 0 ? p.defaultVolume : lastAudibleVolumeRef.current;
@@ -512,6 +517,8 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
 
   // 最新播放位置（timeupdate 高频变化，不能作为 effect 依赖）。
   const currentTimeRef = useRef(0);
+  const durationRef = useRef(duration);
+  durationRef.current = duration;
   useEffect(() => {
     currentTimeRef.current = currentTime;
   }, [currentTime]);
@@ -747,13 +754,13 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     void (async () => {
       try {
         const playurlService = createPlayurlService(createJsonRequest());
-        const response = await playurlService.resolve(video.bvid, activePartCid, { qn: requestedQuality });
+        const response = await playurlService.resolve(video.bvid, activePartCid, { qn: loadQuality });
         if (disposed) return;
         if (!response.dash) throw new Error("当前视频没有可用的 DASH 流");
-        await player.load(response.dash, requestedQuality);
+        await player.load(response.dash, loadQuality);
         if (disposed) return;
         const qualityOptionsForPlayer = filterBrowserMseQualities(response.acceptQuality);
-        const effectiveQuality = choosePlaybackQuality(requestedQuality, qualityOptionsForPlayer);
+        const effectiveQuality = choosePlaybackQuality(loadQuality, qualityOptionsForPlayer);
         setQualityOptions(qualityOptionsForPlayer);
         if (effectiveQuality !== requestedQuality) setRequestedQuality(effectiveQuality);
         setDashActive(true);
@@ -783,7 +790,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       setDashActive(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dashEligible, video?.bvid, activePartCid, requestedQuality, dashRetryCount, playbackPreferencesLoaded]);
+  }, [dashEligible, video?.bvid, activePartCid, loadQuality, dashRetryCount, playbackPreferencesLoaded]);
 
   useEffect(() => {
     if (!playbackPreferencesLoaded) return;
@@ -904,8 +911,47 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     };
   }, [doubleTapSeekEnabled, gestureElement]);
 
+  // Keyboard shortcuts stay bound once; live values come from a ref so timeupdate
+  // does not add/remove the window listener every animation frame.
+  const playerHotkeysRef = useRef({
+    playing,
+    muted,
+    fullscreen,
+    nativePlayerActive,
+    duration,
+    showPrefs,
+    showSubtitles,
+    showChapterPanel,
+    showCollection,
+    showPartSelector,
+    showLeaveInterruptionFlow,
+    showFocusSheet,
+    confirmDeleteNote,
+    associationPromptSessionId,
+  });
+  playerHotkeysRef.current = {
+    playing,
+    muted,
+    fullscreen,
+    nativePlayerActive,
+    duration,
+    showPrefs,
+    showSubtitles,
+    showChapterPanel,
+    showCollection,
+    showPartSelector,
+    showLeaveInterruptionFlow,
+    showFocusSheet,
+    confirmDeleteNote,
+    associationPromptSessionId,
+  };
+  const playerHotkeyActionsRef = useRef({ enterFullscreen, exitFullscreen, confirmDeleteNote });
+  playerHotkeyActionsRef.current = { enterFullscreen, exitFullscreen, confirmDeleteNote };
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      const live = playerHotkeysRef.current;
+      const actions = playerHotkeyActionsRef.current;
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
       // 焦点落在可激活控件上时 Space 是"按下"而不是"播放/暂停"。
@@ -920,56 +966,56 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       // 播放器内浮层（弹幕设置/选集/字幕/笔记删除确认等）或全局浮层打开时，
       // 媒体快捷键一律让路，避免按键穿透弹窗操作背后的播放器。
       if (
-        showPrefs ||
-        showSubtitles ||
-        showChapterPanel ||
-        showCollection ||
-        showPartSelector ||
-        showLeaveInterruptionFlow ||
-        showFocusSheet ||
-        confirmDeleteNote ||
-        associationPromptSessionId != null ||
+        live.showPrefs ||
+        live.showSubtitles ||
+        live.showChapterPanel ||
+        live.showCollection ||
+        live.showPartSelector ||
+        live.showLeaveInterruptionFlow ||
+        live.showFocusSheet ||
+        live.confirmDeleteNote ||
+        live.associationPromptSessionId != null ||
         hasOpenOverlays()
       ) {
         return;
       }
       if (event.key === " ") {
         event.preventDefault();
-        if (playing) {
-          if (nativePlayerActive) void nativePlayerRef.current?.pause();
+        if (live.playing) {
+          if (live.nativePlayerActive) void nativePlayerRef.current?.pause();
           else playerControlRef.current?.pause();
           setPlaying(false);
         } else {
-          if (nativePlayerActive) void nativePlayerRef.current?.play();
+          if (live.nativePlayerActive) void nativePlayerRef.current?.play();
           else playerControlRef.current?.play();
           setPlaying(true);
         }
       } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
-        const next = Math.max(0, Math.min(duration, currentTimeRef.current + (event.key === "ArrowLeft" ? -10 : 10)));
+        const next = Math.max(0, Math.min(live.duration, currentTimeRef.current + (event.key === "ArrowLeft" ? -10 : 10)));
         currentTimeRef.current = next;
-        if (nativePlayerActive) void nativePlayerRef.current?.seek(next);
+        if (live.nativePlayerActive) void nativePlayerRef.current?.seek(next);
         playerControlRef.current?.seek(next);
         setCurrentTime(next);
       } else if (event.key.toLowerCase() === "m") {
         event.preventDefault();
-        const nextMuted = !muted;
+        const nextMuted = !live.muted;
         const nextVolume = nextMuted ? 0 : lastAudibleVolumeRef.current;
-        if (nativePlayerActive) void nativePlayerRef.current?.setVolume(nextVolume);
+        if (live.nativePlayerActive) void nativePlayerRef.current?.setVolume(nextVolume);
         playerControlRef.current?.setVolume(nextVolume);
         setVolume(nextVolume);
         setMuted(nextMuted);
       } else if (event.key.toLowerCase() === "f") {
         event.preventDefault();
-        if (fullscreen) void exitFullscreen();
-        else void enterFullscreen();
-      } else if (event.key === "Escape" && (document.fullscreenElement || fullscreen)) {
-        void exitFullscreen();
+        if (live.fullscreen) void actions.exitFullscreen();
+        else void actions.enterFullscreen();
+      } else if (event.key === "Escape" && (document.fullscreenElement || live.fullscreen)) {
+        void actions.exitFullscreen();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [associationPromptSessionId, confirmDeleteNote, currentTime, duration, enterFullscreen, exitFullscreen, fullscreen, muted, nativePlayerActive, playing, showChapterPanel, showCollection, showFocusSheet, showLeaveInterruptionFlow, showPartSelector, showPrefs, showSubtitles]);
+  }, []);
 
   // 播放时控制层自动隐藏（暂停或未播放时保持显示）
   useEffect(() => {
@@ -1108,14 +1154,15 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
           setPlaying(false);
         },
         seekBy: (delta) => {
-          const next = Math.max(0, Math.min(duration, currentTime + delta));
+          const next = Math.max(0, Math.min(durationRef.current, currentTimeRef.current + delta));
           if (nativePlayerActive) void nativePlayerRef.current?.seek(next);
           else playerControlRef.current?.seek(next);
+          currentTimeRef.current = next;
           setCurrentTime(next);
         },
       },
     });
-  }, [currentTime, duration, mediaSession, nativePlayerActive, playing, video]);
+  }, [video, duration, mediaSession, nativePlayerActive, playing]);
 
   useEffect(() => () => mediaSession.clear(), [mediaSession]);
 
@@ -1126,12 +1173,19 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   useEffect(() => () => { void saveFocusLastSeenRef.current(); }, []);
 
   useEffect(() => {
-    if (!video || activePartCid == null || duration <= 0 || playing || currentTime < duration - 0.5) return;
+    // Only complete when playback actually reached the end while not playing.
+    // Scrubbing near duration while paused must not check out a focus session.
+    if (!video || activePartCid == null || duration <= 0 || playing) return;
+    if (currentTime < duration - 0.15) return;
+    const mediaEl = videoElementRef.current;
+    // Prefer the media element's ended flag; require a tight near-end match otherwise.
+    const reachedEnd = mediaEl?.ended === true || currentTime >= duration - 0.05;
+    if (!reachedEnd) return;
     const partKey = `${video.bvid}:${activePartCid}`;
     if (completedFocusPartRef.current === partKey) return;
     completedFocusPartRef.current = partKey;
     void focusTimer.completeForPlaybackPart({ bvid: video.bvid, partCid: activePartCid });
-  }, [activePartCid, currentTime, duration, focusTimer.completeForPlaybackPart, playing, video?.bvid]);
+  }, [activePartCid, currentTime, duration, focusTimer.completeForPlaybackPart, playing, video]);
 
   // 专注任务结束（完成或提前结束）时自动暂停播放并提示，对齐 player_focus_coordinator.dart 的
   // _handleFocusStateChanged / _handleFinishedFocus：只消费新的结束事件，不在任务仍在进行或已经
@@ -2123,6 +2177,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
                   resumedPositionRef.current = currentTime;
                   setNativePlayerActive(false);
                   setRequestedQuality(next);
+                  setLoadQuality(next);
                 }}
               >
                 {qualityOptions.map((quality) => <option key={quality} value={quality}>{qualityLabel(quality)}</option>)}
@@ -2295,6 +2350,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
               resumedPositionRef.current = currentTime;
               setNativePlayerActive(false);
               setRequestedQuality(next);
+              setLoadQuality(next);
             }}>
               {qualityOptions.map((quality) => <option key={quality} value={quality}>{qualityLabel(quality)}</option>)}
             </select>
