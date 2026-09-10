@@ -1,47 +1,80 @@
 # BEID（clock）HR 面试指导书
 
-更新：2026-09-07。只写仓库里已经落地、可用测试复现的事实。
+更新：2026-09-30。只写仓库里已经落地、可用测试复现的事实。
 
 ## 一句话介绍
 
-BEID 是一个本地优先的个人节奏与学习工作台，把任务、习惯、日记、专注计时、考研规划和 B 站学习播放整合到同一套 React 领域模型，并可打包为 Web、Electron 桌面端和 Capacitor Android。
+BEID 是本地优先的个人节奏与学习工作台：任务、习惯、日记、专注、考研规划与 B 站 DASH 播放共用一套 React 领域模型，可打包 Web / Electron / Capacitor Android。
 
 ## 30 秒说法
 
-> 我做的是本地优先学习台，不是又一个待办清单。个人数据默认只落本机；B 站搜索、DASH 播放和学习笔记共用同一份状态。最近修过四个真实产品问题：直链文件名里的 BV 号不再被误收成视频、逾期任务点“下一步”后还能看见、跨午夜新增任务立即显示在当天列表、存储写失败会明确提示而不是只打日志。
+> 我做的是本地优先学习台，不是又一个待办清单。个人数据默认只落本机；B 站搜索、DASH 播放和学习笔记共用同一份状态。最近又修了 BV 直链误判、专注统计 UTC 日漂移、专注分钟钳制不一致。回归是 762 Vitest + 32 Node 边界测试。
 
-## 技术与架构
+## 架构怎么讲（面试官一问就展开）
 
-- React 19 + TypeScript + Vite；Zustand persist，schema v3，支持 v1/v2 迁移和 JSON 备份。
-- `src/App.tsx` 接线视图、主题和原生深链；`src/features` 按领域拆页；`src/lib` 放时间、迁移、B 站服务、音频和唤醒锁。
-- 资源识别先看 URL 来源，再提取 BV 号，避免 `https://cdn.example.com/BV1....mp4` 被收成 B 站条目。
-- 今日“下一步”带目标：逾期任务进入计划页待办筛选，课程资源直接打开播放器。
-- 持久化失败会把 `storageWriteFailed` 推到界面，提示当前更改只在会话内。
+```
+features/   按领域拆页（today/plan/focus/habits/kaoyan/bilibili...）
+lib/        时间、迁移、B站服务、播放器、备份、唤醒锁
+store/      Zustand + persist schema v3 + 迁移
+electron/   桌面宿主 + 本地反代（补 Referer/Cookie）
+android/    Capacitor + Media3 插件
+```
+
+**数据流**：UI action → store set → persist 写 localStorage；B 站账号/媒体走 `httpAdapter` 按环境选 Web 代理 / Electron 反代 / CapacitorHttp。
+
+## 五个可深挖技术点（每个都能顶 3 分钟）
+
+1. **DASH/MSE 管线**：自己解析 playurl，不嵌 iframe；`mp4Boxes.ts` 解析 sidx；seek 到未缓冲区时 abort 代际、清 SourceBuffer、按字节偏移重启拉流。
+2. **本地优先与迁移**：persist version；v1/v2→v3 迁移函数；配额失败推 `storageWriteFailed`；companion backup 覆盖主 store 外的键。
+3. **锚定计时**：`endsAtMs` 绝对时间戳是唯一真源；切视图/重启可恢复；根治后台节流计时漂移。
+4. **习惯频率模型**：daily / weekly-N / interval-N 参与 due-today / streak / strength，不是只按日历打卡。
+5. **多端网络适配**：开发 localhost 用 Vite 代理；Electron 有 desktop-server 反代；生产纯 Web 受 CORS/防盗链限制（诚实说）。
 
 ## 可演示路径
 
 ```powershell
-git clone <repository-url>
-cd clock
 npm install
 npm run dev
 npm test
 npm run typecheck
-npm run build
 ```
 
-现场先打开今日页：造一条逾期任务，点“开始”，应进入计划页并看见该任务。再在资料库粘贴带 BV 号的直链，应保存为 HTTPS 直链而不是 B 站视频。
+现场：造逾期任务 → 点“开始”应进计划页仍可见；资料库粘贴含 BV 的直链应保存为 HTTPS 直链。
 
-## HR 常问
+## HR 高频追问（含最难的）
 
-**为什么本地优先？** 任务、笔记和学习记录是个人数据；离线可用，也减少服务端成本和隐私面。联网只发生在 B 站内容和账号需要时。
+**为什么本地优先？**  
+个人数据隐私 + 离线可用 + 无服务端成本。联网只在 B 站内容/账号需要时。
 
-**状态怎么迁？** 持久化带 version，迁移函数把旧结构补齐；导入失败或根快照写失败会抛“未完整写入”，不会假装恢复成功。
+**状态怎么迁？**  
+持久化带 version；迁移补齐旧结构；导入失败或根快照写失败会明确提示，不假装恢复成功。
 
-**最近修了什么？** 四类可复现缺陷：来源误判、下一步目标丢失、跨午夜日期状态陈旧、配额失败不可见。都先写失败测试再改实现。
+**Cookie 存哪？安全吗？**  
+个人应用存在本机 localStorage。能解释 XSS 可窃取 SESSDATA 的威胁模型；不假装企业级密钥管理。这是自用工具的取舍。
 
-**限制是什么？** 当前验证为 762 个 Vitest 测试、32 个 Electron/发布边界 Node 测试、typecheck 和生产构建全部通过；B 站扫码、真机播放、Windows 安装包仍需现场验收。
+**播放器为什么不用官方 iframe？**  
+要单一控制层：时间点笔记、专注联动、清晰度偏好、全屏手势都要挂在自己的 UI 上。代价是要自己处理 DASH、WBI、CDN 防盗链。
+
+**B 站接口改了怎么办？**  
+适配层集中在 `src/lib/bilibili/`；失败路径有友好提示；公开搜索/元数据可 mock 回归。不保证 API 永久可用。
+
+**测试 762 个证明什么？**  
+证明领域逻辑、迁移、store 边界有回归；不证明真机扫码/播放已验收——那要现场设备。
+
+**2679 行播放器组件是不是上帝对象？**  
+诚实承认：`BilibiliPlayerView` 职责过重，是已知架构债。播放引擎、控制条、弹幕、笔记可继续拆 hook/子组件；拆分是维护策略，不是已经做完的事。
+
+**最近修了什么？**  
+- BV 正则排除 `0` 导致合法 BV 号被拒 → 全仓统一 `/BV[0-9A-Za-z]{10}/`  
+- 专注连击用 UTC 日，东八区 0–8 点会错一天 → 改本地 `todayKey()`  
+- 专注分钟 UI 5–90 vs store 1–120 不一致 → 对齐  
+
+## 限制（主动说）
+
+- 扫码真机、Android 真机播放、Windows 安装包需现场验收  
+- 生产纯 Web 部署 B 站能力受限（CORS/防盗链）  
+- 播放器组件仍偏大，是维护债不是功能缺失  
 
 ## 简历可用句
 
-设计并实现本地优先学习工作台 BEID，统一任务/习惯/考研/B 站学习状态；修复直链误判、逾期任务导航丢失和存储失败静默问题，并补回归测试。
+设计并实现本地优先学习工作台 BEID，统一任务/习惯/考研/B 站学习状态；自研 sidx 定位的 DASH/MSE 播放管线；修复 BV 误判、UTC 连击日与专注钳制不一致，并补回归测试（762+32）。
