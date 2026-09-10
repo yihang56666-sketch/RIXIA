@@ -1,4 +1,4 @@
-const BVID_PATTERN = /BV[1-9a-zA-Z]{10}/;
+const BVID_PATTERN = /BV[0-9A-Za-z]{10}/;
 
 /** 从任意文本（完整链接、分享口令、纯 BV 号）中提取 BV 号 */
 export function extractBvid(input: string): string | null {

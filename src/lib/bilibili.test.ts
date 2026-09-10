@@ -6,6 +6,11 @@ describe("extractBvid", () => {
     expect(extractBvid("BV1GJ411x7h7")).toBe("BV1GJ411x7h7");
   });
 
+  it("extracts a bvid containing digit 0", () => {
+    expect(extractBvid("BV1xx411c70D")).toBe("BV1xx411c70D");
+    expect(extractBvid("https://www.bilibili.com/video/BV1xx411c70D")).toBe("BV1xx411c70D");
+  });
+
   it("extracts a bvid from a full desktop url", () => {
     expect(extractBvid("https://www.bilibili.com/video/BV1GJ411x7h7?p=2")).toBe("BV1GJ411x7h7");
   });

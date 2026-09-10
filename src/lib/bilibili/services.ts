@@ -20,6 +20,7 @@ import {
   DEFAULT_DANMAKU_PREFERENCES,
   DEFAULT_PLAYBACK_PREFERENCES,
 } from "./types";
+import { todayKey } from "../time";
 
 // ============ Danmaku preferences ============
 
@@ -525,14 +526,13 @@ export function createFocusSessionService(
         longestStreak = Math.max(longestStreak, running);
         prev = day;
       }
-      // Current streak from today backwards
-      const todayKey = new Date().toISOString().slice(0, 10);
-      let cursor = todayKey;
+      // Current streak from local today backwards (avoid UTC day-shift near midnight)
+      let cursor = todayKey();
       while (daily[cursor]) {
         currentStreak += 1;
-        const d = new Date(cursor);
+        const d = new Date(`${cursor}T00:00:00`);
         d.setDate(d.getDate() - 1);
-        cursor = d.toISOString().slice(0, 10);
+        cursor = todayKey(d);
       }
       return {
         totalSeconds,

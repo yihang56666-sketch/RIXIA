@@ -353,7 +353,8 @@ export function FocusView() {
   const weekMax = Math.max(30, ...weekMinutes);
 
   function adjust(delta: number) {
-    setFocusMinutes(Math.min(90, Math.max(5, focusMinutes + delta)));
+    // Align with useAppStore.setFocusMinutes clamp (1–120)
+    setFocusMinutes(Math.min(120, Math.max(1, focusMinutes + delta)));
   }
 
   function adjustGoal(delta: number) {

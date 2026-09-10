@@ -31,3 +31,15 @@ device-screen.png
 
 # Environment expansion accident: a past tool wrote %SystemDrive% as a literal folder name.
 %SystemDrive%/
+
+# Personal / interview materials — keep on disk, never track
+*.docx
+简历*
+面试*
+boke-shot-*.png
+*-sheet.png
+
+# Internal agent process logs (not product docs)
+findings.md
+task_plan.md
+progress.md
