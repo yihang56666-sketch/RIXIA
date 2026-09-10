@@ -317,6 +317,12 @@ export class DashPlayer {
           if (total == null && response.status === 200) break; // 无法获知总长时按整段处理
         }
         pipeline.finished = true;
+        // EOF without a media segment (e.g. linear offset landed past the last
+        // moof) would leave firstChunk hanging forever and freeze restartAt.
+        if (!pipeline.firstChunkSettled) {
+          pipeline.firstChunkSettled = true;
+          pipeline.rejectFirstChunk(new Error("目标位置没有可播放的媒体分片"));
+        }
         return;
       } catch (error) {
         if (stale()) return;
@@ -660,7 +666,11 @@ export class DashPlayer {
       for (const pipeline of pipelines) {
         this.startStream(pipeline, this.resolveByteOffset(pipeline, target), generation);
       }
-      await Promise.all(pipelines.map((pipeline) => pipeline.firstChunk));
+      const firstChunkTimeout = new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error("跳转超时：未收到媒体分片")), 15000);
+        void Promise.all(pipelines.map((pipeline) => pipeline.firstChunk)).finally(() => clearTimeout(timer));
+      });
+      await Promise.race([Promise.all(pipelines.map((pipeline) => pipeline.firstChunk)), firstChunkTimeout]);
       if (stale()) return;
       const start = Math.max(...pipelines.map((pipeline) => pipeline.buffer.buffered.length > 0 ? pipeline.buffer.buffered.start(0) : target));
       const end = Math.min(...pipelines.map((pipeline) => pipeline.buffer.buffered.length > 0 ? pipeline.buffer.buffered.end(pipeline.buffer.buffered.length - 1) : target));
