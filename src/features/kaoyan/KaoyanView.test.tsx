@@ -110,16 +110,16 @@ describe("KaoyanView", () => {
     const [start, end] = dateInputs;
     const save = form.querySelector("button[type='submit']") as HTMLButtonElement;
 
-    fireEvent.change(end, { target: { value: "2026-09-10" } });
+    fireEvent.change(end, { target: { value: "2030-01-02" } });
     expect(save).toBeEnabled();
     // 把开始改到结束之后：结束自动顶高，提交不会被 store 静默拒绝。
-    fireEvent.change(start, { target: { value: "2026-10-01" } });
-    expect(end.value).toBe("2026-10-01");
+    fireEvent.change(start, { target: { value: "2030-01-03" } });
+    expect(end.value).toBe("2030-01-03");
 
     fireEvent.click(save);
     const units = useAppStore.getState().studyUnits;
     expect(units).toHaveLength(1);
-    expect(units[0].startDate).toBe("2026-10-01");
-    expect(units[0].endDate).toBe("2026-10-01");
+    expect(units[0].startDate).toBe("2030-01-03");
+    expect(units[0].endDate).toBe("2030-01-03");
   });
 });
