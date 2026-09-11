@@ -2,6 +2,8 @@ export interface MediaSessionActions {
   play: () => void;
   pause: () => void;
   seekBy: (seconds: number) => void;
+  /** 精确跳转（秒）；锁屏/耳机面板拖动进度条时使用。 */
+  seekTo: (seconds: number) => void;
 }
 
 export interface MediaSessionSnapshot {
@@ -49,12 +51,17 @@ export function createMediaSessionService(): MediaSessionService {
       setHandler(session, "pause", snapshot.actions.pause);
       setHandler(session, "seekbackward", (details) => snapshot.actions.seekBy(-(details.seekOffset ?? 10)));
       setHandler(session, "seekforward", (details) => snapshot.actions.seekBy(details.seekOffset ?? 10));
+      setHandler(session, "seekto", (details) => {
+        if (typeof details.seekTime === "number" && Number.isFinite(details.seekTime)) {
+          snapshot.actions.seekTo(details.seekTime);
+        }
+      });
     },
     clear() {
       const session = getSession();
       if (!session) return;
       try { session.metadata = null; session.playbackState = "none"; } catch { /* no-op */ }
-      for (const action of ["play", "pause", "seekbackward", "seekforward"] as MediaSessionAction[]) setHandler(session, action, null);
+      for (const action of ["play", "pause", "seekbackward", "seekforward", "seekto"] as MediaSessionAction[]) setHandler(session, action, null);
     },
   };
 }

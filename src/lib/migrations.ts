@@ -390,8 +390,12 @@ export function migratePersistedState(
   return {
     theme,
     density,
+    // rehydrate/merge 与导入备份共用同一体积预算：磁盘快照里的超大背景图
+    // 若原样放行，之后每次 action 的全量落盘都会持续触发配额失败。
     backgroundImage:
-      typeof state.backgroundImage === "string" ? state.backgroundImage : null,
+      typeof state.backgroundImage === "string"
+        ? enforceDataUrlBudget(state.backgroundImage)
+        : null,
     view: normalizeView(state.view),
     enabledTools: migrateToolList(state.enabledTools),
     inbox,

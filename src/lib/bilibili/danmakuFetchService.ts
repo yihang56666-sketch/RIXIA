@@ -67,5 +67,8 @@ export function parseDanmakuXml(xml: string): DanmakuEntry[] {
       midHash,
     });
   });
+  // 渲染器的 schedule 按"首条超前条目即 break"扫描，必须保证按时间有序，
+  // 否则乱序条目之后的弹幕会被整段丢弃。
+  out.sort((a, b) => a.startTimeSeconds - b.startTimeSeconds);
   return out;
 }

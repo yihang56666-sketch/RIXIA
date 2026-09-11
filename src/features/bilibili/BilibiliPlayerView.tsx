@@ -68,7 +68,7 @@ import { chooseDefaultPlaybackQuality, choosePlaybackQuality, filterBrowserMseQu
 import { createId } from "../../lib/id";
 import { useAppStore } from "../../store/useAppStore";
 import { KaoyanPlayerStudyLink } from "../kaoyan/KaoyanPlayerStudyLink";
-import { useFocusTimer } from "./useFocusTimer";
+import { focusTimerController, useFocusTimer } from "./useFocusTimer";
 import { FocusInterruptionKind, FocusSessionStatus, hasVideoAssociation, isActive as isFocusSessionActive } from "../../lib/bilibili/focusSessionModel";
 import { FocusInterruptionFlow } from "./FocusDialogs";
 import { shouldPauseForSleepTimer, shouldRestartLoop } from "../../lib/bilibili/playbackControlPolicy";
@@ -274,6 +274,9 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const resumedPositionRef = useRef(0);
   const resumeNoticeShownRef = useRef(false);
+  // 跨分P的一次性跳转目标（笔记跳转/互动分支起点）：切换分P会重建播放器，
+  // 旧实例上的 seek 无效；目标先记在这里，新管线就绪后消费一次。
+  const pendingSeekTargetRef = useRef<{ cid: number; seconds: number } | null>(null);
   const lastAudibleVolumeRef = useRef(1);
   const initialTargetAppliedRef = useRef(false);
   const observedFocusSessionIdRef = useRef<string | null>(null);
@@ -290,6 +293,9 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     setResumeNotice(message);
     resumeNoticeTimerRef.current = window.setTimeout(() => setResumeNotice(""), 3000);
   }
+  useEffect(() => () => {
+    if (resumeNoticeTimerRef.current != null) window.clearTimeout(resumeNoticeTimerRef.current);
+  }, []);
   const completedFocusPartRef = useRef<string | null>(null);
   const loopRestartInFlightRef = useRef(false);
   const sleepDeadlineRef = useRef<number | null>(null);
@@ -313,16 +319,25 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     setLoading(true);
     setError("");
     resumeNoticeShownRef.current = false;
+    pendingSeekTargetRef.current = null;
+    // 历史回退决策必须等播放偏好就绪后再做，否则「从上次位置继续」关闭时
+    // 仍可能按默认 true 走回退（lookup 与偏好加载同为异步时存在竞态）。
+    const playbackPrefsPromise = playbackPreferencesService.load();
     service.lookupVideo(bvid).then(async (v) => {
       if (cancelled) return;
       setVideo(v);
+      const resolvedPrefs = await playbackPrefsPromise.catch(() => null);
+      if (cancelled) return;
+      if (resolvedPrefs) resumeFromLastPositionRef.current = resolvedPrefs.resumeFromLastPosition;
       let targetPart = initialPlaybackTarget && v.parts.some((part) => part.cid === initialPlaybackTarget.cid)
         ? initialPlaybackTarget.cid
         : v.cid;
       // 未指定明确目标时，且当前分P没有本机保存进度时，回退到本机观看历史记录的分P和位置
       // （对齐 FocuBili playback_resume_plan.dart 的 canUseHistory 分支）。
       let historyResumeSeconds = 0;
-      if (!initialPlaybackTarget) {
+      // 「从上次位置继续」被关闭时，连本机观看历史的静默回退也一并停用；
+      // 只有用户显式点击（时间点笔记 / 历史页“继续播放”）才允许带位置进入。
+      if (!initialPlaybackTarget && resumeFromLastPositionRef.current) {
         const savedForDefault = playbackProgressStore.load(v.bvid, targetPart);
         if (!savedForDefault || savedForDefault.positionSeconds <= 0) {
           try {
@@ -369,7 +384,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       setLoading(false);
     });
     danmakuPreferencesService.load().then((p) => !cancelled && setPrefs(p));
-    playbackPreferencesService.load().then((p) => {
+    playbackPrefsPromise.then((p) => {
       if (cancelled) return;
       resumeFromLastPositionRef.current = p.resumeFromLastPosition;
       const connectionType = (navigator as Navigator & { connection?: { type?: string } }).connection?.type;
@@ -502,7 +517,12 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       activePartCid === initialPlaybackTarget.cid,
     );
     const historyTarget = historyResumeTargetRef.current;
-    const isHistoryTargetPart = Boolean(historyTarget && historyTarget.cid === activePartCid);
+    // 偏好关闭时历史回退目标必须失效（覆盖偏好加载晚于 lookup 的竞态）。
+    const isHistoryTargetPart = Boolean(
+      resumeFromLastPositionRef.current &&
+      historyTarget &&
+      historyTarget.cid === activePartCid,
+    );
     const position = isInitialTargetPart
       ? initialPlaybackTarget!.seconds
       : isHistoryTargetPart
@@ -630,6 +650,13 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         }
       });
       await syncBounds();
+      const pendingTarget = pendingSeekTargetRef.current;
+      if (pendingTarget && pendingTarget.cid === activePartCid) {
+        // 跨分P一次性跳转目标（笔记/互动分支）在原生管线打开前消费。
+        pendingSeekTargetRef.current = null;
+        resumedPositionRef.current = pendingTarget.seconds;
+        setCurrentTime(pendingTarget.seconds);
+      }
       const playurlService = createPlayurlService(createJsonRequest());
       if (cancelled) return;
       const response = await openNativePlaybackWithRefresh({
@@ -733,6 +760,13 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       setDashFailed(true);
       return;
     }
+    if (typeof window !== "undefined" && "__TAURI__" in window) {
+      // Tauri 生产环境没有 /bili-media 本地代理，直连 CDN 会被防盗链拦截；
+      // 快速失败给出可行动的提示，而不是泛化的 CORS/403 错误。
+      setDashErrorMessage("Tauri 桌面端暂未内置媒体代理，请在 Web 或 Electron 桌面版观看");
+      setDashFailed(true);
+      return;
+    }
     const element = videoElementRef.current;
     if (!element) return;
     let disposed = false;
@@ -764,7 +798,14 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         setQualityOptions(qualityOptionsForPlayer);
         if (effectiveQuality !== requestedQuality) setRequestedQuality(effectiveQuality);
         setDashActive(true);
-        if (resumedPositionRef.current > 0) {
+        const pendingTarget = pendingSeekTargetRef.current;
+        if (pendingTarget && pendingTarget.cid === activePartCid) {
+          // 跨分P笔记跳转/互动分支：新管线就绪，消费一次性目标（优先于续播进度）。
+          pendingSeekTargetRef.current = null;
+          resumedPositionRef.current = pendingTarget.seconds;
+          setCurrentTime(pendingTarget.seconds);
+          player.seek(pendingTarget.seconds);
+        } else if (resumedPositionRef.current > 0) {
           player.seek(resumedPositionRef.current);
           if (!resumeNoticeShownRef.current) {
             showResumeNotice(`已从 ${formatTime(resumedPositionRef.current)} 继续播放`);
@@ -1102,7 +1143,11 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         return;
       }
       const ctx = canvas.getContext("2d");
-      if (!ctx) return;
+      if (!ctx) {
+        // getContext 失败不终结动画链：下帧重试，直到组件卸载。
+        animationRef.current = requestAnimationFrame(tick);
+        return;
+      }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const dpr = dprRef.current;
@@ -1128,12 +1173,15 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
 
   // 离开播放器时清空专注控制器的播放联动状态，
   // 否则控制器仍认为视频在播，"继续专注"会误判为可以恢复计时。
+  // 必须挂到控制器单例 + 空依赖：useFocusTimer 每次渲染返回新对象，
+  // 依赖它会让 cleanup 以 4 次/秒（timeupdate 频率）执行，把进行中的
+  // 专注会话立刻打断并永久停在"已暂停"。
   useEffect(() => {
-    const controller = focusTimer;
+    const controller = focusTimerController;
     return () => {
       void controller.updatePlaybackState({ bvid: "", partCid: 0, isPlaying: false });
     };
-  }, [focusTimer]);
+  }, []);
 
   useEffect(() => {
     if (!video) return;
@@ -1155,6 +1203,13 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         },
         seekBy: (delta) => {
           const next = Math.max(0, Math.min(durationRef.current, currentTimeRef.current + delta));
+          if (nativePlayerActive) void nativePlayerRef.current?.seek(next);
+          else playerControlRef.current?.seek(next);
+          currentTimeRef.current = next;
+          setCurrentTime(next);
+        },
+        seekTo: (seconds) => {
+          const next = Math.max(0, Math.min(durationRef.current, seconds));
           if (nativePlayerActive) void nativePlayerRef.current?.seek(next);
           else playerControlRef.current?.seek(next);
           currentTimeRef.current = next;
@@ -1308,7 +1363,13 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   async function jumpToNotePosition() {
     if (editingNoteId == null) return;
     const targetPart = findNotePart(notePartCid);
-    if (targetPart && targetPart.cid !== activePartCid) setActivePartCid(targetPart.cid);
+    if (targetPart && targetPart.cid !== activePartCid) {
+      // 跨分P：旧播放器实例即将销毁，此刻 seek 无效；把目标交给新管线消费。
+      pendingSeekTargetRef.current = { cid: targetPart.cid, seconds: notePositionSeconds };
+      setActivePartCid(targetPart.cid);
+      setCurrentTime(notePositionSeconds);
+      return;
+    }
     if (nativePlayerActive && nativePlayerRef.current) void nativePlayerRef.current.seek(notePositionSeconds);
     playerControlRef.current?.seek(notePositionSeconds);
     setCurrentTime(notePositionSeconds);
@@ -1721,6 +1782,9 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     setCurrentTime(0);
     setInteractiveChoicePresented(false);
     setInteractiveEdgeId(target.edgeId);
+    // 分支起点是一次性跳转目标：仅改 resumedPositionRef 会被按 cid 回读的
+    // 续播 effect 覆盖成该分支的历史进度，导致重看分支跳到旧位置。
+    pendingSeekTargetRef.current = { cid: target.cid, seconds: 0 };
     setActivePartCid(target.cid);
     const requestId = ++interactiveRequestRef.current;
     setInteractiveLoading(true);

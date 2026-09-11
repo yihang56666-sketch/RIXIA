@@ -28,10 +28,26 @@ export interface FocusSessionStorageService {
   saveState(activeSession: FullFocusSession | null, history: FullFocusSession[]): Promise<boolean>;
 }
 
+/** 各实例的作废器：导入备份前统一调用，丢弃尚未落盘的挂起写入。 */
+const pendingSaveInvalidators = new Set<() => void>();
+
+/**
+ * 丢掉所有专注存储实例里尚未落盘的写入（备份导入前调用）：导入前一刻
+ * 排队的旧状态若在导入完成后落盘，会把刚恢复的数据原样覆盖回去。
+ */
+export function invalidatePendingSaves(): void {
+  for (const invalidate of [...pendingSaveInvalidators]) invalidate();
+}
+
 export function createFocusSessionStorageService(
   storage: Storage = localStorage,
 ): FocusSessionStorageService {
   let saveQueue: Promise<boolean> = Promise.resolve(true);
+  let queueGeneration = 0;
+  const invalidate = () => {
+    queueGeneration += 1;
+  };
+  pendingSaveInvalidators.add(invalidate);
   return {
     async loadState() {
       try {
@@ -71,7 +87,10 @@ export function createFocusSessionStorageService(
       }
     },
     async saveState(activeSession, history) {
+      const generation = queueGeneration;
       saveQueue = saveQueue.then(() => {
+        // 入队后发生了作废（如备份导入）：本次写入必须丢弃，否则会用旧状态覆盖新数据。
+        if (generation !== queueGeneration) return false;
         try {
           if (activeSession == null) {
             storage.removeItem(ACTIVE_KEY);

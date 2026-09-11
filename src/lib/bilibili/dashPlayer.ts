@@ -99,6 +99,8 @@ interface BufferPipeline {
   scanTail: Uint8Array;
   /** 在途分块下载的取消器。 */
   fetchController: AbortController | null;
+  /** 连续配额失败次数：成功 append 后清零，超过上限按致命错误处理。 */
+  quotaRetries: number;
 }
 
 export class DashPlayer {
@@ -247,6 +249,7 @@ export class DashPlayer {
       prefixChunks: [],
       scanTail: new Uint8Array(0),
       fetchController: null,
+      quotaRetries: 0,
     };
   }
 
@@ -497,7 +500,12 @@ export class DashPlayer {
       this.video.currentTime = start;
       return;
     }
-    if (time > end - 0.05) {
+    // 只在媒体中段做 0.1s 的回拨顺滑；片尾（缓冲末端已贴近媒体时长）绝不回拨：
+    // 音频轨末端通常比视频短几十毫秒，回拨会在"到达末端→waiting→回拨"里
+    // 死循环，ended 永不触发，完成判定/连播/专注打卡全部失效。
+    const mediaDuration = this.video.duration;
+    const nearMediaEnd = Number.isFinite(mediaDuration) && mediaDuration > 0 && end >= mediaDuration - 0.5;
+    if (time > end - 0.05 && !nearMediaEnd) {
       this.video.currentTime = Math.max(start, end - 0.1);
     }
   }
@@ -552,9 +560,20 @@ export class DashPlayer {
     try {
       pipeline.buffer.appendBuffer(chunk);
       pipeline.appendedBytes += chunk.byteLength;
+      pipeline.quotaRetries = 0;
     } catch (error) {
       pipeline.buffer.removeEventListener("updateend", onDone);
       pipeline.pumping = false;
+      const isQuota = error instanceof DOMException && error.name === "QuotaExceededError";
+      if (isQuota && pipeline.quotaRetries < 3) {
+        // 配额类失败先淘汰已播放数据再重试当前块，而不是整管报废：
+        // 低内存设备/后台标签页背压变慢时最容易触发，且通常一清就够。
+        pipeline.quotaRetries += 1;
+        pipeline.queue.unshift(chunk);
+        this.evictPlayedData(true);
+        this.schedulePumpWake();
+        return;
+      }
       if (!pipeline.firstChunkSettled) {
         pipeline.firstChunkSettled = true;
         pipeline.rejectFirstChunk(new Error(`媒体数据追加失败：${String(error)}`));

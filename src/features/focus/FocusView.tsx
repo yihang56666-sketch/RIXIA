@@ -16,6 +16,9 @@ const focusNotificationService = createFocusNotificationService(
 );
 
 const COUNTUP_LAP_SECONDS = 30 * 60;
+/** 恢复持久化计时快照时，锚点已过期超过该宽限值则视为"关闭期间已失效"：
+ * 不再自动续跑。否则重开应用会立即把一整段专注记到今天（幻影完成）。 */
+const RESTORE_EXPIRED_GRACE_MS = 60_000;
 
 type Phase = "focus" | "short-break" | "long-break";
 type Mode = "countdown" | "countup";
@@ -33,38 +36,50 @@ export function FocusView() {
     activeFocus,
     setActiveFocus,
   } = useAppStore();
+  const restoredAnchorExpired = Boolean(
+    activeFocus?.running &&
+      ((activeFocus.mode === "countdown" &&
+        typeof activeFocus.endsAtMs === "number" &&
+        Date.now() - activeFocus.endsAtMs > RESTORE_EXPIRED_GRACE_MS) ||
+        (activeFocus.mode === "countup" &&
+          typeof activeFocus.countupStartedAtMs === "number" &&
+          Date.now() - activeFocus.countupStartedAtMs > RESTORE_EXPIRED_GRACE_MS)),
+  );
   // 计时状态以"锚点时间戳"为唯一真源（endsAt / countupStart），
   // 并镜像到 store 的 activeFocus —— 切换视图或重启后都能精确恢复，
   // 后台标签页被节流也不会产生累计漂移。
   const [mode, setMode] = useState<Mode>(() => activeFocus?.mode ?? "countdown");
   const [phase, setPhase] = useState<Phase>(() => activeFocus?.phase ?? "focus");
   const endsAtRef = useRef<number | null>(
-    activeFocus?.mode === "countdown" && typeof activeFocus?.endsAtMs === "number" ? activeFocus.endsAtMs : null,
+    activeFocus?.mode === "countdown" && typeof activeFocus?.endsAtMs === "number" && !restoredAnchorExpired
+      ? activeFocus.endsAtMs
+      : null,
   );
   const countupBaseRef = useRef<number>(
     activeFocus?.mode === "countup" ? (activeFocus?.countupElapsedMs ?? 0) : 0,
   );
   const countupStartRef = useRef<number | null>(
-    activeFocus?.mode === "countup" && activeFocus?.running && typeof activeFocus?.countupStartedAtMs === "number"
+    activeFocus?.mode === "countup" && activeFocus?.running && !restoredAnchorExpired &&
+    typeof activeFocus?.countupStartedAtMs === "number"
       ? activeFocus.countupStartedAtMs
       : null,
   );
   const startedAtRef = useRef<string>(activeFocus?.startedAt ?? "");
   const [seconds, setSeconds] = useState<number>(() => {
     if (activeFocus?.mode !== "countdown") return focusMinutes * 60;
-    if (activeFocus.running && endsAtRef.current != null) {
+    if (activeFocus.running && !restoredAnchorExpired && endsAtRef.current != null) {
       return Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000));
     }
     return activeFocus.remainingSeconds ?? focusMinutes * 60;
   });
   const [upSeconds, setUpSeconds] = useState<number>(() => {
     if (activeFocus?.mode !== "countup") return 0;
-    if (activeFocus.running && countupStartRef.current != null) {
+    if (activeFocus.running && !restoredAnchorExpired && countupStartRef.current != null) {
       return Math.floor((countupBaseRef.current + Date.now() - countupStartRef.current) / 1000);
     }
     return Math.floor(countupBaseRef.current / 1000);
   });
-  const [active, setActive] = useState<boolean>(() => Boolean(activeFocus?.running));
+  const [active, setActive] = useState<boolean>(() => Boolean(activeFocus?.running) && !restoredAnchorExpired);
   const [completedRounds, setCompletedRounds] = useState<number>(() => activeFocus?.completedRounds ?? 0);
   const [noiseKind, setNoiseKind] = useState<NoiseKind | null>(null);
   const [noiseVolume, setNoiseVolume] = useState(0.4);
@@ -78,6 +93,11 @@ export function FocusView() {
   useEffect(() => {
     activeRef.current = active;
   }, [active]);
+  // 恢复时发现锚点已过期：清掉持久化快照，避免其他视图仍认为专注进行中。
+  useEffect(() => {
+    if (restoredAnchorExpired) clearPersistedSnapshot();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   function persistSnapshot(options: {
     mode: Mode;
     phase: Phase;

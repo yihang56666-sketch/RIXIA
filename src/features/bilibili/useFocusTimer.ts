@@ -36,6 +36,7 @@ import {
   createFocusSessionStorageService,
 } from "../../lib/bilibili/focusServices";
 import { shouldAutoCompleteFocus } from "../../lib/bilibili/focusCompletionPolicy";
+import { createId } from "../../lib/id";
 import {
   buildFocusStatisticsSnapshot,
   FocusStatisticsRange,
@@ -198,7 +199,7 @@ class FocusTimerController {
     const now = Date.now();
     const remaining = remainingAt(session, now);
     if (shouldAutoCompleteFocus(session.status, remaining)) {
-      this.finishActive(now, FocusSessionStatus.completed, "时间到");
+      void this.finishActive(now, FocusSessionStatus.completed, "时间到");
       return;
     }
     this.notify();
@@ -224,7 +225,16 @@ class FocusTimerController {
     }
   }
 
-  private finishActive(now: number, status: FocusSessionStatus, reason: string): void {
+  /** 完成路径落盘失败（常见为配额不足）时的可见提示：宁可大声报错，不静默丢记录。 */
+  private warnIfPersistFailed(saved: boolean, finished: FullFocusSession): void {
+    if (saved) return;
+    void this.notificationService.showFocusCompleted(
+      "专注记录未保存",
+      `${Math.max(1, Math.round(finished.accumulatedFocusMs / 60000))} 分钟的记录因本机存储空间不足可能丢失，请导出备份或清理空间`,
+    );
+  }
+
+  private async finishActive(now: number, status: FocusSessionStatus, reason: string): Promise<void> {
     const session = this.activeSession;
     if (!session) return;
     const finished = finishAt(session, now, status, reason);
@@ -232,15 +242,20 @@ class FocusTimerController {
     this.lastFinishedSession = finished;
     this.history = nextHistory;
     this.activeSession = null;
-    this.persist(null, nextHistory);
     void this.notificationService.cancelReminder(session.id);
     if (status === FocusSessionStatus.completed) {
+      const saved = await this.persist(null, nextHistory);
+      this.notify();
+      this.warnIfPersistFailed(saved, finished);
       void this.notificationService.showFocusCompleted(
         "专注完成",
         `${Math.max(1, Math.round(finished.accumulatedFocusMs / 60000))} 分钟专注已完成，休息一下吧`,
       );
+    } else {
+      const saved = await this.persist(null, nextHistory);
+      this.notify();
+      if (status === FocusSessionStatus.endedEarly) this.warnIfPersistFailed(saved, finished);
     }
-    this.notify();
   }
 
   startFocus: UseFocusTimer["startFocus"] = async (params) => {
@@ -250,7 +265,8 @@ class FocusTimerController {
     const now = Date.now();
     const hasSource = Boolean(params.sourceBvid?.trim()) && params.sourcePartCid != null;
     const session = createFocusSession({
-      id: String(now),
+      // 不能用毫秒时间戳当 id：loadState 按 id 去重，同毫秒开始的两段会话会被当成重复丢弃。
+      id: createId(),
       goal,
       plannedDurationMs: params.durationMs,
       now: new Date(now).toISOString(),
@@ -368,8 +384,9 @@ class FocusTimerController {
     this.history = nextHistory;
     this.activeSession = null;
     void this.notificationService.cancelReminder(session.id);
-    this.persist(null, nextHistory);
+    const saved = await this.persist(null, nextHistory);
     this.notify();
+    this.warnIfPersistFailed(saved, finished);
     return true;
   };
 
@@ -433,7 +450,7 @@ class FocusTimerController {
 
   endFocusEarly: UseFocusTimer["endFocusEarly"] = async (reason) => {
     if (!this.activeSession || !isActive(this.activeSession)) return;
-    this.finishActive(Date.now(), FocusSessionStatus.endedEarly, reason ?? "未填写原因");
+    await this.finishActive(Date.now(), FocusSessionStatus.endedEarly, reason ?? "未填写原因");
   };
 
   dismissLastFinishedSession: UseFocusTimer["dismissLastFinishedSession"] = () => {

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BilibiliPlayerView } from "./BilibiliPlayerView";
+import { focusTimerController } from "./useFocusTimer";
 import { useAppStore } from "../../store/useAppStore";
 
 // MSE DASH 播放器替身：浏览器模式下控制面由 DashPlayer 驱动，测试断言它
@@ -87,7 +88,10 @@ vi.mock("../../lib/bilibili/services", () => ({
   createLearningListService: () => ({ add: vi.fn().mockResolvedValue(true), list: vi.fn().mockResolvedValue([]), markCompleted: vi.fn().mockResolvedValue(true) }),
 }));
 
-vi.mock("./useFocusTimer", () => ({ useFocusTimer: () => focusTimer }));
+vi.mock("./useFocusTimer", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./useFocusTimer")>();
+  return { ...actual, useFocusTimer: () => focusTimer };
+});
 
 vi.mock("../../lib/bilibili/subtitleService", () => ({
   createSubtitleService: () => ({
@@ -282,6 +286,27 @@ describe("BilibiliPlayerView", () => {
     })), { timeout: 2500 });
   });
 
+  it("does not clear the focus controller's playback link on playback re-renders, only on unmount", async () => {
+    const updatePlaybackStateSpy = vi
+      .spyOn(focusTimerController, "updatePlaybackState")
+      .mockResolvedValue(undefined);
+    const view = render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    const slider = await screen.findByRole("slider");
+    await waitFor(() => expect(dashInstances.length).toBeGreaterThan(0));
+
+    // 模拟 MSE 播放中的高频进度重渲染（timeupdate ~4次/秒）
+    fireEvent.change(slider, { target: { value: "20" } });
+    fireEvent.change(slider, { target: { value: "30" } });
+    fireEvent.change(slider, { target: { value: "40" } });
+    expect(updatePlaybackStateSpy).not.toHaveBeenCalledWith(expect.objectContaining({ bvid: "" }));
+
+    view.unmount();
+    await waitFor(() =>
+      expect(updatePlaybackStateSpy).toHaveBeenLastCalledWith({ bvid: "", partCid: 0, isPlaying: false }),
+    );
+    updatePlaybackStateSpy.mockRestore();
+  });
+
   it("defers the seek command until the progress slider drag ends", async () => {
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
     const slider = await screen.findByRole("slider", { name: "播放进度" });
@@ -372,6 +397,32 @@ describe("BilibiliPlayerView", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /P2/ })).toHaveClass("active"));
     expect(screen.getByText("P2", { exact: true })).toBeInTheDocument();
     expect(screen.getByText("已跳转到上次观看记录：01:00")).toBeInTheDocument();
+  });
+
+  it("ignores the local watch history fallback when resume-from-last-position is disabled", async () => {
+    listWatchHistory.mockResolvedValue([{
+      bvid: "BV1xx411c7mD",
+      cid: 101,
+      title: "测试课程",
+      ownerName: "测试老师",
+      thumbnailUrl: "",
+      durationSeconds: 120,
+      watchedAt: new Date().toISOString(),
+      positionSeconds: 60,
+      completed: false,
+    }]);
+    playbackPreferences.resumeFromLastPosition = false;
+
+    try {
+      render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+
+      await waitFor(() => expect(screen.getByRole("button", { name: /P1/ })).toHaveClass("active"));
+      expect(screen.getByRole("button", { name: /P2/ })).not.toHaveClass("active");
+      expect(screen.getByRole("slider")).toHaveValue("0");
+      expect(screen.queryByText(/已跳转到上次观看记录/)).not.toBeInTheDocument();
+    } finally {
+      playbackPreferences.resumeFromLastPosition = true;
+    }
   });
 
   it("shows a resume notice when an explicit playback target is applied", async () => {

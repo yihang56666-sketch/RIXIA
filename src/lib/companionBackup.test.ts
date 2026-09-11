@@ -33,6 +33,9 @@ describe("companion backup", () => {
       [LEARNING_LIST_KEY]: JSON.stringify([{ id: "BV1:1" }]),
       [FOCUS_HISTORY_KEY]: JSON.stringify([{ id: "f1" }]),
       [ACTIVE_KEY]: JSON.stringify({ id: "f-active", kind: "work" }),
+      "focubili.playback-progress.v1:BV1:100": JSON.stringify({ positionSeconds: 42 }),
+      "focubili.playback-progress.v1:BV2:200": JSON.stringify({ positionSeconds: 7 }),
+      rixia_search_history_v1: JSON.stringify(["高数", "线代"]),
     });
     const exported = exportCompanionBackup(storage);
     expect(exported.videoNotes).toEqual([{ id: "n1", bvid: "BV1" }]);
@@ -41,6 +44,11 @@ describe("companion backup", () => {
     expect(exported.focusActiveSession).toEqual({ id: "f-active", kind: "work" });
     expect(exported.watchHistory).toEqual([]);
     expect(exported.localWatchHistory).toEqual([]);
+    expect(exported.playbackProgress).toEqual({
+      "focubili.playback-progress.v1:BV1:100": JSON.stringify({ positionSeconds: 42 }),
+      "focubili.playback-progress.v1:BV2:200": JSON.stringify({ positionSeconds: 7 }),
+    });
+    expect(exported.searchHistory).toEqual(["高数", "线代"]);
   });
 
   it("treats corrupt keys as empty instead of throwing", () => {
@@ -52,6 +60,8 @@ describe("companion backup", () => {
     expect(exported.videoNotes).toEqual([]);
     expect(exported.focusHistory).toEqual([]);
     expect(exported.focusActiveSession).toBeNull();
+    expect(exported.playbackProgress).toEqual({});
+    expect(exported.searchHistory).toEqual([]);
   });
 
   it("round-trips companion data through import", () => {
@@ -64,6 +74,8 @@ describe("companion backup", () => {
         watchHistory: [],
         learningList: [{ id: "l1" }],
         localWatchHistory: [{ bvid: "BV1" }],
+        playbackProgress: { "focubili.playback-progress.v1:BV1:100": '{"positionSeconds":42}' },
+        searchHistory: ["考研英语"],
       },
       storage,
     );
@@ -72,6 +84,8 @@ describe("companion backup", () => {
     expect(JSON.parse(storage.getItem(FOCUS_HISTORY_KEY) ?? "[]")).toEqual([{ id: "f1" }]);
     expect(JSON.parse(storage.getItem(ACTIVE_KEY) ?? "null")).toEqual({ id: "a1" });
     expect(storage.getItem("rixia_watch_history_v1")).toBe("[]");
+    expect(storage.getItem("focubili.playback-progress.v1:BV1:100")).toBe('{"positionSeconds":42}');
+    expect(storage.getItem("rixia_search_history_v1")).toBe('["考研英语"]');
   });
 
   it("removes the active-session key when the backup has no active session", () => {
@@ -84,10 +98,56 @@ describe("companion backup", () => {
         watchHistory: [],
         learningList: [],
         localWatchHistory: [],
+        playbackProgress: {},
+        searchHistory: [],
       },
       storage,
     );
     expect(storage.getItem(ACTIVE_KEY)).toBeNull();
+  });
+
+  it("leaves existing playback progress untouched when restoring a legacy backup without the field", () => {
+    const storage = createMemoryStorage({
+      "focubili.playback-progress.v1:BV1:100": '{"positionSeconds":60}',
+      rixia_search_history_v1: '["旧记录"]',
+    });
+    importCompanionBackup(
+      {
+        focusActiveSession: null,
+        focusHistory: [],
+        videoNotes: [],
+        watchHistory: [],
+        learningList: [],
+        localWatchHistory: [],
+        playbackProgress: null,
+        searchHistory: null,
+      },
+      storage,
+    );
+    expect(storage.getItem("focubili.playback-progress.v1:BV1:100")).toBe('{"positionSeconds":60}');
+    expect(storage.getItem("rixia_search_history_v1")).toBe('["旧记录"]');
+  });
+
+  it("import clears stale progress keys that are absent from the backup snapshot", () => {
+    const storage = createMemoryStorage({
+      "focubili.playback-progress.v1:BV1:100": '{"positionSeconds":60}',
+      "focubili.playback-progress.v1:BV9:900": '{"positionSeconds":5}',
+    });
+    importCompanionBackup(
+      {
+        focusActiveSession: null,
+        focusHistory: [],
+        videoNotes: [],
+        watchHistory: [],
+        learningList: [],
+        localWatchHistory: [],
+        playbackProgress: { "focubili.playback-progress.v1:BV1:100": '{"positionSeconds":42}' },
+        searchHistory: [],
+      },
+      storage,
+    );
+    expect(storage.getItem("focubili.playback-progress.v1:BV1:100")).toBe('{"positionSeconds":42}');
+    expect(storage.getItem("focubili.playback-progress.v1:BV9:900")).toBeNull();
   });
 
   it("sanitize keeps valid shapes and drops malformed fields", () => {
@@ -98,6 +158,12 @@ describe("companion backup", () => {
       watchHistory: 42,
       learningList: null,
       localWatchHistory: [],
+      playbackProgress: {
+        "focubili.playback-progress.v1:BV1:100": '{"positionSeconds":42}',
+        "evil-key": "dropped",
+        "focubili.playback-progress.v1:BV2:200": 42,
+      },
+      searchHistory: ["ok", 42],
     });
     expect(sanitized).toEqual({
       focusActiveSession: { id: "a1" },
@@ -106,7 +172,22 @@ describe("companion backup", () => {
       watchHistory: [],
       learningList: [],
       localWatchHistory: [],
+      playbackProgress: { "focubili.playback-progress.v1:BV1:100": '{"positionSeconds":42}' },
+      searchHistory: ["ok"],
     });
+  });
+
+  it("sanitize maps missing new fields to null (legacy backups keep device data)", () => {
+    const sanitized = sanitizeCompanionBackup({
+      focusActiveSession: null,
+      focusHistory: [],
+      videoNotes: [],
+      watchHistory: [],
+      learningList: [],
+      localWatchHistory: [],
+    });
+    expect(sanitized?.playbackProgress).toBeNull();
+    expect(sanitized?.searchHistory).toBeNull();
   });
 
   it("sanitize returns null for non-object blocks (legacy backups)", () => {
@@ -137,6 +218,8 @@ describe("companion backup", () => {
           watchHistory: [],
           learningList: [],
           localWatchHistory: [],
+          playbackProgress: {},
+          searchHistory: [],
         },
         flaky,
       ),

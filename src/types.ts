@@ -278,6 +278,10 @@ export interface CompanionBackupData {
   watchHistory: unknown[];
   learningList: unknown[];
   localWatchHistory: unknown[];
+  /** 分P续播进度（键 = focubili.playback-progress.v1:<bvid>:<cid>）。旧版备份无此字段（null）：导入时保留设备现有数据。 */
+  playbackProgress: Record<string, string> | null;
+  /** 搜索历史（单键 JSON 数组）。旧版备份无此字段（null）：导入时保留设备现有数据。 */
+  searchHistory: string[] | null;
 }
 
 export interface BackupData {

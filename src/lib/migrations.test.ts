@@ -137,6 +137,8 @@ describe("persisted state v2 migration", () => {
           watchHistory: "junk",
           learningList: [],
           localWatchHistory: [],
+          playbackProgress: { "focubili.playback-progress.v1:BV1:100": '{"positionSeconds":42}' },
+          searchHistory: ["高数"],
         },
       },
     });
@@ -147,6 +149,8 @@ describe("persisted state v2 migration", () => {
       watchHistory: [],
       learningList: [],
       localWatchHistory: [],
+      playbackProgress: { "focubili.playback-progress.v1:BV1:100": '{"positionSeconds":42}' },
+      searchHistory: ["高数"],
     });
   });
 

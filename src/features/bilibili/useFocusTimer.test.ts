@@ -30,6 +30,7 @@ describe("focus controller backup recovery", () => {
     importCompanionBackup({
       focusActiveSession: null, focusHistory: [restored], videoNotes: [],
       watchHistory: [], learningList: [], localWatchHistory: [],
+      playbackProgress: {}, searchHistory: [],
     });
 
     await vi.waitFor(() => expect(focusTimerController.history.map((session) => session.id)).toEqual(["restored-session"]));
