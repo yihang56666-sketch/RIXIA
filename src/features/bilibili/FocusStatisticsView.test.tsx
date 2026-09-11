@@ -24,14 +24,17 @@ vi.mock("./useFocusTimer", () => ({
 }));
 
 function completedSession(id: string, goal: string): FullFocusSession {
+  // 会话时间必须相对"现在"：统计页默认只显示最近 7 天，固定日期的夹具
+  // 一旦越过 7 天边界（写死于 2026-09-05，9 月 12 日起必失败）整页为空。
+  const startMs = Date.now() - 60 * 60 * 1000;
   return finishAt(
     createFocusSession({
       id,
       goal,
       plannedDurationMs: 60_000,
-      now: "2026-09-05T12:00:00.000Z",
+      now: new Date(startMs).toISOString(),
     }),
-    Date.parse("2026-09-05T12:01:00.000Z"),
+    startMs + 60_000,
     FocusSessionStatus.completed,
     "时间到",
   );
