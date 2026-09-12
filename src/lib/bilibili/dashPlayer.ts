@@ -113,6 +113,8 @@ export class DashPlayer {
   private loadAborted = false;
   /** 每次跳转重启 +1；旧拉流循环在 await 点发现代际落后即退出。 */
   private generation = 0;
+  /** 重启重试期间抑制 runStream 的即时 onError：失败统一由重试包装器裁决后上报。 */
+  private suppressStreamError = false;
   private pumpWakeTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: DashPlayerOptions) {
@@ -335,14 +337,17 @@ export class DashPlayer {
             pipeline.firstChunkSettled = true;
             pipeline.rejectFirstChunk(error instanceof Error ? error : new Error("媒体流加载失败"));
           }
-          this.options.onError?.(error instanceof Error ? error.message : "媒体流加载失败");
+          // 跳转重启（restartAt）期间不再直接上报：失败经 firstChunk 拒绝
+          // 交给重试包装器，两轮都失败才作为致命错误发出。
+          if (!this.suppressStreamError) {
+            this.options.onError?.(error instanceof Error ? error.message : "媒体流加载失败");
+          }
           return;
         }
-        pipeline.queue = [];
-        pipeline.prefixChunks = [];
-        pipeline.scanTail = new Uint8Array(0);
-        pipeline.alignedToSegment = false;
-        pipeline.startedFromZero = startOffset <= 0;
+        // 换备用源重试时保留队列与扫描状态：offset 继续从失败点推进，若清空
+        // 已入队未 append 的分块会留下永久数据缺口（播放到缺口处卡死）。
+        // 备源是同一文件的 CDN 镜像，字节布局一致，扫描状态依然有效；
+        // 若镜像内容不一致，append 会解析报错走既有失败路径。
       }
     }
   }
@@ -633,6 +638,25 @@ export class DashPlayer {
     this.video.pause();
   }
 
+  /**
+   * 用新的 playurl 结果替换各轨 CDN 源并从当前播放位置重启。
+   * B 站媒体 URL 短时效，长暂停/后台后 seek 撞 403 时，刷新 playurl 比反复
+   * 重试过期 URL 更有用（与 native 路径的 openNativePlaybackWithRefresh 对齐）。
+   */
+  async refresh(stream: DashStream, preferredQuality?: number): Promise<void> {
+    const videoTrack = pickVideoTrack(stream, preferredQuality);
+    const audioTrack = stream.audio[0] ?? null;
+    if (this.videoPipeline) {
+      this.videoPipeline.sources = trackSourceCandidates(videoTrack);
+      this.videoPipeline.finished = false;
+    }
+    if (this.audioPipeline && audioTrack) {
+      this.audioPipeline.sources = trackSourceCandidates(audioTrack);
+      this.audioPipeline.finished = false;
+    }
+    await this.restartAt(this.video.currentTime || 0);
+  }
+
   /** 目标时间两轨都已缓冲时直接挪播放头，否则重启拉流到目标分段。 */
   seek(time: number): void {
     const target = Math.max(0, time);
@@ -659,8 +683,30 @@ export class DashPlayer {
     });
   }
 
-  /** 把两轨的拉流切换到覆盖 target 时间的分段：清空缓冲、重放 init 段、从映射字节偏移重启下载。 */
+  /** 把两轨的拉流切换到覆盖 target 时间的分段；弱网下原地重试一次再报致命。 */
   private async restartAt(target: number): Promise<void> {
+    let lastError: unknown = null;
+    const firstGeneration = this.generation;
+    this.suppressStreamError = true;
+    try {
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          await this.restartAtOnce(target);
+          return;
+        } catch (error) {
+          // 代际落后说明期间有新 seek 或销毁：attempt N 结束时代际应为
+          // firstGeneration + N；更大即有新 seek，旧尝试的失败必须作废。
+          if (this.loadAborted || this.generation !== firstGeneration + attempt) return;
+          lastError = error;
+        }
+      }
+      this.options.onError?.(`跳转失败：${lastError instanceof Error ? lastError.message : "媒体流切换异常"}`);
+    } finally {
+      this.suppressStreamError = false;
+    }
+  }
+
+  private async restartAtOnce(target: number): Promise<void> {
     const generation = ++this.generation;
     const pipelines = [this.videoPipeline, this.audioPipeline].filter((p): p is BufferPipeline => p != null);
     if (pipelines.length === 0) return;
@@ -700,8 +746,9 @@ export class DashPlayer {
       }
       if (wasPlaying) void this.video.play().catch(() => undefined);
     } catch (error) {
+      // 抛给 restartAt 重试包装器：同一失败先原位重试一次，两轮都失败才上报致命。
       if (stale()) return;
-      this.options.onError?.(`跳转失败：${error instanceof Error ? error.message : "媒体流切换异常"}`);
+      throw error instanceof Error ? error : new Error("媒体流切换异常");
     }
   }
 

@@ -46,6 +46,11 @@ export function SettingsView() {
   const appUpdatePreferencesService = useMemo(() => createAppUpdatePreferencesService(), []);
   const [playbackPreferences, setPlaybackPreferences] = useState<PlaybackPreferences>(DEFAULT_PLAYBACK_PREFERENCES);
   const [danmakuPreferences, setDanmakuPreferences] = useState<DanmakuPreferences>(DEFAULT_DANMAKU_PREFERENCES);
+  // 最新偏好快照：事件处理器里计算 next 用（避免 updater 内做副作用）。
+  const playbackPreferencesRef = useRef(playbackPreferences);
+  playbackPreferencesRef.current = playbackPreferences;
+  const danmakuPreferencesRef = useRef(danmakuPreferences);
+  danmakuPreferencesRef.current = danmakuPreferences;
   // 屏蔽词输入的原始草稿：避免受控值过滤空段导致逗号打不进去
   const [blockedKeywordsDraft, setBlockedKeywordsDraft] = useState<string | null>(null);
   const [focusDoNotDisturb, setFocusDoNotDisturb] = useState(false);
@@ -75,20 +80,18 @@ export function SettingsView() {
     return () => { cancelled = true; };
   }, [focusPreferencesService]);
 
+  // 副作用（写存储）必须留在事件处理器里：放进 setState updater 会在
+  // StrictMode 双调用/并发重放下被重复执行。
   function updatePlaybackPreferences(patch: Partial<PlaybackPreferences>) {
-    setPlaybackPreferences((current) => {
-      const next = { ...current, ...patch };
-      void playbackPreferencesService.save(next);
-      return next;
-    });
+    const next = { ...playbackPreferencesRef.current, ...patch };
+    setPlaybackPreferences(next);
+    void playbackPreferencesService.save(next);
   }
 
   function updateDanmakuPreferences(patch: Partial<DanmakuPreferences>) {
-    setDanmakuPreferences((current) => {
-      const next = { ...current, ...patch };
-      void danmakuPreferencesService.save(next);
-      return next;
-    });
+    const next = { ...danmakuPreferencesRef.current, ...patch };
+    setDanmakuPreferences(next);
+    void danmakuPreferencesService.save(next);
   }
 
   function updateFocusDoNotDisturb(enabled: boolean) {
@@ -127,7 +130,8 @@ export function SettingsView() {
     anchor.href = url;
     anchor.download = `beid-backup-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
-    URL.revokeObjectURL(url);
+    // 下载导航异步消费 blob URL：同步 revoke 在 Firefox/Safari 上可能中断下载。
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
   async function importData(file: File | undefined) {
@@ -144,8 +148,13 @@ export function SettingsView() {
   function confirmImport() {
     if (!pendingImport) return;
     try {
-      useAppStore.getState().importBackup(pendingImport.data);
-      setImportMessage("导入完成，数据已恢复");
+      // importBackup 返回被过滤掉的条目数：不报告丢弃数等于宣称"全部恢复"。
+      const { droppedTotal } = useAppStore.getState().importBackup(pendingImport.data);
+      setImportMessage(
+        droppedTotal > 0
+          ? `导入完成，数据已恢复；另有 ${droppedTotal} 条格式异常的记录被跳过`
+          : "导入完成，数据已恢复",
+      );
     } catch (error) {
       setImportMessage(error instanceof Error ? error.message : "导入失败");
     } finally {

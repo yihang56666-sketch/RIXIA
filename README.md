@@ -2,7 +2,7 @@
 
 ![React](https://img.shields.io/badge/React-19-61dafb)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6)
-![Tests](https://img.shields.io/badge/tests-768%20Vitest%20%2B%2032%20Node-brightgreen)
+![Tests](https://img.shields.io/badge/tests-773%20Vitest%20%2B%2032%20Node-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 BEID 是一个本地优先的个人节奏与学习工作台，融合个人效率工具（任务、习惯、笔记、日记、倒计时、番茄专注）与完整的 B 站学习体验（搜索、账号数据、DASH 播放、弹幕、学习清单、时间点笔记）。
@@ -68,7 +68,7 @@ UI 直接调用内置的 B 站服务：公开搜索与元数据走 Web API 适�
 - Zustand 5（持久化，v3 格式，支持 v1/v2 迁移）
 - Lucide React 图标
 - Capacitor 8 Android 运行时（内置 Media3 播放器插件）
-- Vitest 单元测试（126 个测试文件 / 768 个测试；另有 Electron 与发布边界 Node 测试）
+- Vitest 单元测试（126 个测试文件 / 773 个测试；另有 Electron 与发布边界 Node 测试）
 - Electron（Windows 桌面打包）
 
 主状态模型位于 `src/store/useAppStore.ts`；功能页面组织在 `src/features` 下；共享的 B 站服务与播放代码位于 `src/lib/bilibili/`。
@@ -108,7 +108,7 @@ npm run dev
 提交改动前：
 
 ```bash
-npm test            # 768 Vitest tests + 32 Node tests
+npm test            # 773 Vitest tests + 32 Node tests
 npm run typecheck
 npm run build
 ```

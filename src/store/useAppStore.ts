@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { extractBvid } from "../lib/bilibili";
 import { identifyResourceSource, normalizeResourceLink } from "../lib/resourceSources";
-import { migratePersistedState, validateBackup } from "../lib/migrations";
+import { backupDropCounts, migratePersistedState, validateBackup } from "../lib/migrations";
 import { exportCompanionBackup, importCompanionBackup } from "../lib/companionBackup";
 import { enforceDataUrlBudget } from "../lib/backgroundImage";
 import { createId } from "../lib/id";
@@ -102,7 +102,7 @@ interface AppActions {
   setActiveFocus: (focus: ActiveFocus | null) => void;
   saveJournal: (date: string, body: string) => void;
   getJournal: (date: string) => JournalEntry | undefined;
-  importBackup: (input: unknown) => void;
+  importBackup: (input: unknown) => { droppedTotal: number };
   exportBackup: () => BackupData;
   resetAll: () => void;
 }
@@ -646,6 +646,12 @@ export const useAppStore = create<AppState & AppActions>()(
       saveJournal: (date, body) => set((state) => {
         const existing = state.journals.find((entry) => entry.date === date);
         const updatedAt = new Date().toISOString();
+        // 与 rehydrate 迁移契约对齐（空正文不保留）：清空正文等同删除该日日记，
+        // 否则"保存成功→重启消失"。
+        if (!body.trim()) {
+          if (!existing) return {};
+          return { journals: state.journals.filter((entry) => entry.date !== date) };
+        }
         if (existing) {
           return {
             journals: state.journals.map((entry) =>
@@ -658,6 +664,9 @@ export const useAppStore = create<AppState & AppActions>()(
       getJournal: (date) => get().journals.find((entry) => entry.date === date),
       importBackup: (input) => {
         const data = validateBackup(input);
+        // 形状异常的条目会被逐项过滤：把丢弃数带给调用方，不能宣称"全部恢复"。
+        const drops = backupDropCounts(input, data);
+        const droppedTotal = Object.values(drops).reduce((sum, count) => sum + count, 0);
         set({
           theme: data.theme,
           density: data.density,
@@ -690,6 +699,7 @@ export const useAppStore = create<AppState & AppActions>()(
         if (rootWriteFailed || failedKeys.length > 0) {
           throw new Error("备份未完整写入本机存储。请勿关闭应用或删除原始备份；释放存储空间后重新导入。");
         }
+        return { droppedTotal };
       },
       exportBackup: () => {
         const state = get();
@@ -721,7 +731,22 @@ export const useAppStore = create<AppState & AppActions>()(
           companion: exportCompanionBackup(),
         };
       },
-      resetAll: () => set({ ...initialState }),
+      resetAll: () => {
+        // "重置"必须连 companion 键一起清（观看历史/学习清单/专注/笔记/续播进度），
+        // 否则主 store 清空后隐私数据仍留在 localStorage。
+        try {
+          const storage = localStorage;
+          const staleKeys: string[] = [];
+          for (let index = 0; index < storage.length; index += 1) {
+            const key = storage.key(index);
+            if (key && (key.startsWith("rixia_") || key.startsWith("focubili."))) staleKeys.push(key);
+          }
+          for (const key of staleKeys) storage.removeItem(key);
+        } catch {
+          // 隐私模式下清不掉也不阻塞主 store 重置。
+        }
+        set({ ...initialState });
+      },
     }),
     {
       name: "rixia-v1",

@@ -108,4 +108,33 @@ describe("persisted state validation", () => {
     expect(useAppStore.getState().storageWriteFailed).toBe(true);
     expect(localStorage.getItem("rixia-v1")).toBeNull();
   });
+
+  it("treats saving an empty journal body as deletion, matching the rehydrate contract", () => {
+    useAppStore.getState().saveJournal("2026-09-12", "有内容的日记");
+    expect(useAppStore.getState().journals.find((entry) => entry.date === "2026-09-12")?.body).toBe("有内容的日记");
+
+    // 清空正文 = 删除该日日记（rehydrate 迁移本来就会丢弃空正文条目）。
+    useAppStore.getState().saveJournal("2026-09-12", "   ");
+    expect(useAppStore.getState().journals.find((entry) => entry.date === "2026-09-12")).toBeUndefined();
+
+    // 不存在条目时写空正文是无操作，不会凭空创建一条注定被丢弃的数据。
+    useAppStore.getState().saveJournal("2026-09-13", "");
+    expect(useAppStore.getState().journals.find((entry) => entry.date === "2026-09-13")).toBeUndefined();
+  });
+
+  it("clears companion storage keys when resetting everything", () => {
+    localStorage.setItem("rixia_focus_history", JSON.stringify([{ id: "f1" }]));
+    localStorage.setItem("rixia_video_notes_v1", JSON.stringify([{ id: "n1" }]));
+    localStorage.setItem("focubili.playback-progress.v1:BV1:100", '{"positionSeconds":42}');
+    localStorage.setItem("focubili.local-watch-history.v1", "[]");
+    localStorage.setItem("unrelated-app-key", "keep-me");
+
+    useAppStore.getState().resetAll();
+
+    expect(localStorage.getItem("rixia_focus_history")).toBeNull();
+    expect(localStorage.getItem("rixia_video_notes_v1")).toBeNull();
+    expect(localStorage.getItem("focubili.playback-progress.v1:BV1:100")).toBeNull();
+    expect(localStorage.getItem("focubili.local-watch-history.v1")).toBeNull();
+    expect(localStorage.getItem("unrelated-app-key")).toBe("keep-me");
+  });
 });

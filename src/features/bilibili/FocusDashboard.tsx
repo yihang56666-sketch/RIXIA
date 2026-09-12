@@ -850,6 +850,11 @@ export function FocusDashboard({ onOpenStatistics }: { onOpenStatistics: () => v
         gestureStartRef.current = scrollRef.current?.scrollTop ?? null;
       }}
       onTouchEnd={handleScrollEnd}
+      // 鼠标路径必须重置手势起点：否则 touch 滑动残留的旧起点会被之后的
+      // 一次普通点击当作手势开始，误触发回顶吸附动画。
+      onMouseDown={() => {
+        gestureStartRef.current = scrollRef.current?.scrollTop ?? null;
+      }}
       onMouseUp={handleScrollEnd}
     >
       <HomeHero

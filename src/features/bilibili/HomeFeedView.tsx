@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Flame, RefreshCw } from "lucide-react";
 import { createBilibiliPublicContentService } from "../../lib/bilibili/publicContentService";
 import { createSearchHistoryService } from "../../lib/bilibili/services";
@@ -36,6 +36,8 @@ export function HomeFeedView() {
   const [error, setError] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [activeKeyword, setActiveKeyword] = useState<string>("");
+  // 请求代际：快速切换关键词时丢弃旧请求的结果与 loading 态，避免旧响应覆盖新结果。
+  const loadGeneration = useRef(0);
 
   const DEFAULT_KEYWORDS = ["考研", "考研数学", "考研英语", "考研政治", "学习", "网课"];
 
@@ -46,6 +48,7 @@ export function HomeFeedView() {
   }, []);
 
   async function load(keyword: string) {
+    const generation = ++loadGeneration.current;
     setLoading(true);
     setError("");
     setActiveKeyword(keyword);
@@ -56,14 +59,17 @@ export function HomeFeedView() {
         publishedRange: VideoPublishedRange.lastWeek,
       };
       const page = await service.searchVideos(keyword, 1, filter);
+      if (generation !== loadGeneration.current) return;
       setResults(page.results);
       await historyService.record(keyword);
       const historyNow = await historyService.list();
+      if (generation !== loadGeneration.current) return;
       setHistory(historyNow);
     } catch (err) {
+      if (generation !== loadGeneration.current) return;
       setError(err instanceof Error ? err.message : "加载失败");
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration.current) setLoading(false);
     }
   }
 

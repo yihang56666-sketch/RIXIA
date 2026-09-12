@@ -187,7 +187,9 @@ function UnitForm({ subjectId, unit, onDone }: { subjectId: string; unit?: Study
   const [title, setTitle] = useState(unit?.title ?? "");
   const [startDate, setStartDate] = useState(unit?.startDate ?? today);
   const [endDate, setEndDate] = useState(unit?.endDate ?? today);
-  const valid = title.trim().length > 0 && startDate <= endDate;
+  // 日期必须非空："" <= "2026-09-12" 按字典序为真，缺这个检查时清空日期
+  // 的表单会通过前端校验、被 store 静默拒绝，条目无声丢失。
+  const valid = title.trim().length > 0 && startDate !== "" && endDate !== "" && startDate <= endDate;
 
   function changeStartDate(next: string) {
     setStartDate(next);
@@ -455,7 +457,7 @@ function MockTab({ today }: { today: string }) {
           <input className="field kaoyan-score-input" type="number" value={total} onChange={(event) => setTotal(event.target.value)} placeholder="满分" min={1} />
         </div>
         <div className="form-actions">
-          <button className="primary compact" type="submit" disabled={!subject.trim() || !score || !total}>记录这次模考</button>
+          <button className="primary compact" type="submit" disabled={!date || !subject.trim() || !score || !total} title={date ? undefined : "请选择模考日期"}>记录这次模考</button>
         </div>
       </form>
     </section>

@@ -17,10 +17,13 @@ export function PlayerFocusDoNotDisturbGuide({ onDismiss }: { onDismiss: () => v
   const [open, setOpen] = useState(true);
   const setView = useAppStore((state) => state.setView);
 
-  if (!open) {
-    onDismiss();
-    return null;
-  }
+  // 关闭后经 effect 通知父级：渲染期调用 onDismiss 会在子组件渲染阶段
+  // 触发父级 setState（React 明确禁止的反模式）。
+  useEffect(() => {
+    if (!open) onDismiss();
+  }, [open, onDismiss]);
+
+  if (!open) return null;
 
   const isWindows = Capacitor.getPlatform() === "web" && typeof navigator !== "undefined" && /Win/i.test(navigator.userAgent);
   return (
@@ -46,10 +49,11 @@ export function FocusReminderBackgroundGuide({ onDismiss }: { onDismiss: () => v
   const [open, setOpen] = useState(true);
   const setView = useAppStore((state) => state.setView);
 
-  if (!open) {
-    onDismiss();
-    return null;
-  }
+  useEffect(() => {
+    if (!open) onDismiss();
+  }, [open, onDismiss]);
+
+  if (!open) return null;
 
   return (
     <M3Dialog

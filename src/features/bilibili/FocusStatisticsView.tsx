@@ -7,7 +7,7 @@
  * 宽屏（≥900px 且横向）双栏，手机单列。
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTimer } from "./useFocusTimer";
 import {
   FocusSessionStatus,
@@ -84,19 +84,20 @@ function TrendLineChart({ snapshot }: { snapshot: FocusStatisticsSnapshot }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const trend = snapshot.dailyTrend;
-    const width = canvas.clientWidth;
-    const height = 170;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-    if (trend.length === 0 || width <= 0 || height <= 0) return;
+    const draw = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const trend = snapshot.dailyTrend;
+      const width = canvas.clientWidth;
+      const height = 170;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      if (trend.length === 0 || width <= 0 || height <= 0) return;
 
     const styles = getComputedStyle(document.documentElement);
     const lineColor = styles.getPropertyValue("--m3-primary").trim() || "#0b57d0";
@@ -193,6 +194,12 @@ function TrendLineChart({ snapshot }: { snapshot: FocusStatisticsSnapshot }) {
       const x = Math.min(chartRight - labelWidth, Math.max(chartLeft, points[index]!.x - labelWidth / 2));
       ctx.fillText(label, x, chartBottom + 7);
     }
+    };
+
+    draw();
+    // 窗口宽度变化时按新 clientWidth 重绘，否则画布按旧宽度拉伸导致模糊错位。
+    window.addEventListener("resize", draw);
+    return () => window.removeEventListener("resize", draw);
   }, [snapshot]);
 
   return <canvas ref={canvasRef} style={{ width: "100%", height: 170, display: "block" }} aria-hidden="true" />;
@@ -292,7 +299,11 @@ export function FocusStatisticsView() {
     );
   }
 
-  function MetricBoard() {
+  // 以下均为普通渲染函数（不是 JSX 组件）：定义在组件体内时若以 <Xxx /> 使用，
+  // 每次渲染的函数身份都不同，React 会整树卸载重建——专注计时期间每秒一次，
+  // 历史列表与画布全部重建。函数调用方式让返回的元素直接内联进树中。
+
+  function metricBoard() {
     return (
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
         <div style={{ flex: "1 1 calc(50% - 6px)", minWidth: 0 }}>
@@ -311,7 +322,7 @@ export function FocusStatisticsView() {
     );
   }
 
-  function InsightCard() {
+  function insightCard() {
     return (
       <section className="m3-card" style={{ padding: 18 }}>
         <p style={{ fontSize: 18, fontWeight: 700 }}>完成情况</p>
@@ -332,7 +343,7 @@ export function FocusStatisticsView() {
     );
   }
 
-  function TrendCard() {
+  function trendCard() {
     return (
       <section className="m3-card" style={{ padding: 18 }}>
         <p style={{ fontSize: 18, fontWeight: 700 }}>{sevenDay ? "近 7 天趋势" : "近 30 天趋势"}</p>
@@ -348,7 +359,7 @@ export function FocusStatisticsView() {
     );
   }
 
-  function ActiveSessionCard() {
+  function activeSessionCard() {
     if (!timer.activeSession) return null;
     return (
       <section className="m3-card" style={{ background: "var(--m3-primary-container)", color: "var(--m3-on-primary-container)" }}>
@@ -363,7 +374,7 @@ export function FocusStatisticsView() {
     );
   }
 
-  function RangeSelector() {
+  function rangeSelector() {
     return (
       <div className="m3-segmented" style={{ width: "100%" }}>
         {(
@@ -448,7 +459,7 @@ export function FocusStatisticsView() {
     );
   }
 
-  function HistoryCard({ session }: { session: FullFocusSession }) {
+  function historyCard(session: FullFocusSession) {
     const completed = session.status === FocusSessionStatus.completed;
     return (
       <section className="m3-card">
@@ -502,22 +513,22 @@ export function FocusStatisticsView() {
     );
   }
 
-  function OverviewPane() {
+  function overviewPane() {
     return (
       <>
-        <RangeSelector />
+        {rangeSelector()}
         {timer.activeSession && (
           <>
             <div style={{ height: 12 }} />
-            <ActiveSessionCard />
+            {activeSessionCard()}
           </>
         )}
         <div style={{ height: 12 }} />
-        <MetricBoard />
+        {metricBoard()}
         <div style={{ height: 12 }} />
-        <TrendCard />
+        {trendCard()}
         <div style={{ height: 12 }} />
-        <InsightCard />
+        {insightCard()}
       </>
     );
   }
@@ -539,7 +550,7 @@ export function FocusStatisticsView() {
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             {visibleHistory.map((session) => (
-              <HistoryCard key={session.id} session={session} />
+              <Fragment key={session.id}>{historyCard(session)}</Fragment>
             ))}
           </div>
         )}
@@ -571,7 +582,7 @@ export function FocusStatisticsView() {
       <div className="fb-statistics-frame" style={{ maxWidth: 1180, margin: "0 auto", width: "100%" }}>
         <div className="fb-statistics-narrow">
           <div style={{ display: "grid", gap: 12, padding: "8px 16px 32px" }}>
-            <OverviewPane />
+            {overviewPane()}
             <div style={{ height: 10 }} />
             {renderHistoryPane()}
           </div>
@@ -579,7 +590,7 @@ export function FocusStatisticsView() {
         <div className="fb-statistics-wide">
           <div style={{ display: "flex", height: "100%", minHeight: 0 }}>
             <div className="fb-scroll-page" style={{ flex: 6, padding: "8px 14px 32px 16px", display: "grid", gap: 12, alignContent: "start" }}>
-              <OverviewPane />
+              {overviewPane()}
             </div>
             <span className="m3-vertical-divider" style={{ width: 1 }} />
             <div className="fb-scroll-page" style={{ flex: 5, padding: "8px 16px 32px 14px", display: "grid", gap: 10, alignContent: "start" }}>

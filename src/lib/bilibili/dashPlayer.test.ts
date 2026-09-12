@@ -425,6 +425,65 @@ describe("DashPlayer range seeking", () => {
     player.destroy();
   });
 
+  it("retries a failed seek restart once in place before reporting a fatal error", async () => {
+    const video = createFakeVideo();
+    const onError = vi.fn();
+    const player = new DashPlayer({ video: video as unknown as HTMLVideoElement, onError });
+    await player.load(stream, 64);
+    for (const buffer of buffers) buffer.shrinkTo(45);
+
+    // 弱网模拟：重启拉流的第一次请求 403，随后的重试应当恢复而不是整管报废。
+    const baseFetch = globalThis.fetch;
+    let restartFetchFailed = false;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const range = String((init?.headers as Record<string, string>).Range ?? "");
+      if (range.startsWith(`bytes=${anchor + 5000}-`) && !restartFetchFailed) {
+        restartFetchFailed = true;
+        return { ok: false, status: 403 } as unknown as Response;
+      }
+      return (baseFetch as typeof fetch)(input, init);
+    });
+
+    player.seek(50);
+    await vi.waitFor(() => expect(video.currentTime).toBe(50));
+    expect(onError).not.toHaveBeenCalled();
+    player.destroy();
+  });
+
+  it("recovers from expired media URLs by refreshing the playurl sources", async () => {
+    const video = createFakeVideo();
+    const onError = vi.fn();
+    const player = new DashPlayer({ video: video as unknown as HTMLVideoElement, onError });
+    await player.load(stream, 64);
+    for (const buffer of buffers) buffer.shrinkTo(45);
+
+    // 旧 CDN URL 已过期：跳转目标分段的两次尝试全部 403 → 一次性致命错误。
+    const baseFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const range = String((init?.headers as Record<string, string>).Range ?? "");
+      if (range.startsWith(`bytes=${anchor + 5000}-`) && String(input).includes("video.m4s")) {
+        return { ok: false, status: 403 } as unknown as Response;
+      }
+      return (baseFetch as typeof fetch)(input, init);
+    });
+
+    player.seek(50);
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+    expect(String(onError.mock.calls[0]![0])).toContain("跳转失败");
+
+    // 视图层用新 playurl 换源重启：恢复拉流后再次 seek 成功。
+    const refreshedStream: DashStream = {
+      ...stream,
+      video: [{ id: 64, baseUrl: "https://cdn.test/video-new.m4s", backupUrls: [], codecs: "avc1.64001E", bandwidth: 800000 }],
+    };
+    await player.refresh(refreshedStream, 64);
+    await vi.waitFor(() => expect(buffers.at(-1)!.buffered.end()).toBeGreaterThan(45));
+    player.seek(50);
+    await vi.waitFor(() => expect(video.currentTime).toBe(50));
+    expect(onError).toHaveBeenCalledTimes(1);
+    player.destroy();
+  });
+
   it("preserves the original init segment when a range response is split across reads", async () => {
     const video = createFakeVideo();
     // The first network read contains the init segment and part of the first

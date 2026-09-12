@@ -274,6 +274,8 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const resumedPositionRef = useRef(0);
   const resumeNoticeShownRef = useRef(false);
+  // MSE 管线的 playurl 刷新机会（每条管线生命周期一次），防止 403 刷新死循环。
+  const mseRefreshUsedRef = useRef(false);
   // 跨分P的一次性跳转目标（笔记跳转/互动分支起点）：切换分P会重建播放器，
   // 旧实例上的 seek 无效；目标先记在这里，新管线就绪后消费一次。
   const pendingSeekTargetRef = useRef<{ cid: number; seconds: number } | null>(null);
@@ -770,6 +772,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     const element = videoElementRef.current;
     if (!element) return;
     let disposed = false;
+    mseRefreshUsedRef.current = false;
     const player = new DashPlayer({
       video: element,
       onTimeUpdate: (t) => setCurrentTime(t),
@@ -778,6 +781,30 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       onPause: () => setPlaying(false),
       onError: (message) => {
         if (disposed) return;
+        // 媒体 URL 有时效：seek/长暂停后的 403 允许刷新一次 playurl 再重启管线，
+        // 仍失败才报废。decode/追加类错误不在此列（刷新救不了解码问题）。
+        const refreshable = /HTTP \d{3}|媒体流请求失败|跳转超时|跳转失败/.test(message);
+        if (refreshable && !mseRefreshUsedRef.current) {
+          mseRefreshUsedRef.current = true;
+          void (async () => {
+            try {
+              const playurlService = createPlayurlService(createJsonRequest());
+              const response = await playurlService.resolve(video.bvid, activePartCid, { qn: loadQuality });
+              if (disposed) return;
+              if (!response.dash) throw new Error("当前视频没有可用的 DASH 流");
+              await player.refresh(response.dash, loadQuality);
+              if (disposed) return;
+              setDashFailed(false);
+              setDashActive(true);
+            } catch {
+              if (disposed) return;
+              setDashErrorMessage(message);
+              setDashFailed(true);
+              setDashActive(false);
+            }
+          })();
+          return;
+        }
         setDashErrorMessage(message);
         setDashFailed(true);
         setDashActive(false);
@@ -791,9 +818,13 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         const response = await playurlService.resolve(video.bvid, activePartCid, { qn: loadQuality });
         if (disposed) return;
         if (!response.dash) throw new Error("当前视频没有可用的 DASH 流");
-        await player.load(response.dash, loadQuality);
+        const { videoTrack } = await player.load(response.dash, loadQuality);
         if (disposed) return;
-        const qualityOptionsForPlayer = filterBrowserMseQualities(response.acceptQuality);
+        // 选项必须与 pickVideoTrack 的实际选择一致（带宽护栏会静默降档），
+        // 否则下拉框提供 1080P、实际却播 480P。只展示所选轨道及以下的档位。
+        const pickedQualityId = videoTrack?.id ?? 0;
+        const qualityOptionsForPlayer = filterBrowserMseQualities(response.acceptQuality)
+          .filter((quality) => pickedQualityId > 0 ? quality <= pickedQualityId : true);
         const effectiveQuality = choosePlaybackQuality(loadQuality, qualityOptionsForPlayer);
         setQualityOptions(qualityOptionsForPlayer);
         if (effectiveQuality !== requestedQuality) setRequestedQuality(effectiveQuality);

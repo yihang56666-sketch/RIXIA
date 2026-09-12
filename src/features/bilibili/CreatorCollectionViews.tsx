@@ -319,10 +319,17 @@ export function CreatorProfileView({ mid, initialName, initialAvatarUrl, initial
     return () => { requestGeneration.current += 1; };
   }, [loadFirstContentPage]);
 
+  // 同步 ref 防重入：快速滚动时多个 scroll 事件在同一批 setState 生效前触发，
+  // 只看 state 会并发请求同一页。切换 tab 时重置，挂起的旧 tab 请求不阻塞新 tab。
+  const loadingMoreRef = useRef(false);
+  useEffect(() => {
+    loadingMoreRef.current = false;
+  }, [activeTab]);
   const loadMore = useCallback(() => {
-    if (loadingContent || loadingMore || !hasMore) return;
+    if (loadingContent || loadingMoreRef.current || !hasMore) return;
     const tab = activeTab;
     const generation = requestGeneration.current;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     const request = tab === "videos"
       ? service.listCreatorVideos(mid, page + 1, { keyword: submittedKeyword, order: videoOrder })
@@ -354,8 +361,11 @@ export function CreatorProfileView({ mid, initialName, initialAvatarUrl, initial
       if (generation !== requestGeneration.current) return;
       setLoadingMore(false);
       showMessage("加载更多失败：" + (error instanceof Error ? error.message : String(error)));
+    }).finally(() => {
+      // 请求已被作废（代际推进）时不动 ref：新请求可能正在飞行中。
+      if (generation === requestGeneration.current) loadingMoreRef.current = false;
     });
-  }, [activeTab, hasMore, loadingContent, loadingMore, mid, page, service, showMessage, submittedKeyword, videoOrder]);
+  }, [activeTab, hasMore, loadingContent, mid, page, service, showMessage, submittedKeyword, videoOrder]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -692,9 +702,15 @@ export function CollectionDetailView({ collection, onBack, onOpenVideo }: { coll
     return () => { requestGeneration.current += 1; };
   }, [loadFirstPage]);
 
+  // 同步 ref 防重入：同 CreatorProfileView.loadMore；切换合集时重置。
+  const loadingMoreRef = useRef(false);
+  useEffect(() => {
+    loadingMoreRef.current = false;
+  }, [collection.id]);
   const loadMore = useCallback(() => {
-    if (loading || loadingMore || !hasMore) return;
+    if (loading || loadingMoreRef.current || !hasMore) return;
     const generation = requestGeneration.current;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     service.listCollectionVideos(collection.ownerMid, collection.id, page + 1).then((result) => {
       if (generation !== requestGeneration.current) return;
@@ -709,8 +725,10 @@ export function CollectionDetailView({ collection, onBack, onOpenVideo }: { coll
       if (generation !== requestGeneration.current) return;
       setLoadingMore(false);
       showMessage("加载更多失败：" + (error instanceof Error ? error.message : String(error)));
+    }).finally(() => {
+      if (generation === requestGeneration.current) loadingMoreRef.current = false;
     });
-  }, [collection.id, collection.ownerMid, hasMore, loading, loadingMore, page, service, showMessage]);
+  }, [collection.id, collection.ownerMid, hasMore, loading, page, service, showMessage]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;

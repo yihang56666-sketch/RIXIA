@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { migratePersistedState, validateBackup } from "./migrations";
+import { backupDropCounts, migratePersistedState, validateBackup } from "./migrations";
 import { THEMES, THEME_MIGRATION } from "../catalog";
 
 describe("persisted state v2 migration", () => {
@@ -160,5 +160,27 @@ describe("persisted state v2 migration", () => {
     expect(rejected.backgroundImage).toBeNull();
     const accepted = validateBackup({ data: { tasks: [], habits: [], notes: [], inbox: [], countdowns: [], backgroundImage: "data:image/webp;base64,AAAA" } });
     expect(accepted.backgroundImage).toBe("data:image/webp;base64,AAAA");
+  });
+
+  it("counts entries dropped by backup validation so imports can report them honestly", () => {
+    const raw = {
+      data: {
+        habits: [],
+        inbox: [],
+        countdowns: [],
+        tasks: [{ id: "t1", title: "正常", done: false, due: null, createdAt: "2026-09-01T00:00:00.000Z" }, null, "junk"],
+        notes: [{ id: "n1", body: "ok", updatedAt: "2026-09-01T00:00:00.000Z" }, { broken: true }],
+        journals: [{ date: "2026-09-01", body: "ok", updatedAt: "2026-09-01T00:00:00.000Z" }, { date: "2026-09-02", body: "   ", updatedAt: "2026-09-02T00:00:00.000Z" }],
+        subjects: "not-an-array-at-all",
+      },
+    };
+    const validated = validateBackup(raw);
+    // 形状不完整的条目被逐项过滤（notes 两条都缺必填字段，全部丢弃）。
+    expect(backupDropCounts(raw, validated)).toEqual({ tasks: 2, notes: 2, journals: 1 });
+
+    // 无丢弃时返回空对象；非对象输入同样安全。
+    const clean = validateBackup({ data: { habits: [], inbox: [], countdowns: [], tasks: [], notes: [] } });
+    expect(backupDropCounts({ data: { habits: [], inbox: [], countdowns: [], tasks: [], notes: [] } }, clean)).toEqual({});
+    expect(backupDropCounts("junk", clean)).toEqual({});
   });
 });

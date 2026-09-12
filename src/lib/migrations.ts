@@ -490,6 +490,42 @@ function requireStringArray(value: unknown, field: string): unknown[] {
 }
 
 /** 校验导入的备份对象。失败抛出中文错误。 */
+const BACKUP_ARRAY_FIELDS = [
+  "inbox",
+  "tasks",
+  "habits",
+  "notes",
+  "countdowns",
+  "subjects",
+  "studyUnits",
+  "wrongQuestions",
+  "reviewItems",
+  "mockExams",
+  "kaoyanWords",
+  "resources",
+  "timestampNotes",
+  "journals",
+  "focusSessions",
+] as const;
+
+/**
+ * 对照原始备份与校验结果，统计被静默丢弃的条目数。形状错误的字段会逐项
+ * 过滤（不抛错），调用方应把丢弃数呈现给用户，而不是宣称"全部恢复"。
+ */
+export function backupDropCounts(raw: unknown, validated: BackupData): Record<string, number> {
+  const drops: Record<string, number> = {};
+  if (!isObject(raw)) return drops;
+  const source = isObject(raw.data) ? raw.data : raw;
+  for (const field of BACKUP_ARRAY_FIELDS) {
+    const rawValue = source[field];
+    if (!Array.isArray(rawValue)) continue;
+    const kept = validated[field] as unknown[];
+    const dropped = rawValue.length - kept.length;
+    if (dropped > 0) drops[field] = dropped;
+  }
+  return drops;
+}
+
 export function validateBackup(input: unknown): BackupData {
   if (!isObject(input)) {
     throw new Error("有效的 RIXIA 备份必须是对象");
