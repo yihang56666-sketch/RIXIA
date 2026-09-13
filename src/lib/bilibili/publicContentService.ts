@@ -105,7 +105,10 @@ export function createBilibiliPublicContentService(
       };
       if (filter?.categoryId != null) query.tids = String(filter.categoryId);
       appendPublishedRange(query, filter?.publishedRange ?? VideoPublishedRange.any);
-      const responseText = await requestJson(buildUrl(API_HOST, VIDEO_SEARCH_PATH, query));
+      // wbi 接口必须签名：未签名请求会被 B 站风控摇摆处理——时而 -412、
+      // 时而 code=0 但 result 为空（表现为"没有找到相关公开视频"）。
+      const signedUrl = await signBiliWbiUrl(API_HOST, VIDEO_SEARCH_PATH, query, requestJson);
+      const responseText = await requestJson(signedUrl);
       return parseVideoSearchPage(responseText, safePage);
     },
 
@@ -126,13 +129,13 @@ export function createBilibiliPublicContentService(
         throw new BilibiliLookupError("请输入要搜索的用户名。");
       }
       const safePage = clamp(page, 1, 50);
-      const url = buildUrl(API_HOST, VIDEO_SEARCH_PATH, {
+      const url = await signBiliWbiUrl(API_HOST, VIDEO_SEARCH_PATH, {
         search_type: "bili_user",
         keyword: normalized,
         page: String(safePage),
         order: userSearchOrderValue(filter?.order ?? UserSearchOrder.defaultOrder),
         user_type: String(userSearchTypeValue(filter?.type ?? UserSearchType.all)),
-      });
+      }, requestJson);
       const responseText = await requestJson(url);
       return parseUserSearchPage(responseText, safePage);
     },

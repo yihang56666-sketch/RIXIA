@@ -161,13 +161,20 @@ describe("extractBvid", () => {
 
 describe("BilibiliPublicContentService", () => {
   function makeService(responses: Record<string, string>) {
+    const requested: string[] = [];
     const fetcher = (url: string) => {
+      requested.push(url);
+      // wbi 签名流程会先取 nav 密钥：除非用例显式覆盖，否则统一应答。
+      if (url.includes("/x/web-interface/nav") && !responses["/x/web-interface/nav"]) {
+        return Promise.resolve(SAMPLE_WBI_NAV);
+      }
       for (const [key, value] of Object.entries(responses)) {
         if (url.includes(key)) return Promise.resolve(value);
       }
       throw new Error(`unexpected fetch: ${url}`);
     };
-    return createBilibiliPublicContentService(fetcher);
+    const service = createBilibiliPublicContentService(fetcher);
+    return Object.assign(service, { requested });
   }
 
   it("lookupVideo parses video info + tags", async () => {
@@ -265,13 +272,18 @@ describe("BilibiliPublicContentService", () => {
     expect(page.results[0]!.playCount).toBe(12345);
     expect(page.results[0]!.episodeCountText).toBe("共 12 集");
     expect(page.totalPages).toBe(3);
+    // wbi 搜索必须携带签名：未签名请求会被风控软处理成空结果。
+    expect(service.requested.some((url) => url.includes("/x/web-interface/wbi/search/type") && url.includes("w_rid="))).toBe(true);
   });  it("searchVideos rejects empty keyword", async () => {
     const service = makeService({});
     await expect(service.searchVideos("  ")).rejects.toBeInstanceOf(BilibiliLookupError);
   });
 
   it.each(["searchVideos", "searchUsers"] as const)("%s preserves negative business errors", async (method) => {
-    const service = createBilibiliPublicContentService(async () => JSON.stringify({ code: -352, message: "风控校验失败" }));
+    const service = createBilibiliPublicContentService(async (url) => {
+      if (url.includes("/x/web-interface/nav")) return SAMPLE_WBI_NAV;
+      return JSON.stringify({ code: -352, message: "风控校验失败" });
+    });
 
     await expect(service[method]("高数")).rejects.toThrow("风控校验失败（错误码：-352）");
   });
