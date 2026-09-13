@@ -5,8 +5,8 @@ import { AppUpdateStatus } from "../../lib/bilibili/miscServices";
 import { useAppUpdateController } from "./AppUpdateContext";
 import { Mi } from "./m3";
 
-const VERSION = "0.3.0";
-const RELEASES_URL = "https://github.com/Yihang56666-sketch/clock/releases";
+const VERSION = "0.3.1";
+const RELEASES_URL = "https://github.com/Yihang56666-sketch/RIXIA/releases";
 
 function updateStatusText(result: ReturnType<typeof useAppUpdateController>["result"]): string {
   switch (result.status) {

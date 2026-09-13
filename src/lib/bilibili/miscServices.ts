@@ -110,7 +110,7 @@ export interface AppUpdateResult {
   message?: string;
 }
 
-const GITHUB_API = "https://api.github.com/repos/Yihang56666-sketch/clock/releases?per_page=1";
+const GITHUB_API = "https://api.github.com/repos/Yihang56666-sketch/RIXIA/releases?per_page=1";
 const UPDATE_CACHE_KEY = "rixia_app_update_cache_v1";
 const UPDATE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 

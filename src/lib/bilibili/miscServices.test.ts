@@ -52,7 +52,7 @@ describe("checkForUpdate", () => {
 
     try {
       await checkForUpdate("0.3.0", { force: true });
-      expect(fetchCalls[0]).toBe("https://api.github.com/repos/Yihang56666-sketch/clock/releases?per_page=1");
+      expect(fetchCalls[0]).toBe("https://api.github.com/repos/Yihang56666-sketch/RIXIA/releases?per_page=1");
     } finally {
       globalThis.fetch = originalFetch;
     }
