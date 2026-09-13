@@ -231,12 +231,12 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     // Android/Pad 端同步锁定系统横屏，让全屏按钮真的把设备转过来。
     fullscreenRef.current = true;
     setFullscreen(true);
+    document.documentElement.classList.add("fb-player-active-fullscreen");
     try {
       await requestNativeOrientation("landscape");
     } catch {
       // 方向锁定失败不阻塞全屏本身。
     }
-    document.documentElement.classList.add("fb-player-active-fullscreen");
   }, []);
 
   const exitFullscreen = useCallback(async () => {
@@ -1968,7 +1968,11 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   // player_focus_coordinator.dart 的 _requestLeavePlayer；确认打断后补存最后画面和位置。
   function requestLeavePlayer() {
     if (!focusSessionTracksCurrentPart()) {
-      void exitFullscreen();
+      if (fullscreenRef.current || document.fullscreenElement) {
+        // 横屏时先退全屏，仍在播放器这一级；下一次返回才回到资料库/上一页。
+        void exitFullscreen();
+        return;
+      }
       setView("library");
       return;
     }
@@ -2142,7 +2146,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
 
         {/* 顶部状态栏 */}
         <div className="fb-player-topbar" data-visible={controlsVisible}>
-          <button className="fb-player-topbar-btn" onClick={requestLeavePlayer} aria-label="返回资料库">
+          <button className="fb-player-topbar-btn" onClick={requestLeavePlayer} aria-label="返回">
             <ArrowLeft size={18} />
           </button>
           <span className="fb-player-topbar-title">{video.title}</span>
@@ -2174,7 +2178,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         {/* 控制层自动隐藏后仍保留一个可点的返回入口，
             平板/手机全屏看课时不会出现"左上角没有返回按键"。 */}
         {!controlsVisible && (
-          <button className="fb-player-persistent-back" onClick={requestLeavePlayer} aria-label="返回资料库">
+          <button className="fb-player-persistent-back" onClick={requestLeavePlayer} aria-label="返回">
             <ArrowLeft size={16} />
           </button>
         )}

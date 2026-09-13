@@ -554,7 +554,7 @@ describe("BilibiliPlayerView", () => {
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
     await screen.findByRole("button", { name: "关联专注" });
 
-    fireEvent.click(screen.getByRole("button", { name: "返回资料库" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
 
     expect(await screen.findByText("要不要再坚持一下？")).toBeInTheDocument();
     expect(useAppStore.getState().view).not.toBe("library");
@@ -578,7 +578,7 @@ describe("BilibiliPlayerView", () => {
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
     await screen.findByRole("button", { name: "关联专注" });
 
-    fireEvent.click(screen.getByRole("button", { name: "返回资料库" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
     await screen.findByText("要不要再坚持一下？");
     fireEvent.click(screen.getByRole("button", { name: "仍然退出" }));
 
@@ -875,14 +875,19 @@ describe("BilibiliPlayerView", () => {
         disconnect() {}
       } as typeof ResizeObserver;
     }
+    useAppStore.setState({ view: "bilibili-player" });
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
     await waitFor(() => expect(nativePlayerTest.open).toHaveBeenCalled());
 
     fireEvent.click((await screen.findAllByRole("button", { name: "进入全屏" }))[0]);
     expect(nativePlayerTest.requestOrientation).toHaveBeenLastCalledWith("landscape");
 
-    fireEvent.click(screen.getAllByRole("button", { name: "返回资料库" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "返回" })[0]);
     await waitFor(() => expect(nativePlayerTest.requestOrientation).toHaveBeenLastCalledWith("portrait"));
+    expect(useAppStore.getState().view).toBe("bilibili-player");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "返回" })[0]);
+    await waitFor(() => expect(useAppStore.getState().view).toBe("library"));
   });
 
   it("restores portrait on unmount while fullscreen is active", async () => {
@@ -921,6 +926,28 @@ describe("BilibiliPlayerView", () => {
 
     fireEvent.click((await screen.findAllByRole("button", { name: "退出全屏" }))[0]);
     await waitFor(() => expect(document.documentElement.classList.contains("fb-player-active-fullscreen")).toBe(false));
+  });
+
+  it("marks the document before the native orientation request settles", async () => {
+    nativePlayerTest.enabled = true;
+    if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
+      (globalThis as { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      } as typeof ResizeObserver;
+    }
+    try {
+      nativePlayerTest.requestOrientation.mockReturnValueOnce(new Promise(() => {}));
+      render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+      await waitFor(() => expect(nativePlayerTest.open).toHaveBeenCalled());
+
+      fireEvent.click((await screen.findAllByRole("button", { name: "进入全屏" }))[0]);
+      expect(nativePlayerTest.requestOrientation).toHaveBeenLastCalledWith("landscape");
+      expect(document.documentElement.classList.contains("fb-player-active-fullscreen")).toBe(true);
+    } finally {
+      nativePlayerTest.requestOrientation.mockResolvedValue(undefined);
+    }
   });
 
   it("does not re-enter fullscreen while Android is restoring portrait", async () => {
@@ -996,7 +1023,7 @@ describe("BilibiliPlayerView", () => {
 
   it("keeps a persistent back button reachable while the control layer is hidden", async () => {
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
-    await screen.findByRole("button", { name: "返回资料库" });
+    await screen.findByRole("button", { name: "返回" });
     expect(document.querySelector(".fb-player-persistent-back")).toBeNull();
 
     const overlay = document.querySelector(".player-gesture-overlay") as HTMLElement;
@@ -1013,7 +1040,7 @@ describe("BilibiliPlayerView", () => {
 
   it("reveals the control layer again after a double-tap seek on the video", async () => {
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
-    await screen.findByRole("button", { name: "返回资料库" });
+    await screen.findByRole("button", { name: "返回" });
 
     const overlay = document.querySelector(".player-gesture-overlay") as HTMLElement;
     const tap = (x: number) => {
@@ -1031,7 +1058,7 @@ describe("BilibiliPlayerView", () => {
 
   it("toggles the control layer back on when tapping the hidden video again", async () => {
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
-    await screen.findByRole("button", { name: "返回资料库" });
+    await screen.findByRole("button", { name: "返回" });
 
     const overlay = document.querySelector(".player-gesture-overlay") as HTMLElement;
     const tap = (x: number) => {
@@ -1061,7 +1088,7 @@ describe("BilibiliPlayerView", () => {
     expect(document.querySelector(".fb-player-native-bar")).toBeNull();
     const surface = document.querySelector(".fb-player-surface");
     await waitFor(() => expect(surface?.getAttribute("data-native")).toBe("1"));
-    const back = surface?.querySelector("button[aria-label='返回资料库']") as HTMLButtonElement | null;
+    const back = surface?.querySelector("button[aria-label='返回']") as HTMLButtonElement | null;
     expect(back).not.toBeNull();
     expect(surface?.querySelector("button[aria-label='专注控制']")).not.toBeNull();
 

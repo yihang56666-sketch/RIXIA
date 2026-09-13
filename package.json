@@ -1,7 +1,7 @@
 {
   "name": "beid",
   "private": true,
-  "version": "0.3.3",
+  "version": "0.3.4",
   "type": "module",
   "description": "融合节奏工作台与专注看课能力的 B 站考研学习客户端",
   "scripts": {
@@ -97,10 +97,10 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "BEID",
-      "artifactName": "BEID-0.3.3-windows-setup.${ext}"
+      "artifactName": "BEID-0.3.4-windows-setup.${ext}"
     },
     "portable": {
-      "artifactName": "BEID-0.3.3-windows-portable.${ext}"
+      "artifactName": "BEID-0.3.4-windows-portable.${ext}"
     },
     "forceCodeSigning": false
   }
