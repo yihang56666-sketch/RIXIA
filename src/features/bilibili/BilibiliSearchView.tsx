@@ -521,6 +521,7 @@ export function BilibiliSearchView() {
         <Mi name="search" size={20} />
         <input
           value={keyword}
+          data-tour-target="search-input"
           onChange={(e) => {
             setKeyword(e.target.value);
             setFocused(true);

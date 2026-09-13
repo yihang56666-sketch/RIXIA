@@ -38,6 +38,7 @@ import { HomeFeedView } from "./features/bilibili/HomeFeedView";
 import { LearningListView } from "./features/bilibili/LearningListView";
 import { VideoNotesView } from "./features/bilibili/VideoNotesView";
 import { ProfileHub } from "./features/bilibili/ProfileHub";
+import { FeatureTour } from "./features/tour/FeatureTour";
 import { PersonalizationSettingsView } from "./features/bilibili/PersonalizationSettingsView";
 import { AboutView } from "./features/bilibili/AboutView";
 import { CollectionDetailRoute, CreatorProfileRoute } from "./features/bilibili/CreatorCollectionViews";
@@ -208,6 +209,7 @@ export default function App() {
         {view === "personalization" && <PersonalizationSettingsView />}
         {view === "preferences" && <SettingsView />}
       </Shell>
+      <FeatureTour />
       </AppUpdateProvider>
       </M3FeedbackProvider>
       </FirstLaunchGate>

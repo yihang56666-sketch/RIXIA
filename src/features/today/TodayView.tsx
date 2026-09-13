@@ -166,8 +166,13 @@ export function TodayView() {
 
   return (
     <RixiaWorkspacePage title="今日节奏">
-    <div className="stack">
-      <section className="card today-quote" data-testid="daily-quote" aria-label="每日语录">
+      <div className="stack">
+      <section
+        className="card today-quote"
+        data-testid="daily-quote"
+        data-tour-target="daily-quote"
+        aria-label="每日语录"
+      >
         <Quote size={15} aria-hidden="true" />
         <blockquote>{dailyQuote.text}</blockquote>
         <span className="muted">{dailyQuote.source}</span>

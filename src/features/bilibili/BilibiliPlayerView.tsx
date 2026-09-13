@@ -23,6 +23,7 @@ import {
   Maximize2,
   Minimize2,
   MessageSquare,
+  MessageSquareOff,
   ThumbsUp,
   Star,
   Coins,
@@ -145,6 +146,8 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const [completionMarked, setCompletionMarked] = useState(false);
   const [completionProcessing, setCompletionProcessing] = useState(false);
   const [danmaku, setDanmaku] = useState<DanmakuEntry[]>([]);
+  const [danmakuStatus, setDanmakuStatus] = useState<"loading" | "ready" | "empty">("loading");
+  const [danmakuCount, setDanmakuCount] = useState(0);
   const [prefs, setPrefs] = useState<DanmakuPreferences>(DEFAULT_DANMAKU_PREFERENCES);
   const [notes, setNotes] = useState<VideoNote[]>([]);
   const [noteTitle, setNoteTitle] = useState("");
@@ -441,9 +444,21 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   useEffect(() => {
     if (activePartCid == null) return;
     let cancelled = false;
-    danmakuService.fetchDanmaku(activePartCid).then((entries) => {
-      if (!cancelled) setDanmaku(entries);
-    });
+    setDanmakuStatus("loading");
+    setDanmakuCount(0);
+    danmakuService.fetchDanmaku(activePartCid)
+      .then((entries) => {
+        if (cancelled) return;
+        setDanmaku(entries);
+        setDanmakuCount(entries.length);
+        setDanmakuStatus(entries.length > 0 ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDanmaku([]);
+        setDanmakuCount(0);
+        setDanmakuStatus("empty");
+      });
     return () => { cancelled = true; };
   }, [activePartCid, danmakuService]);
 
@@ -2182,6 +2197,12 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             <ArrowLeft size={16} />
           </button>
         )}
+        {prefs.enabled && (
+          <div className="fb-player-danmaku-status" role="status">
+            {danmakuStatus === "loading" ? <Loader2 className="spin" size={12} /> : null}
+            {danmakuStatus === "loading" ? "正在读取弹幕" : danmakuStatus === "ready" ? `弹幕 ${danmakuCount} 条` : "暂无弹幕"}
+          </div>
+        )}
         {/* 常驻全屏入口：不随控制层自动隐藏，窄屏滚动控制条也不会把它挤出画面。 */}
         <button
           className="fb-player-persistent-fullscreen"
@@ -2190,6 +2211,15 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
           title={fullscreen ? "退出全屏" : "进入全屏"}
         >
           {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+        </button>
+        {/* 常驻弹幕开关：控制条隐藏或窄屏滚动时仍可直接开关弹幕。 */}
+        <button
+          className="fb-player-persistent-danmaku"
+          onClick={() => updatePrefs({ enabled: !prefs.enabled })}
+          aria-label={prefs.enabled ? "关闭弹幕" : "开启弹幕"}
+          title={prefs.enabled ? "关闭弹幕" : "开启弹幕"}
+        >
+          {prefs.enabled ? <MessageSquare size={18} /> : <MessageSquareOff size={18} />}
         </button>
 
         {/* 底部控制层 */}

@@ -11,6 +11,7 @@ import { CaptureButton } from "./CaptureButton";
 import { hasOpenOverlays } from "../lib/overlayStack";
 import { useAppStore } from "../store/useAppStore";
 import type { ViewKey } from "../types";
+import { TOUR_PALETTE_OPEN_EVENT } from "../features/tour/FeatureTour";
 
 const PRIMARY_NAV: Array<{ view: ViewKey; label: string; icon: typeof Home }> = [
   { view: "focus-dashboard", label: "首页", icon: Home },
@@ -66,6 +67,7 @@ function NavigationItem({ view, label, Icon }: { view: ViewKey; label: string; I
       className={active ? "focubili-nav-item active" : "focubili-nav-item"}
       onClick={() => setView(view)}
       aria-current={active ? "page" : undefined}
+      data-tour-target={view === "library" ? "library-nav" : view === "settings" ? "settings-nav" : undefined}
     >
       <Icon size={18} strokeWidth={active ? 2.2 : 1.8} />
       <span>{label}</span>
@@ -174,6 +176,14 @@ export function Shell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  useEffect(() => {
+    const onOpenFromTour = () => {
+      if (!hasOpenOverlays()) setPaletteOpen(true);
+    };
+    window.addEventListener(TOUR_PALETTE_OPEN_EVENT, onOpenFromTour);
+    return () => window.removeEventListener(TOUR_PALETTE_OPEN_EVENT, onOpenFromTour);
+  }, []);
+
   return (
     <div className="focubili-shell" data-view={view}>
       <aside className="focubili-rail">
@@ -191,6 +201,7 @@ export function Shell({ children }: { children: ReactNode }) {
           onClick={() => setPaletteOpen(true)}
           aria-label="打开命令面板"
           title="打开命令面板"
+          data-tour-target="palette-trigger"
         >
           <Command size={17} />
         </button>
@@ -199,7 +210,9 @@ export function Shell({ children }: { children: ReactNode }) {
         <main
           className={BEID_VIEWS.has(view) ? "focubili-stage full" : "focubili-stage padded"}
         >
-          {children}
+          <div key={view} className="focubili-view-frame">
+            {children}
+          </div>
         </main>
       </div>
       <CaptureButton />
@@ -213,6 +226,7 @@ export function Shell({ children }: { children: ReactNode }) {
               className={active ? "focubili-bottom-item active" : "focubili-bottom-item"}
               onClick={() => useAppStore.getState().setView(item.view)}
               aria-current={active ? "page" : undefined}
+              data-tour-target={item.view === "library" ? "library-nav" : item.view === "settings" ? "settings-nav" : undefined}
             >
               <Icon size={22} strokeWidth={active ? 2.4 : 1.9} />
               <span>{item.label}</span>
@@ -225,6 +239,7 @@ export function Shell({ children }: { children: ReactNode }) {
           onClick={() => setPaletteOpen(true)}
           aria-label="打开命令面板"
           title="打开命令面板"
+          data-tour-target="palette-trigger"
         >
           <Command size={22} strokeWidth={1.9} />
           <span>命令</span>

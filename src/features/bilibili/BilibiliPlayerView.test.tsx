@@ -54,6 +54,8 @@ const playbackPreferences = {
   playbackRate: 1.5,
 };
 
+const fetchDanmaku = vi.fn().mockResolvedValue([]);
+
 vi.mock("../../lib/bilibili/publicContentService", () => ({
   createBilibiliPublicContentService: () => ({
     lookupVideo: vi.fn().mockResolvedValue({
@@ -79,7 +81,7 @@ vi.mock("../../lib/bilibili/publicContentService", () => ({
 }));
 
 vi.mock("../../lib/bilibili/danmakuFetchService", () => ({
-  createDanmakuFetchService: () => ({ fetchDanmaku: vi.fn().mockResolvedValue([]) }),
+  createDanmakuFetchService: () => ({ fetchDanmaku }),
 }));
 
 vi.mock("../../lib/bilibili/services", () => ({
@@ -186,6 +188,8 @@ describe("BilibiliPlayerView", () => {
     dashInstances.length = 0;
     localStorage.clear();
     listWatchHistory.mockResolvedValue([]);
+    fetchDanmaku.mockReset();
+    fetchDanmaku.mockResolvedValue([]);
     focusTimer.hasActiveSession = false;
     delete (focusTimer as { activeSession?: unknown }).activeSession;
     (focusTimer as { remainingMs?: number }).remainingMs = 0;
@@ -854,6 +858,34 @@ describe("BilibiliPlayerView", () => {
     expect(surface?.querySelector(".fb-player-persistent-fullscreen")).not.toBeNull();
     expect(document.querySelector(".fb-player-ctl-row")?.querySelector(".fb-player-persistent-fullscreen")).toBeNull();
     expect(screen.getAllByRole("button", { name: "进入全屏" }).length).toBeGreaterThan(0);
+  });
+
+  it("keeps a persistent danmaku toggle outside the scrollable control row", async () => {
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    await screen.findByText("暂无弹幕");
+    await screen.findByRole("button", { name: "关闭弹幕" });
+
+    expect(document.querySelector(".fb-player-ctl-row")?.querySelector("button[aria-label='关闭弹幕']")).toBeNull();
+    expect(document.querySelector(".fb-player-persistent-danmaku")).not.toBeNull();
+    expect(document.querySelector(".fb-player-surface")?.querySelector(".fb-player-persistent-danmaku")).not.toBeNull();
+  });
+
+  it("shows danmaku count and turns the persistent toggle off through preferences", async () => {
+    fetchDanmaku.mockResolvedValue([
+      { id: 1, text: "前排", startTimeSeconds: 1, durationSeconds: 9, mode: 1, color: 16777215, fontSize: 22, pool: 0, midHash: "" },
+    ]);
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+
+    expect(await screen.findByText("弹幕 1 条")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭弹幕" }));
+    expect(screen.getByRole("button", { name: "开启弹幕" })).toBeInTheDocument();
+    expect(screen.queryByText("弹幕 1 条")).not.toBeInTheDocument();
+  });
+
+  it("shows an empty danmaku state when the part has no danmaku", async () => {
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+
+    expect(await screen.findByText("暂无弹幕")).toBeInTheDocument();
   });
 
   it("consumes the system back request while CSS fullscreen is active", async () => {

@@ -111,7 +111,7 @@ export function LibraryView() {
 
   return (
     <RixiaWorkspacePage title="资料库">
-    <div className="stack">
+      <div className="stack">
       <section className="card">
         <div className="segmented" role="tablist" aria-label="资料库视图">
           {TABS.map((item) => (

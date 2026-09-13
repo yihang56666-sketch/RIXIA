@@ -24,6 +24,7 @@ import {
 } from "../../lib/bilibili/focusSessionModel";
 import { currentExamDate, reviewStats } from "../../lib/kaoyan";
 import { daysUntil, todayKey } from "../../lib/time";
+import { getDailyQuote } from "../../lib/dailyQuotes";
 import { M3Dialog, Mi, useM3Feedback } from "./m3";
 import {
   CustomFocusDurationDialog,
@@ -528,11 +529,21 @@ function HomeHero({
         <h2 className="m3-headline-md" style={{ textAlign: "center", fontWeight: 500 }}>
           今天要学点什么？
         </h2>
+        <p
+          className="fb-home-quote"
+          data-testid="daily-quote"
+          data-tour-target="daily-quote"
+          aria-label="每日语录"
+        >
+          <Mi name="format_quote" size={14} />
+          <span>{getDailyQuote(todayKey()).text}</span>
+        </p>
         <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
           <button
             className="m3-filled-btn"
             style={{ minWidth: 160, height: 58, borderRadius: 30, padding: "0 28px" }}
             onClick={onOpenSearch}
+            data-tour-target="home-search"
           >
             开始搜索
           </button>
@@ -562,6 +573,10 @@ function WorkspaceIntro({ onOpenSearch }: { onOpenSearch: () => void }) {
       <button className="m3-filled-btn" style={{ marginTop: 28, minWidth: 176, height: 52 }} onClick={onOpenSearch}>
         <Mi name="search" size={18} /> 开始搜索
       </button>
+      <p className="fb-dashboard-quote" data-testid="daily-quote" data-tour-target="daily-quote">
+        <Mi name="format_quote" size={15} />
+        <span>{getDailyQuote(todayKey()).text}</span>
+      </p>
     </section>
   );
 }

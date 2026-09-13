@@ -19,6 +19,7 @@ import { dueLabel, todayKey } from "../lib/time";
 import { useOverlayInteraction } from "../lib/overlayStack";
 import { useAppStore } from "../store/useAppStore";
 import type { ViewKey } from "../types";
+import { TOUR_PALETTE_OPENED_EVENT } from "../features/tour/FeatureTour";
 
 const VIEW_ICONS: Partial<Record<ViewKey, typeof Inbox>> = {
   today: CalendarDays,
@@ -54,6 +55,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       setQuery("");
       setActiveIndex(0);
     }
+  }, [open]);
+
+  useEffect(() => {
+    if (open) window.dispatchEvent(new Event(TOUR_PALETTE_OPENED_EVENT));
   }, [open]);
 
   const items = useMemo<PaletteItem[]>(() => {

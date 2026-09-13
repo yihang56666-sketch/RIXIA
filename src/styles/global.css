@@ -2837,6 +2837,14 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
 
 .focubili-main { min-width: 0; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .focubili-stage { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; }
+.focubili-view-frame {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.34s var(--ease-out) both;
+}
 .focubili-stage.padded {
   display: block;
   overflow-y: auto;
@@ -2846,6 +2854,19 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
 }
 .focubili-stage.full { overflow: hidden; }
 .focubili-stage.full > * { flex: 1; min-height: 0; }
+
+.focubili-nav-item,
+.focubili-bottom-item,
+.focubili-bottom-command,
+.palette-trigger {
+  transition: transform 140ms var(--ease-out), background-color 180ms var(--ease-out), color 180ms var(--ease-out);
+}
+.focubili-nav-item:active,
+.focubili-bottom-item:active,
+.focubili-bottom-command:active,
+.palette-trigger:active {
+  transform: scale(0.94);
+}
 
 .focubili-stage .stack { gap: 16px; }
 .focubili-stage .card {
@@ -3922,6 +3943,53 @@ html.fb-native-hole .app-background::after {
   transform: translateY(-1px);
 }
 .fb-player-persistent-fullscreen:active { transform: scale(0.9); }
+/* 弹幕状态提示：不随控制层隐藏，让弹幕加载/数量/空状态始终可感知。 */
+.fb-player-danmaku-status {
+  position: absolute;
+  top: max(10px, var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  right: 10px;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(220px, 44vw);
+  min-height: 30px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(15, 22, 34, 0.48);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+  line-height: 1.2;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: fadeUp 0.24s ease both;
+}
+/* 常驻弹幕开关：与全屏入口同处一层，窄屏滚动控制条也不影响可达性。 */
+.fb-player-persistent-danmaku {
+  position: absolute;
+  right: 58px;
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  z-index: 9;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(15, 22, 34, 0.48);
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transition: transform 0.16s ease, background 0.16s ease, opacity 0.16s ease;
+}
+.fb-player-persistent-danmaku:hover {
+  background: rgba(15, 22, 34, 0.75);
+  transform: translateY(-1px);
+}
+.fb-player-persistent-danmaku:active { transform: scale(0.9); }
+.fb-player-persistent-danmaku[aria-pressed="true"] { color: #7cc0ff; }
 .fb-player-surface[data-fullscreen="1"] {
   position: fixed;
   inset: 0;
@@ -5002,3 +5070,168 @@ html.fb-player-active-fullscreen .fb-player-page { overflow: hidden; }
 .cloud-resource-frame { position: relative; }
 .spin { animation: cloudSpin 0.9s linear infinite; }
 @keyframes cloudSpin { to { transform: rotate(360deg); } }
+
+/* ---------- 首页文案与首次功能巡览 ---------- */
+
+.fb-home-quote {
+  margin: 22px auto 0;
+  max-width: 440px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0.86;
+  text-align: center;
+}
+.fb-home-quote span { flex: 1; }
+.fb-dashboard-quote {
+  margin: 20px 0 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--focubili-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.feature-tour {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  pointer-events: none;
+}
+.feature-tour-veil {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg-base, #0b1020) 46%, transparent);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  animation: overlayIn 0.24s var(--ease-out) both;
+}
+.feature-tour-spotlight {
+  position: fixed;
+  z-index: 1051;
+  border-radius: 14px;
+  border: 2px solid var(--focubili-blue);
+  box-shadow:
+    0 0 0 5px var(--focubili-blue-soft),
+    0 0 0 200vmax color-mix(in srgb, var(--bg-base, #0b1020) 46%, transparent);
+  animation: pulseIn 0.6s var(--ease-spring);
+  pointer-events: none;
+}
+.feature-tour-card {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 32px));
+  z-index: 1055;
+  padding: 18px 20px 16px;
+  border-radius: 18px;
+  background: var(--m3-surface-container-high, #fff);
+  color: var(--m3-on-surface, #111);
+  border: 1px solid color-mix(in srgb, var(--m3-outline-variant, #cac4d0) 64%, transparent);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
+  pointer-events: auto;
+  animation: tourCardIn 0.42s var(--ease-spring) both;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.feature-tour-card.feature-tour-welcome {
+  bottom: auto;
+  top: calc(18vh + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  transform: translateX(-50%);
+}
+.feature-tour-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--focubili-blue);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.feature-tour-heading span {
+  color: var(--focubili-muted);
+  font-weight: 600;
+}
+.feature-tour-card h2 {
+  margin: 8px 0 6px;
+  font-size: 18px;
+  line-height: 1.3;
+}
+.feature-tour-card p {
+  margin: 0;
+  color: var(--focubili-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.feature-tour-quote {
+  margin: 14px 0 2px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--focubili-blue);
+  border-radius: 0 10px 10px 0;
+  background: var(--focubili-blue-soft);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.feature-tour-quote span {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+.feature-tour-actions {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.feature-tour-skip {
+  border: 0;
+  background: transparent;
+  color: var(--focubili-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+.feature-tour-skip:active { transform: scale(0.96); }
+.feature-tour-next {
+  border: 0;
+  border-radius: 14px;
+  padding: 10px 18px;
+  color: #fff;
+  background: var(--focubili-blue);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 140ms var(--ease-out), filter 180ms var(--ease-out);
+}
+.feature-tour-next:hover { filter: brightness(1.06); }
+.feature-tour-next:active { transform: scale(0.96); }
+
+@keyframes tourCardIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(18px) scale(0.98); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+@keyframes tourSpotPulse {
+  from { box-shadow: 0 0 0 4px var(--focubili-blue-soft), 0 0 0 200vmax color-mix(in srgb, var(--bg-base, #0b1020) 46%, transparent); }
+  to { box-shadow: 0 0 0 5px var(--focubili-blue-soft), 0 0 0 200vmax color-mix(in srgb, var(--bg-base, #0b1020) 46%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focubili-view-frame,
+  .feature-tour-veil,
+  .feature-tour-card,
+  .feature-tour-spotlight {
+    animation: none !important;
+  }
+}
