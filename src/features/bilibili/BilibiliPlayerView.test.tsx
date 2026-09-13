@@ -834,7 +834,26 @@ describe("BilibiliPlayerView", () => {
     expect(controls?.querySelector("select[aria-label='播放倍速']")).not.toBeNull();
     await vi.waitFor(() => expect(controls?.querySelector("select[aria-label='清晰度']")).not.toBeNull());
     expect(controls?.querySelector("input[aria-label='音量']")).not.toBeNull();
-    expect(controls?.querySelector("button[aria-label='进入全屏']")).not.toBeNull();
+    // 全屏入口独立于可横向滚动的控制条，窄屏下不会滚出可视区。
+    expect(controls?.querySelector("button[aria-label='进入全屏']")).toBeNull();
+    expect(document.querySelector(".fb-player-persistent-fullscreen")?.getAttribute("aria-label")).toBe("进入全屏");
+  });
+
+  it("keeps a persistent fullscreen control outside the scrollable control row", async () => {
+    nativePlayerTest.enabled = true;
+    if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
+      (globalThis as { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      } as typeof ResizeObserver;
+    }
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    await waitFor(() => expect(nativePlayerTest.open).toHaveBeenCalled());
+    const surface = document.querySelector(".fb-player-surface");
+    expect(surface?.querySelector(".fb-player-persistent-fullscreen")).not.toBeNull();
+    expect(document.querySelector(".fb-player-ctl-row")?.querySelector(".fb-player-persistent-fullscreen")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "进入全屏" }).length).toBeGreaterThan(0);
   });
 
   it("consumes the system back request while CSS fullscreen is active", async () => {

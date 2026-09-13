@@ -190,6 +190,7 @@ test("pad fullscreen hides page details and narrow screens keep a single compact
   assert.match(compactRule, /flex-wrap:\s*nowrap/);
   assert.match(compactRule, /overflow-x:\s*auto/);
   const playerView = fs.readFileSync(path.join(root, "src/features/bilibili/BilibiliPlayerView.tsx"), "utf8");
-  const topbar = playerView.slice(playerView.indexOf('<div className="fb-player-topbar"'));
-  assert.match(topbar, /aria-label=\{fullscreen \? "退出全屏" : "进入全屏"\}/);
+  assert.match(playerView, /className="fb-player-persistent-fullscreen"/);
+  const persistentCss = css.slice(css.indexOf(".fb-player-persistent-fullscreen"));
+  assert.match(persistentCss, /position:\s*absolute/);
 });
