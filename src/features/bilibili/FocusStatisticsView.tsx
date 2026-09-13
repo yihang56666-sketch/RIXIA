@@ -7,7 +7,7 @@
  * 宽屏（≥900px 且横向）双栏，手机单列。
  */
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useFocusTimer } from "./useFocusTimer";
 import {
   FocusSessionStatus,
@@ -80,129 +80,188 @@ function adaptiveDateLabelIndexes(itemCount: number, availableWidth: number): nu
   return indexes;
 }
 
+function formatTrendDayLabel(timestamp: number): string {
+  const date = new Date(timestamp);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
 function TrendLineChart({ snapshot }: { snapshot: FocusStatisticsSnapshot }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Tremor 风格 SVG 折线：细网格 + 渐变面积 + 右侧轴标 + 最近点悬浮提示（触屏可拖动查看），
+  // 颜色直接引用主题 token（--m3-*），换肤/深浅色即时跟随；
+  // ResizeObserver 驱动重绘，替代旧 canvas 版本按窗口宽度重绘的方式。
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [chartWidth, setChartWidth] = useState(0);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  const AXIS_GUTTER = 34;
+  const height = 190;
 
   useEffect(() => {
-    const draw = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      const trend = snapshot.dailyTrend;
-      const width = canvas.clientWidth;
-      const height = 170;
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, width, height);
-      if (trend.length === 0 || width <= 0 || height <= 0) return;
-
-    const styles = getComputedStyle(document.documentElement);
-    const lineColor = styles.getPropertyValue("--m3-primary").trim() || "#0b57d0";
-    const gridColor = styles.getPropertyValue("--m3-outline-variant").trim() || "#c4c6d0";
-    const labelColor = styles.getPropertyValue("--m3-on-surface-variant").trim() || "#43474e";
-
-    const maximumMs = trend.reduce((current, item) => Math.max(current, item.focusedMs), 0);
-    const verticalStepMinutes = trendAxisStepMinutes(maximumMs);
-    const verticalMaximumMinutes = verticalStepMinutes * 3;
-    const axisLabelStyle = "9px Roboto, sans-serif";
-
-    // 最宽纵轴标签决定左边距。
-    ctx.font = axisLabelStyle;
-    const widestLabel = ctx.measureText(formatTrendAxisDuration(verticalMaximumMinutes)).width;
-    const left = widestLabel + 12;
-    const right = 4;
-    const top = 8;
-    const bottom = 28;
-    const chartLeft = left;
-    const chartRight = width - right;
-    const chartTop = top;
-    const chartBottom = height - bottom;
-    const chartWidth = chartRight - chartLeft;
-    const chartHeight = chartBottom - chartTop;
-
-    // 网格 + 纵轴标签。
-    ctx.strokeStyle = gridColor;
-    ctx.globalAlpha = 0.55;
-    ctx.lineWidth = 1;
-    ctx.fillStyle = labelColor;
-    ctx.globalAlpha = 1;
-    ctx.textAlign = "right";
-    ctx.textBaseline = "middle";
-    for (let row = 0; row <= 3; row += 1) {
-      const y = chartTop + (chartHeight * row) / 3;
-      ctx.globalAlpha = 0.55;
-      ctx.beginPath();
-      ctx.moveTo(chartLeft, y);
-      ctx.lineTo(chartRight, y);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-      const minutes = verticalMaximumMinutes - verticalStepMinutes * row;
-      ctx.fillText(formatTrendAxisDuration(minutes), chartLeft - 7, y);
+    const node = containerRef.current;
+    if (!node) return;
+    if (typeof ResizeObserver === "undefined") {
+      // 测试环境（jsdom）没有 ResizeObserver：退回 window resize + clientWidth。
+      const sync = () => setChartWidth((previous) => {
+        const next = Math.round(node.clientWidth);
+        return previous === next ? previous : next;
+      });
+      sync();
+      window.addEventListener("resize", sync);
+      return () => window.removeEventListener("resize", sync);
     }
-
-    // 数据点。
-    const points = trend.map((item, index) => {
-      const x = trend.length === 1 ? chartLeft + chartWidth / 2 : chartLeft + (chartWidth * index) / (trend.length - 1);
-      const ratio = item.focusedMs / (verticalMaximumMinutes * 60_000);
-      const clamped = Math.min(1, Math.max(0, ratio));
-      return { x, y: chartBottom - chartHeight * clamped };
+    const observer = new ResizeObserver((entries) => {
+      const next = Math.round(entries[0]?.contentRect.width ?? 0);
+      setChartWidth((previous) => (previous === next ? previous : next));
     });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
-    // 渐变填充。
-    const areaPath = new Path2D();
-    areaPath.moveTo(points[0]!.x, points[0]!.y);
-    for (const point of points.slice(1)) areaPath.lineTo(point.x, point.y);
-    areaPath.lineTo(points[points.length - 1]!.x, chartBottom);
-    areaPath.lineTo(points[0]!.x, chartBottom);
-    areaPath.closePath();
-    const gradient = ctx.createLinearGradient(0, chartTop, 0, chartBottom);
-    gradient.addColorStop(0, lineColor + "47");
-    gradient.addColorStop(1, lineColor + "05");
-    ctx.fillStyle = gradient;
-    ctx.fill(areaPath);
+  const trend = snapshot.dailyTrend;
+  const maximumMs = trend.reduce((current, item) => Math.max(current, item.focusedMs), 0);
+  const verticalStepMinutes = trendAxisStepMinutes(maximumMs);
+  const verticalMaximumMinutes = verticalStepMinutes * 3;
+  const chartTop = 12;
+  const chartBottom = height - 30;
+  const plotWidth = Math.max(0, chartWidth - 4);
+  const chartHeight = chartBottom - chartTop;
 
-    // 折线。
-    const linePath = new Path2D();
-    linePath.moveTo(points[0]!.x, points[0]!.y);
-    for (const point of points.slice(1)) linePath.lineTo(point.x, point.y);
-    ctx.strokeStyle = lineColor;
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.stroke(linePath);
+  const points = trend.map((item, index) => ({
+    x: trend.length === 1 ? plotWidth / 2 : chartLeftFromIndex(index),
+    y: chartBottom - chartHeight * Math.min(1, Math.max(0, item.focusedMs / (verticalMaximumMinutes * 60_000))),
+  }));
 
-    // 数据点圆心。
-    ctx.fillStyle = lineColor;
-    const dotRadius = trend.length === 7 ? 3.5 : 2;
-    for (const point of points) {
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, dotRadius, 0, Math.PI * 2);
-      ctx.fill();
-    }
+  function chartLeftFromIndex(index: number): number {
+    return (plotWidth * index) / Math.max(1, trend.length - 1);
+  }
 
-    // 抽样日期标签。
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    const labelIndexes = adaptiveDateLabelIndexes(trend.length, chartWidth);
-    for (const index of labelIndexes) {
-      const date = new Date(trend[index]!.date);
-      const label = `${date.getMonth() + 1}/${date.getDate()}`;
-      const labelWidth = ctx.measureText(label).width;
-      const x = Math.min(chartRight - labelWidth, Math.max(chartLeft, points[index]!.x - labelWidth / 2));
-      ctx.fillText(label, x, chartBottom + 7);
-    }
-    };
+  const linePoints = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const areaPoints = trend.length > 0
+    ? `${linePoints} ${points[points.length - 1]!.x.toFixed(1)},${chartBottom} ${points[0]!.x.toFixed(1)},${chartBottom}`
+    : "";
+  const labelIndexes = adaptiveDateLabelIndexes(trend.length, plotWidth);
+  const peak = trend.reduce<{ minutes: number; date: number } | null>((best, item) => {
+    const minutes = Math.round(item.focusedMs / 60_000);
+    if (minutes > 0 && (!best || minutes > best.minutes)) return { minutes, date: item.date };
+    return best;
+  }, null);
+  const summary = trend.length === 0
+    ? "暂无专注趋势数据"
+    : `专注趋势共 ${trend.length} 天` +
+      (peak ? `，最高 ${formatTrendAxisDuration(peak.minutes)}（${formatTrendDayLabel(peak.date)}）` : "，期间没有专注记录");
 
-    draw();
-    // 窗口宽度变化时按新 clientWidth 重绘，否则画布按旧宽度拉伸导致模糊错位。
-    window.addEventListener("resize", draw);
-    return () => window.removeEventListener("resize", draw);
-  }, [snapshot]);
+  function handlePointerMove(event: ReactPointerEvent<SVGSVGElement>) {
+    if (trend.length === 0 || plotWidth <= 0) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    // preserveAspectRatio 未启用时 viewBox 即像素坐标，可直接按比例换算。
+    const scale = bounds.width / (plotWidth + AXIS_GUTTER);
+    const x = (event.clientX - bounds.left) / scale;
+    const ratio = trend.length === 1 ? 0 : x / plotWidth;
+    const index = Math.round(Math.min(1, Math.max(0, ratio)) * (trend.length - 1));
+    setActiveIndex(index);
+  }
 
-  return <canvas ref={canvasRef} style={{ width: "100%", height: 170, display: "block" }} aria-hidden="true" />;
+  const active = activeIndex != null ? trend[activeIndex] : undefined;
+  const activeMinutes = active ? Math.round(active.focusedMs / 60_000) : 0;
+  const tooltipLeft = activeIndex != null && points[activeIndex]
+    ? Math.min(plotWidth - 92, Math.max(0, points[activeIndex].x - 46))
+    : 0;
+
+  return (
+    <div ref={containerRef} style={{ position: "relative", width: "100%", height, paddingRight: AXIS_GUTTER }}>
+      {active ? (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: tooltipLeft,
+            width: 92,
+            padding: "5px 8px",
+            borderRadius: 8,
+            border: "1px solid var(--m3-outline-variant, #c4c6d0)",
+            background: "var(--m3-surface-container, rgba(255,255,255,0.96))",
+            color: "var(--m3-on-surface, inherit)",
+            fontSize: 12,
+            lineHeight: 1.5,
+            pointerEvents: "none",
+            textAlign: "center",
+          }}
+        >
+          <strong>{formatTrendDayLabel(active.date)}</strong>
+          <br />
+          {activeMinutes > 0 ? `${activeMinutes} 分钟` : "无专注"}
+        </div>
+      ) : null}
+      {/* svg 绝对定位：固定像素宽度不参与父级布局，避免 grid 最小内容宽度把列撑爆（反馈循环） */}
+      <svg
+        role="img"
+        aria-label={summary}
+        width={plotWidth > 0 ? plotWidth + AXIS_GUTTER : "100%"}
+        height={height}
+        viewBox={plotWidth > 0 ? `0 0 ${plotWidth + AXIS_GUTTER} ${height}` : undefined}
+        style={{ position: "absolute", top: 0, left: 0, display: "block", touchAction: "pan-y" }}
+        onPointerMove={handlePointerMove}
+        onPointerDown={handlePointerMove}
+        onPointerLeave={() => setActiveIndex(null)}
+      >
+        {plotWidth > 0 && points.length > 0 ? (
+          <>
+            {[0, 1, 2, 3].map((row) => (
+              <g key={row}>
+                <line
+                  x1={0}
+                  x2={plotWidth}
+                  y1={chartTop + (chartHeight * row) / 3}
+                  y2={chartTop + (chartHeight * row) / 3}
+                  style={{ stroke: "var(--m3-outline-variant, #c4c6d0)", strokeOpacity: 0.55, strokeWidth: 1 }}
+                />
+                <text
+                  x={plotWidth + 5}
+                  y={chartTop + (chartHeight * row) / 3}
+                  dy={3}
+                  fontSize={9}
+                  style={{ fill: "var(--m3-on-surface-variant, #43474e)" }}
+                >
+                  {formatTrendAxisDuration(verticalMaximumMinutes - verticalStepMinutes * row)}
+                </text>
+              </g>
+            ))}
+            <polygon points={areaPoints} style={{ fill: "var(--m3-primary, #0b57d0)", fillOpacity: 0.16 }} />
+            <polyline
+              points={linePoints}
+              fill="none"
+              style={{ stroke: "var(--m3-primary, #0b57d0)", strokeWidth: 2.5, strokeLinecap: "round", strokeLinejoin: "round" }}
+            />
+            {points.map((point, index) => (
+              <circle
+                key={index}
+                cx={point.x}
+                cy={point.y}
+                r={activeIndex === index ? 5 : trend.length === 7 ? 3.5 : 2}
+                style={{ fill: "var(--m3-primary, #0b57d0)" }}
+              />
+            ))}
+            {labelIndexes.map((index) => {
+              const date = new Date(trend[index]!.date);
+              const label = `${date.getMonth() + 1}/${date.getDate()}`;
+              return (
+                <text
+                  key={index}
+                  x={Math.min(plotWidth, Math.max(14, points[index]!.x))}
+                  y={chartBottom + 16}
+                  fontSize={10}
+                  textAnchor="middle"
+                  style={{ fill: "var(--m3-on-surface-variant, #43474e)" }}
+                >
+                  {label}
+                </text>
+              );
+            })}
+          </>
+        ) : null}
+      </svg>
+    </div>
+  );
 }
 
 // ============ 指标卡（_FocusMetricCard） ============
