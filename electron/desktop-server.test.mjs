@@ -186,3 +186,45 @@ test("passport forwards only exact approved cookie names", async (context) => {
   const response = await request(desktop, "/bili-passport/x/example");
   assert.equal(response.headers["x-bili-set-cookie"], "SESSDATA=fixture");
 });
+
+test("logged-out API requests carry a guest buvid cookie fetched from finger/spi", async (context) => {
+  const { desktop } = await fixture(context);
+  const requests = upstream(context, (target) => {
+    if (String(target).includes("/x/frontend/finger/spi")) {
+      return new Response(JSON.stringify({ code: 0, data: { b_3: "fixture-buvid3", b_4: "fixture-buvid4" } }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response("{}", { headers: { "content-type": "application/json" } });
+  });
+  const response = await request(desktop, "/bili-api/x/player/playurl?bvid=BV1fixture");
+  assert.equal(response.status, 200);
+  assert.equal(requests.length, 2);
+  assert.ok(requests[0].target.includes("https://api.bilibili.com/x/frontend/finger/spi"));
+  const forwardedHeaders = new Headers(requests[1].options.headers);
+  assert.match(forwardedHeaders.get("cookie") ?? "", /^buvid3=fixture-buvid3; buvid4=fixture-buvid4$/);
+});
+
+test("spi failure falls back to a locally generated buvid cookie", async (context) => {
+  const { desktop } = await fixture(context);
+  const requests = upstream(context, (target) => {
+    if (String(target).includes("/x/frontend/finger/spi")) {
+      return new Response("risk controlled", { status: 412 });
+    }
+    return new Response("{}", { headers: { "content-type": "application/json" } });
+  });
+  const response = await request(desktop, "/bili-video-api/x/player/playurl?bvid=BV1fixture");
+  assert.equal(response.status, 200);
+  const forwardedHeaders = new Headers(requests[1].options.headers);
+  assert.match(forwardedHeaders.get("cookie") ?? "", /^buvid3=[0-9a-f]{32}infoc; buvid4=[0-9a-f-]{36}$/);
+});
+
+test("a supplied login cookie wins and no guest buvid request is made", async (context) => {
+  const { desktop } = await fixture(context);
+  const requests = upstream(context, () => new Response("{}", { headers: { "content-type": "application/json" } }));
+  const response = await request(desktop, "/bili-api/x/example", { headers: { "x-beid-cookie": "SESSDATA=test-only" } });
+  assert.equal(response.status, 200);
+  assert.equal(requests.length, 1);
+  const forwardedHeaders = new Headers(requests[0].options.headers);
+  assert.equal(forwardedHeaders.get("cookie"), "SESSDATA=test-only");
+});

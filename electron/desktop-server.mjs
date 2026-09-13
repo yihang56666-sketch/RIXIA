@@ -1,4 +1,5 @@
 import http from "node:http";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -49,6 +50,48 @@ const MIME = {
 function send(res, status, body, headers = {}) {
   res.writeHead(status, headers);
   res.end(body);
+}
+
+/**
+ * 未登录游客的 B 站设备 Cookie（buvid3/buvid4）。B 站风控会对不带任何
+ * buvid 的 playurl 等接口直接回 412，见 docs 内「HTTP 412」排查记录；
+ * 浏览器侧 www.bilibili.com 总是带着这组指纹，代理必须在未登录时补齐同一形态。
+ */
+
+async function fetchBilibiliGuestCookie() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  let response;
+  try {
+    response = await fetch("https://api.bilibili.com/x/frontend/finger/spi", {
+      headers: {
+        "User-Agent": DESKTOP_UA,
+        Referer: "https://www.bilibili.com/",
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+  try {
+    if (!response.ok) return null;
+    const payload = JSON.parse(await response.text());
+    const buvid3 = payload?.data?.b_3;
+    const buvid4 = payload?.data?.b_4;
+    if (typeof buvid3 !== "string" || !buvid3 || typeof buvid4 !== "string" || !buvid4) return null;
+    return `buvid3=${buvid3}; buvid4=${buvid4}`;
+  } catch {
+    return null;
+  }
+}
+
+/** spi 不可达时的本地兜底：与 B 站网页端一样在客户端生成同形 buvid，接口侧照常接受。 */
+function locallyGeneratedBilibiliGuestCookie() {
+  const buvid3 = `${crypto.randomUUID().replace(/-/g, "")}infoc`;
+  return `buvid3=${buvid3}; buvid4=${crypto.randomUUID()}`;
 }
 
 function readRequestBody(req) {
@@ -119,7 +162,7 @@ async function pipeWebStream(webStream, res) {
   nodeStream.pipe(res);
 }
 
-async function proxyApi(req, res, targetOrigin, prefix, extraHeaders = {}) {
+async function proxyApi(req, res, targetOrigin, prefix, extraHeaders = {}, getGuestCookie = null) {
   const incoming = new URL(req.url ?? "/", "http://127.0.0.1");
   const rest = incoming.pathname.slice(prefix.length) || "/";
   if (!rest.startsWith("/") || rest.startsWith("//") || rest.includes("\\")) {
@@ -134,8 +177,17 @@ async function proxyApi(req, res, targetOrigin, prefix, extraHeaders = {}) {
     Referer: extraHeaders.Referer ?? "https://www.bilibili.com/",
     ...extraHeaders,
   };
+  const method = req.method ?? "GET";
+  // 先完成本地校验（含 413 请求体上限），再决定是否为游客引导 buvid。
+  const body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(req);
   const cookie = req.headers["x-beid-cookie"];
-  if (typeof cookie === "string" && cookie) headers.Cookie = cookie;
+  if (typeof cookie === "string" && cookie) {
+    headers.Cookie = cookie;
+  } else if (targetOrigin === "https://api.bilibili.com" && getGuestCookie) {
+    // 未登录也要带游客 buvid：风控对裸请求直接回 412（登录 Cookie 优先，绝不覆盖）。
+    const guestCookie = await getGuestCookie();
+    if (guestCookie) headers.Cookie = guestCookie;
+  }
   const contentType = req.headers["content-type"];
   if (typeof contentType === "string") headers["Content-Type"] = contentType;
 
@@ -149,8 +201,6 @@ async function proxyApi(req, res, targetOrigin, prefix, extraHeaders = {}) {
     headers.Referer = bvid ? `https://www.bilibili.com/video/${bvid}/` : "https://www.bilibili.com/";
   }
 
-  const method = req.method ?? "GET";
-  const body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(req);
   const upstream = await fetchUpstream(target, {
     method,
     headers,
@@ -270,6 +320,28 @@ export function startBeidDesktopServer(options = {}) {
   const distDir = fs.realpathSync(requestedDistDir);
   const host = "127.0.0.1";
   const port = options.port ?? 0;
+  // 游客 buvid 缓存按服务器实例隔离（便于测试），TTL 24h，进程内并发只发一次 spi。
+  const GUEST_COOKIE_TTL_MS = 24 * 60 * 60 * 1000;
+  const guestCookieState = { value: null, expiresAt: 0 };
+  let guestCookieInflight = null;
+  const getBilibiliGuestCookie = () => {
+    if (guestCookieState.value && guestCookieState.expiresAt > Date.now()) {
+      return Promise.resolve(guestCookieState.value);
+    }
+    if (!guestCookieInflight) {
+      guestCookieInflight = fetchBilibiliGuestCookie()
+        .then((fetched) => fetched ?? locallyGeneratedBilibiliGuestCookie())
+        .then((value) => {
+          guestCookieState.value = value;
+          guestCookieState.expiresAt = Date.now() + GUEST_COOKIE_TTL_MS;
+          return value;
+        })
+        .finally(() => {
+          guestCookieInflight = null;
+        });
+    }
+    return guestCookieInflight;
+  };
   const server = http.createServer((req, res) => {
     const url = req.url ?? "/";
     void (async () => {
@@ -294,10 +366,10 @@ export function startBeidDesktopServer(options = {}) {
         if (matches("/bili-search-api")) {
           return await proxyApi(req, res, "https://api.bilibili.com", "/bili-search-api", {
             Referer: "https://search.bilibili.com/",
-          });
+          }, getBilibiliGuestCookie);
         }
-        if (matches("/bili-video-api")) return await proxyApi(req, res, "https://api.bilibili.com", "/bili-video-api");
-        if (matches("/bili-api")) return await proxyApi(req, res, "https://api.bilibili.com", "/bili-api");
+        if (matches("/bili-video-api")) return await proxyApi(req, res, "https://api.bilibili.com", "/bili-video-api", {}, getBilibiliGuestCookie);
+        if (matches("/bili-api")) return await proxyApi(req, res, "https://api.bilibili.com", "/bili-api", {}, getBilibiliGuestCookie);
         if (matches("/bili-suggest")) return await proxyApi(req, res, "https://s.search.bilibili.com", "/bili-suggest");
         if (matches("/bili-comment")) {
           return await proxyApi(req, res, "https://comment.bilibili.com", "/bili-comment", {
