@@ -2173,6 +2173,14 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
           <button className="fb-player-topbar-btn" onClick={() => setShowPrefs((s) => !s)} aria-label="弹幕设置">
             <Settings2 size={18} />
           </button>
+          <button
+            className="fb-player-topbar-btn"
+            onClick={() => (fullscreen ? void exitFullscreen() : void enterFullscreen())}
+            aria-label={fullscreen ? "退出全屏" : "进入全屏"}
+            title={fullscreen ? "退出全屏" : "进入全屏"}
+          >
+            {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
         </div>
 
         {/* 控制层自动隐藏后仍保留一个可点的返回入口，
