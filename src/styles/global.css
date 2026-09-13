@@ -3829,13 +3829,12 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
   }
   .fb-player-ctl-row > * { flex: 0 0 auto; }
   .fb-player-ctl-row .player-time { flex: 0 0 auto; }
-  .fb-player-topbar { padding-top: max(10px, env(safe-area-inset-top, 0px)); }
 }
 
 /* 控制层隐藏期间的常驻返回入口：确保播放画面左上角永远有返回可达。 */
 .fb-player-persistent-back {
   position: absolute;
-  top: max(10px, env(safe-area-inset-top, 0px));
+  top: max(10px, var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
   left: 10px;
   z-index: 7;
   display: grid;
@@ -3888,6 +3887,8 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
 }
 
 /* ---- Top status bar ---- */
+/* 顶栏与常驻返回按钮在任意宽度都避让状态栏（对齐 FocuBili：播放器覆盖层无条件 SafeArea）。
+   安全区优先读 Capacitor SystemBars 注入的 --safe-area-inset-top，env() 作为浏览器回退。 */
 .fb-player-topbar {
   position: absolute;
   top: 0;
@@ -3897,7 +3898,7 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 12px;
+  padding: max(10px, var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) 12px 10px;
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent);
   transition: opacity 0.18s;
 }
