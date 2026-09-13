@@ -12,6 +12,7 @@ import { qualityLabel } from "../../lib/bilibili/qualityPolicy";
 import { createFocusPreferencesService } from "../../lib/bilibili/focusServices";
 import { createAppUpdatePreferencesService } from "../../lib/bilibili/appUpdatePreferences";
 import { M3Dialog, Mi } from "../bilibili/m3";
+import { todayKey } from "../../lib/time";
 
 export function SettingsView() {
   const {
@@ -128,7 +129,8 @@ export function SettingsView() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `beid-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    // 文件名用本地日期：toISOString 的 UTC 日期在 UTC+8 每天零点到八点会变成“昨天”。
+    anchor.download = `beid-backup-${todayKey()}.json`;
     anchor.click();
     // 下载导航异步消费 blob URL：同步 revoke 在 Firefox/Safari 上可能中断下载。
     window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
