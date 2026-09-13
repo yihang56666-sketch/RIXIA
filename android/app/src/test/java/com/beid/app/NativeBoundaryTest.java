@@ -12,13 +12,17 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.webkit.WebView;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.NotificationManagerCompat;
@@ -275,13 +279,15 @@ public class NativeBoundaryTest {
         final SimpleCache cache = mock(SimpleCache.class);
         final PlayerPlugin plugin;
         final Player.Listener listener;
+        final WebView webView;
+        final ViewGroup host;
+        final PlayerView view;
 
         PlayerFixture() throws Exception {
             mocks.add(mockStatic(Looper.class));
             mocks.add(mockStatic(Log.class));
             mocks.add(mockConstruction(Handler.class));
             mocks.add(mockConstruction(JSObject.class, withSettings().defaultAnswer(RETURNS_SELF)));
-            mocks.add(mockConstruction(BeidDanmakuView.class));
             mocks.add(mockConstruction(DefaultHttpDataSource.Factory.class, withSettings().defaultAnswer(RETURNS_SELF)));
             mocks.add(mockConstruction(DefaultDataSource.Factory.class));
             mocks.add(mockConstruction(CacheDataSource.Factory.class, withSettings().defaultAnswer(RETURNS_SELF)));
@@ -303,11 +309,12 @@ public class NativeBoundaryTest {
             metrics.density = 1f;
             when(plugin.context.getResources()).thenReturn(resources);
             when(resources.getDisplayMetrics()).thenReturn(metrics);
-            WebView webView = mock(WebView.class);
-            ViewGroup host = mock(ViewGroup.class);
+            webView = mock(WebView.class);
+            host = mock(ViewGroup.class);
             when(plugin.bridge.getWebView()).thenReturn(webView);
             when(webView.getParent()).thenReturn(host);
-            PlayerView view = mock(PlayerView.class);
+            when(host.indexOfChild(webView)).thenReturn(1);
+            view = mock(PlayerView.class);
             when(view.getParent()).thenReturn(host);
             when(view.getLayoutParams()).thenReturn(mock(ViewGroup.LayoutParams.class));
             LayoutInflater inflater = mock(LayoutInflater.class);
@@ -380,6 +387,72 @@ public class NativeBoundaryTest {
             when(fixture.player.getPlaybackState()).thenReturn(Player.STATE_ENDED);
             ((Runnable) field(fixture.plugin, "stateTicker")).run();
             assertEquals(0, fixture.plugin.emittedStates);
+        }
+    }
+
+    @Test
+    public void nativePlayerViewIsInsertedBelowTheWebView() throws Exception {
+        try (PlayerFixture fixture = new PlayerFixture()) {
+            verify(fixture.host).addView(fixture.view, 1);
+            verify(fixture.host, never()).addView(eq(fixture.view), eq(2));
+        }
+    }
+
+    @Test
+    public void embeddedBackgroundMakesTheWebViewTransparentAndTintsTheWindow() throws Exception {
+        try (PlayerFixture fixture = new PlayerFixture()) {
+            Drawable originalWebBackground = mock(Drawable.class);
+            Drawable originalDecorBackground = mock(Drawable.class);
+            when(fixture.webView.getBackground()).thenReturn(originalWebBackground);
+            View decor = mock(View.class);
+            when(decor.getBackground()).thenReturn(originalDecorBackground);
+            Window window = mock(Window.class);
+            when(window.getDecorView()).thenReturn(decor);
+            when(fixture.plugin.activity.getWindow()).thenReturn(window);
+
+            PluginCall call = mock(PluginCall.class);
+            when(call.getString("color", "")).thenReturn("#102030");
+            fixture.plugin.setEmbeddedBackground(call);
+            verify(fixture.webView).setBackgroundColor(Color.TRANSPARENT);
+            verify(decor).setBackgroundColor(0xFF102030);
+            verify(call).resolve();
+
+            PluginCall clear = mock(PluginCall.class);
+            fixture.plugin.clearEmbeddedBackground(clear);
+            verify(fixture.webView).setBackground(originalWebBackground);
+            verify(decor).setBackground(originalDecorBackground);
+            verify(clear).resolve();
+        }
+    }
+
+    @Test
+    public void embeddedColorParserAcceptsHexShorthandsAndRejectsForeignSyntax() {
+        assertEquals(0xFF102030, BeidNativePlayerPlugin.parseEmbeddedColor("#102030", 0xFF000000));
+        assertEquals(0xFFFFFFFF, BeidNativePlayerPlugin.parseEmbeddedColor("#fff", 0xFF000000));
+        assertEquals(0x44112233, BeidNativePlayerPlugin.parseEmbeddedColor("#1234", 0xFF000000));
+        assertEquals(0xFF000000, BeidNativePlayerPlugin.parseEmbeddedColor("rgb(1,2,3)", 0xFF000000));
+        assertEquals(0xFF000000, BeidNativePlayerPlugin.parseEmbeddedColor(null, 0xFF000000));
+    }
+
+    @Test
+    public void disposeRestoresEmbeddedBackgroundsBeforeReleasingThePlayer() throws Exception {
+        try (PlayerFixture fixture = new PlayerFixture()) {
+            Drawable originalDecorBackground = mock(Drawable.class);
+            View decor = mock(View.class);
+            when(decor.getBackground()).thenReturn(originalDecorBackground);
+            Window window = mock(Window.class);
+            when(window.getDecorView()).thenReturn(decor);
+            when(fixture.plugin.activity.getWindow()).thenReturn(window);
+
+            PluginCall call = mock(PluginCall.class);
+            when(call.getString("color", "")).thenReturn("#000000");
+            fixture.plugin.setEmbeddedBackground(call);
+
+            PluginCall dispose = mock(PluginCall.class);
+            fixture.plugin.dispose(dispose);
+            verify(decor).setBackground(originalDecorBackground);
+            verify(fixture.player).release();
+            verify(dispose).resolve();
         }
     }
 }

@@ -158,7 +158,7 @@ vi.mock("../../lib/bilibili/nativeMediaPlayer", () => ({
     seek: nativePlayerTest.seek,
     setVolume: vi.fn().mockResolvedValue(undefined),
     setPlaybackSpeed: vi.fn().mockResolvedValue(undefined),
-    setDanmaku: vi.fn().mockResolvedValue(undefined),
+    setEmbeddedBackground: vi.fn().mockResolvedValue(undefined),
     enterPictureInPicture: vi.fn().mockResolvedValue(false),
     onStateChange: vi.fn(async (listener) => {
       nativePlayerTest.listeners.push(listener);
@@ -792,7 +792,7 @@ describe("BilibiliPlayerView", () => {
     }));
   });
 
-  it("keeps native playback controls outside the video surface", async () => {
+  it("keeps the single web control layer over the embedded native video", async () => {
     nativePlayerTest.enabled = true;
     if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
       (globalThis as { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class {
@@ -804,13 +804,17 @@ describe("BilibiliPlayerView", () => {
 
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
 
-    const bar = await screen.findByRole("group", { name: "原生播放控制" });
-    expect(bar).toBeInTheDocument();
-    expect(bar.querySelector("input[type='range']")).not.toBeNull();
+    await waitFor(() => expect(nativePlayerTest.open).toHaveBeenCalled());
+    expect(document.querySelector(".fb-player-native-bar")).toBeNull();
+    await waitFor(() => {
+      expect(document.querySelector(".fb-player-surface")?.getAttribute("data-native")).toBe("1");
+      expect(document.documentElement.classList.contains("fb-native-hole")).toBe(true);
+    });
+    expect(document.querySelectorAll(".fb-player-ctl-row").length).toBe(1);
     expect(screen.getAllByRole("button", { name: "播放" }).length).toBeGreaterThan(0);
   });
 
-  it("shows speed, volume, quality, and fullscreen controls in the native bar", async () => {
+  it("keeps speed, volume, quality, and fullscreen controls in the single web layer", async () => {
     nativePlayerTest.enabled = true;
     if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
       (globalThis as { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class {
@@ -820,11 +824,15 @@ describe("BilibiliPlayerView", () => {
       } as typeof ResizeObserver;
     }
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
-    const bar = await screen.findByRole("group", { name: "原生播放控制" });
-    expect(bar.querySelector("select[aria-label='播放倍速']")).not.toBeNull();
-    await vi.waitFor(() => expect(bar.querySelector("select[aria-label='清晰度']")).not.toBeNull());
-    expect(bar.querySelector("input[aria-label='音量']")).not.toBeNull();
-    expect(bar.querySelector("button[aria-label='进入全屏']")).not.toBeNull();
+    await waitFor(() => expect(nativePlayerTest.open).toHaveBeenCalled());
+    expect(document.querySelector(".fb-player-native-bar")).toBeNull();
+    await waitFor(() => expect(document.querySelector(".fb-player-surface")?.getAttribute("data-native")).toBe("1"));
+    const controls = document.querySelector(".fb-player-ctl-row");
+    expect(controls).not.toBeNull();
+    expect(controls?.querySelector("select[aria-label='播放倍速']")).not.toBeNull();
+    await vi.waitFor(() => expect(controls?.querySelector("select[aria-label='清晰度']")).not.toBeNull());
+    expect(controls?.querySelector("input[aria-label='音量']")).not.toBeNull();
+    expect(controls?.querySelector("button[aria-label='进入全屏']")).not.toBeNull();
   });
 
   it("consumes the system back request while CSS fullscreen is active", async () => {
@@ -917,7 +925,7 @@ describe("BilibiliPlayerView", () => {
     await vi.waitFor(() => expect(document.querySelector(".fb-player-surface")?.getAttribute("data-controls")).toBe("shown"));
   });
 
-  it("keeps back and focus actions reachable in the native bar while the native view covers the surface", async () => {
+  it("keeps back and focus actions reachable in the web layer over the native view", async () => {
     nativePlayerTest.enabled = true;
     if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
       (globalThis as { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class {
@@ -927,12 +935,15 @@ describe("BilibiliPlayerView", () => {
       } as typeof ResizeObserver;
     }
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
-    const bar = await screen.findByRole("group", { name: "原生播放控制" });
-    const back = bar.querySelector("button[aria-label='返回资料库']") as HTMLButtonElement;
+    await waitFor(() => expect(nativePlayerTest.open).toHaveBeenCalled());
+    expect(document.querySelector(".fb-player-native-bar")).toBeNull();
+    const surface = document.querySelector(".fb-player-surface");
+    await waitFor(() => expect(surface?.getAttribute("data-native")).toBe("1"));
+    const back = surface?.querySelector("button[aria-label='返回资料库']") as HTMLButtonElement | null;
     expect(back).not.toBeNull();
-    expect(bar.querySelector("button[aria-label='专注控制']")).not.toBeNull();
+    expect(surface?.querySelector("button[aria-label='专注控制']")).not.toBeNull();
 
-    fireEvent.click(back);
+    fireEvent.click(back!);
     await waitFor(() => expect(useAppStore.getState().view).toBe("library"));
   });
 });

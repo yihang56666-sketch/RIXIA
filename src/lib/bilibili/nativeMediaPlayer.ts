@@ -28,14 +28,6 @@ export interface NativePlayerState {
   message?: string;
 }
 
-export interface NativeDanmakuEntry {
-  text: string;
-  startTimeSeconds: number;
-  mode: number;
-  color: number;
-  durationSeconds?: number;
-}
-
 export interface NativeMediaPlayerBridge {
   call(method: string, args?: object): Promise<unknown>;
   addListener(
@@ -53,7 +45,7 @@ interface NativeMediaPlayerPlugin {
   seek(args: { positionSeconds: number }): Promise<unknown>;
   setVolume(args: { volume: number }): Promise<unknown>;
   setPlaybackSpeed(args: { speed: number }): Promise<unknown>;
-  setDanmaku(args: { entries: NativeDanmakuEntry[] }): Promise<unknown>;
+  setEmbeddedBackground(args: { color: string }): Promise<unknown>;
   enterPictureInPicture(args: { aspectRatio: number }): Promise<unknown>;
   dispose(): Promise<unknown>;
   addListener(
@@ -82,10 +74,57 @@ export interface NativeMediaPlayer {
   seek(positionSeconds: number): Promise<void>;
   setVolume(volume: number): Promise<void>;
   setPlaybackSpeed(speed: number): Promise<void>;
-  setDanmaku(entries: NativeDanmakuEntry[]): Promise<void>;
+  /**
+   * 把 WebView 底色镂空，并把窗口底色换成传入的页面色，
+   * 让位于 WebView 之下的原生视频从播放区域透出来。
+   */
+  setEmbeddedBackground(color: string): Promise<void>;
   enterPictureInPicture(aspectRatio: number): Promise<boolean>;
   onStateChange(listener: (state: NativePlayerState) => void): Promise<() => Promise<void>>;
   dispose(): Promise<void>;
+}
+
+/** 窗口底色兜底值：CSS 变量读不到时使用（等价于播放器的黑色遮罩）。 */
+const FALLBACK_EMBEDDED_COLOR = "#000000";
+
+function clampByte(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function toHex(value: number): string {
+  return clampByte(value).toString(16).padStart(2, "0");
+}
+
+/**
+ * 把 getComputedStyle 可能给出的任意写法（#rgb/#rrggbb/#rrggbbaa/rgb()/rgba()）
+ * 归一成 Android Color.parseColor 能接受的十六进制字符串。
+ */
+export function normalizeNativePageColor(raw: string | null | undefined): string {
+  const value = (raw ?? "").trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(value) || /^#[0-9a-f]{8}$/.test(value)) return value;
+  if (/^#[0-9a-f]{3}$/.test(value)) {
+    return `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`;
+  }
+  const components = value.match(/^rgba?\(([^)]*)\)$/);
+  if (components) {
+    const parts = components[1].split(/[,/\s]+/).filter(Boolean);
+    if (parts.length >= 3) {
+      const parse = (token: string, index: number): number => {
+        if (token.endsWith("%")) return (Number(token.slice(0, -1)) / 100) * (index === 3 ? 1 : 255);
+        return Number(token);
+      };
+      const red = parse(parts[0], 0);
+      const green = parse(parts[1], 1);
+      const blue = parse(parts[2], 2);
+      if (![red, green, blue].every(Number.isFinite)) return FALLBACK_EMBEDDED_COLOR;
+      const alpha = parts.length > 3 ? Number(parse(parts[3], 3)) : 1;
+      if (!Number.isFinite(alpha) || alpha >= 1) {
+        return `#${toHex(red)}${toHex(green)}${toHex(blue)}`;
+      }
+      return `#${toHex(red)}${toHex(green)}${toHex(blue)}${toHex(alpha * 255)}`;
+    }
+  }
+  return FALLBACK_EMBEDDED_COLOR;
 }
 
 export function createNativeMediaPlayer(
@@ -145,19 +184,11 @@ export function createNativeMediaPlayer(
       if (!Number.isFinite(value) || value < 0.5 || value > 3) throw new Error("播放倍速必须在 0.5 到 3 倍之间");
       await bridge.call("setPlaybackSpeed", { speed: value });
     },
-    async setDanmaku(entries) {
+    async setEmbeddedBackground(color) {
       ensureActive();
-      const bounded = entries
-        .filter((entry) => typeof entry.text === "string" && entry.text.trim() && Number.isFinite(entry.startTimeSeconds))
-        .slice(0, 5000)
-        .map((entry) => ({
-          ...entry,
-          text: entry.text.trim().slice(0, 120),
-          startTimeSeconds: Math.max(0, entry.startTimeSeconds),
-          mode: Number.isFinite(entry.mode) ? entry.mode : 1,
-          color: Number.isFinite(entry.color) ? entry.color : 0xffffff,
-        }));
-      await bridge.call("setDanmaku", { entries: bounded });
+      await bridge.call("setEmbeddedBackground", {
+        color: normalizeNativePageColor(color),
+      });
     },
     async enterPictureInPicture(aspectRatio) {
       ensureActive();

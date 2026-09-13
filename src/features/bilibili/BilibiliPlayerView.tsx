@@ -57,8 +57,8 @@ import { Capacitor } from "@capacitor/core";
 import {
   createNativeMediaPlayer,
   isAndroidNativeMediaPlayerAvailable,
-  type NativeDanmakuEntry,
   type NativeMediaPlayer,
+  type NativePlayerBounds,
 } from "../../lib/bilibili/nativeMediaPlayer";
 import { nativeMediaRequestHeaders } from "../../lib/bilibili/nativeMediaHeaders";
 import { createPlayurlService } from "../../lib/bilibili/playurlService";
@@ -111,7 +111,8 @@ interface PlayerControlBridge {
  * BEID 集成 B 站播放器 — 参考 FocuBili 的 player_page.dart：
  * - 浏览器优先 MSE DASH 直连播放（视频/音频 m4s 经 /bili-media 代理），
  *   控制条直接控制本项目的 <video>；失败时显示可重试错误卡片
- * - Android 原生走 Media3（nativeMediaPlayer）
+ * - Android 原生走 Media3（nativeMediaPlayer）：视频视图贴在 WebView 之下，
+ *   网页把 .fb-player-surface 镂空露出画面，所以两端共用同一套控制层
  * - 同时单独加载弹幕 XML，在 canvas 上渲染滚动/顶部/底部弹幕
  * - 支持时间点笔记（save / list）
  * - 支持分 P 切换
@@ -610,6 +611,8 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   // Android uses Media3 for Bilibili's separate DASH video/audio tracks. The
   // Browser MSE and the Android native plugin are separate implementations of
   // the same integrated player; neither relies on an external host page.
+  // 原生视频视图位于 WebView 之下，网页在 .fb-player-surface 处镂空露出画面，
+  // 因此控制层、弹幕画布和手势层与 Electron/浏览器端共用同一套 DOM。
   useEffect(() => {
     if (!shouldUseNativePlayer || !video || activePartCid == null || !overlayRef.current) return;
     let cancelled = false;
@@ -617,15 +620,53 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     const nativePlayer = createNativeMediaPlayer();
     nativePlayerRef.current = nativePlayer;
 
-    const syncBounds = async () => {
-      const bounds = overlayRef.current?.getBoundingClientRect();
-      if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
-      await nativePlayer.setBounds({
-        left: bounds.left,
-        top: bounds.top,
-        width: bounds.width,
-        height: bounds.height,
+    // 原生视图贴在网页镂空洞之下，位置必须逐帧跟随。ResizeObserver 只报告尺寸
+    // 变化，看不到安全区/键盘/布局位移，这些情况曾让画面和控制层错开一整条状态栏。
+    let lastMeasured: NativePlayerBounds | null = null;
+    let queuedBounds: NativePlayerBounds | null = null;
+    let sendingBounds = false;
+    let layoutFrame = 0;
+
+    const readBounds = (): NativePlayerBounds | null => {
+      const element = overlayRef.current;
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      if (!Number.isFinite(rect.left) || !Number.isFinite(rect.top) || rect.width <= 0 || rect.height <= 0) {
+        return null;
+      }
+      return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+    };
+
+    const boundsMoved = (previous: NativePlayerBounds | null, next: NativePlayerBounds) =>
+      !previous
+      || Math.abs(previous.left - next.left) >= 0.5
+      || Math.abs(previous.top - next.top) >= 0.5
+      || Math.abs(previous.width - next.width) >= 0.5
+      || Math.abs(previous.height - next.height) >= 0.5;
+
+    const pumpBounds = () => {
+      if (sendingBounds || !queuedBounds) return;
+      const next = queuedBounds;
+      queuedBounds = null;
+      sendingBounds = true;
+      void nativePlayer.setBounds(next).catch(() => {}).finally(() => {
+        sendingBounds = false;
+        if (queuedBounds) pumpBounds();
       });
+    };
+
+    const syncBounds = () => {
+      const next = readBounds();
+      if (!boundsMoved(lastMeasured, next ?? lastMeasured!)) return;
+      lastMeasured = next;
+      if (!next) return;
+      queuedBounds = next;
+      pumpBounds();
+    };
+
+    const trackLayout = () => {
+      layoutFrame = requestAnimationFrame(trackLayout);
+      syncBounds();
     };
 
     const failNative = (message: string) => {
@@ -652,6 +693,19 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         }
       });
       await syncBounds();
+      // setBounds 是异步排队的，open 之前先等一帧量好的区域落位，
+      // 避免首帧视频出现在 (0,0) 尺寸上。
+      await new Promise<void>((resolve) => {
+        const settle = () => {
+          if (!sendingBounds) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(settle);
+        };
+        settle();
+      });
+      if (cancelled) return;
       const pendingTarget = pendingSeekTargetRef.current;
       if (pendingTarget && pendingTarget.cid === activePartCid) {
         // 跨分P一次性跳转目标（笔记/互动分支）在原生管线打开前消费。
@@ -684,13 +738,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       }
     };
 
-    const onLayoutChange = () => { void syncBounds(); };
-    const resizeObserver = new ResizeObserver(onLayoutChange);
-    resizeObserver.observe(overlayRef.current);
-    const pageEl = playerPageRef.current;
-    pageEl?.addEventListener("scroll", onLayoutChange, { passive: true });
-    window.addEventListener("scroll", onLayoutChange, true);
-    window.addEventListener("resize", onLayoutChange);
+    layoutFrame = requestAnimationFrame(trackLayout);
     start().catch((error) => {
       failNative(error instanceof Error ? error.message : String(error));
     });
@@ -698,27 +746,43 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     return () => {
       cancelled = true;
       setNativePlayerActive(false);
-      resizeObserver.disconnect();
-      pageEl?.removeEventListener("scroll", onLayoutChange);
-      window.removeEventListener("scroll", onLayoutChange, true);
-      window.removeEventListener("resize", onLayoutChange);
+      cancelAnimationFrame(layoutFrame);
       void removeListener?.();
       void nativePlayer.dispose();
       if (nativePlayerRef.current === nativePlayer) nativePlayerRef.current = null;
     };
   }, [activePartCid, dashRetryCount, requestedQuality, shouldUseNativePlayer, video?.bvid]);
 
+  // 原生播放期间把网页背景镂空，并把窗口底色换成页面表面色：
+  // 镂空洞之外的像素仍然由网页自己绘制，观感与 Electron 端一致。
+  // data-theme/data-m3-mode 变化时重新取色，换肤不会残留旧底色。
   useEffect(() => {
-    if (!nativePlayerActive || !nativePlayerRef.current) return;
-    const entries: NativeDanmakuEntry[] = danmaku.map((entry) => ({
-      text: entry.text,
-      startTimeSeconds: entry.startTimeSeconds,
-      mode: entry.mode,
-      color: entry.color,
-      durationSeconds: entry.durationSeconds,
-    }));
-    void nativePlayerRef.current.setDanmaku(entries);
-  }, [danmaku, nativePlayerActive]);
+    if (!shouldUseNativePlayer || !nativePlayerActive) return;
+    const root = document.documentElement;
+    root.classList.add("fb-native-hole");
+    const player = nativePlayerRef.current;
+    if (!player) return;
+    const syncEmbeddedColor = () => {
+      const page = playerPageRef.current;
+      if (!page) return;
+      const styles = window.getComputedStyle(page);
+      void player
+        .setEmbeddedBackground(
+          styles.getPropertyValue("--focubili-surface") || styles.backgroundColor,
+        )
+        .catch(() => {});
+    };
+    syncEmbeddedColor();
+    const observer = new MutationObserver(syncEmbeddedColor);
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ["data-theme", "data-m3-mode", "data-density"],
+    });
+    return () => {
+      root.classList.remove("fb-native-hole");
+      observer.disconnect();
+    };
+  }, [nativePlayerActive, shouldUseNativePlayer]);
 
   // 初始化弹幕渲染器：画布尺寸跟随容器变化（全屏/旋转/分屏），
   // 并按 devicePixelRatio 渲染避免 HiDPI 模糊；偏好变化时重建渲染器以应用新字号。
@@ -1898,10 +1962,10 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     setCurrentTime(0);
   }
 
-  // 弹幕设置 / 字幕轨道面板：浏览器模式渲染在画面浮层内；
-  // Android 原生模式画面区被原生视频视图覆盖，改渲染到画面下方的原生控制条区域。
+  // 弹幕设置 / 字幕轨道面板：渲染在画面浮层内；Android 原生模式下
+  // 画面是 WebView 之下透出来的原生视频，浮层同样盖在视频之上。
   const danmakuPrefsPanel = showPrefs && (
-    <div className={nativePlayerActive ? "fb-player-native-panel" : "fb-player-popup"} role="dialog" aria-label="弹幕设置">
+    <div className="fb-player-popup" role="dialog" aria-label="弹幕设置">
       <strong>弹幕设置</strong>
       <label className="field-row">
         <span>弹幕开关</span>
@@ -1959,7 +2023,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     </div>
   );
   const subtitlePanel = showSubtitles && subtitleTracks.length > 0 && (
-    <div className={nativePlayerActive ? "fb-player-native-panel" : "fb-player-popup"} role="dialog" aria-label="字幕轨道">
+    <div className="fb-player-popup" role="dialog" aria-label="字幕轨道">
       <strong>字幕轨道</strong>
       <label className="field-row">
         <select
@@ -2353,108 +2417,11 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
           </div>
         )}
 
-        {/* 弹幕设置弹窗（原生画面覆盖期间移到画面下方的控制条区域渲染） */}
-        {!nativePlayerActive && danmakuPrefsPanel}
+        {/* 弹幕设置弹窗 */}
+        {danmakuPrefsPanel}
         {/* 字幕菜单弹窗 */}
-        {!nativePlayerActive && subtitlePanel}
+        {subtitlePanel}
       </div>
-
-{shouldUseNativePlayer && (
-        <div className="fb-player-native-bar" role="group" aria-label="原生播放控制">
-          {/* 原生视频视图盖住 WebView 画面区，surface 内的返回按钮/控制层都不可见；
-              返回与专注入口必须放在画面下方的原生控制条里。 */}
-          <button className="player-btn" onClick={requestLeavePlayer} aria-label="返回资料库" title="返回资料库">
-            <ArrowLeft size={17} />
-          </button>
-          <button
-            className="player-btn"
-            onClick={() => setShowFocusSheet(true)}
-            aria-label="专注控制"
-            title="专注控制"
-          >
-            <Timer size={17} />
-          </button>
-          <button
-            className="player-btn"
-            onClick={() => {
-              if (playing) {
-                void nativePlayerRef.current?.pause();
-                setPlaying(false);
-              } else {
-                void nativePlayerRef.current?.play();
-                setPlaying(true);
-              }
-            }}
-            aria-label={playing ? "暂停" : "播放"}
-          >
-            {playing ? <Pause size={17} /> : <Play size={17} />}
-          </button>
-          <input
-            type="range"
-            min={0}
-            max={Math.max(1, duration)}
-            step={0.1}
-            value={Math.min(currentTime, duration || 0)}
-            aria-label="播放进度"
-            onChange={(event) => {
-              const next = Number(event.target.value);
-              if (!Number.isFinite(next)) return;
-              void nativePlayerRef.current?.seek(next);
-              setCurrentTime(next);
-            }}
-          />
-          <span className="player-time">{formatTime(currentTime)} / {formatTime(duration)}</span>
-          <button
-            className="player-btn"
-            onClick={() => {
-              setMuted((m) => {
-                const next = !m;
-                const nextVolume = next ? 0 : lastAudibleVolumeRef.current;
-                void nativePlayerRef.current?.setVolume(nextVolume);
-                setVolume(nextVolume);
-                return next;
-              });
-            }}
-            aria-label={muted ? "取消静音" : "静音"}
-          >
-            {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
-          </button>
-          <input
-            className="player-volume"
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={muted ? 0 : volume}
-            aria-label="音量"
-            onChange={(event) => {
-              const next = Math.max(0, Math.min(1, Number(event.target.value)));
-              setVolume(next);
-              setMuted(next === 0);
-              if (next > 0) lastAudibleVolumeRef.current = next;
-              void nativePlayerRef.current?.setVolume(next);
-            }}
-          />
-          <select className="player-quality-select" aria-label="播放倍速" value={playbackSpeed} onChange={(event) => changePlaybackSpeed(Number(event.target.value))}>
-            {[0.5, 0.75, 1, 1.25, 1.5, 2, 3].map((speed) => <option key={speed} value={speed}>{speed}x</option>)}
-          </select>
-          {qualityOptions.length > 1 && (
-            <select className="player-quality-select" aria-label="清晰度" value={requestedQuality} onChange={(event) => {
-              const next = Number(event.target.value);
-              if (!Number.isFinite(next) || next === requestedQuality) return;
-              resumedPositionRef.current = currentTime;
-              setNativePlayerActive(false);
-              setRequestedQuality(next);
-              setLoadQuality(next);
-            }}>
-              {qualityOptions.map((quality) => <option key={quality} value={quality}>{qualityLabel(quality)}</option>)}
-            </select>
-          )}
-          <button className="player-btn" onClick={() => (fullscreen ? void exitFullscreen() : void enterFullscreen())} aria-label={fullscreen ? "退出全屏" : "进入全屏"}>
-            {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-          </button>
-        </div>
-      )}
 
       {/* 详情区 */}
       <div className="fb-player-details">

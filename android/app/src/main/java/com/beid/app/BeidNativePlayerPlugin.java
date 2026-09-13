@@ -7,9 +7,9 @@ import android.os.Build;
 import android.util.Rational;
 import android.app.PictureInPictureParams;
 import android.view.LayoutInflater;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.graphics.drawable.Drawable;
 
 import androidx.annotation.NonNull;
 import androidx.media3.common.MediaItem;
@@ -37,15 +37,18 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.util.HashMap;
-import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.io.File;
 
-import org.json.JSONArray;
-
-/** Android Media3 playback surface used by BEID's integrated player. */
+/**
+ * Android Media3 playback surface used by BEID's integrated player.
+ *
+ * The PlayerView sits *below* the WebView and the web page punches a
+ * transparent hole where the video rectangle is, so the single web control
+ * layer (topbar, control row, danmaku canvas, popups) overlays the video
+ * exactly like the Electron/browser player instead of duplicating it.
+ */
 @CapacitorPlugin(name = "BeidNativePlayer")
 @UnstableApi
 public class BeidNativePlayerPlugin extends Plugin {
@@ -57,7 +60,6 @@ public class BeidNativePlayerPlugin extends Plugin {
             // 这里抛出的任何异常都是未捕获主线程异常，直接闪退。
             try {
                 if (player == null) return;
-                if (danmakuView != null) danmakuView.setPositionSeconds(player.getCurrentPosition() / 1000f);
                 if (player.getPlaybackState() == Player.STATE_READY) {
                     emitState(player.isPlaying() ? "playing" : "paused", null);
                 }
@@ -70,10 +72,17 @@ public class BeidNativePlayerPlugin extends Plugin {
     private ExoPlayer player;
     private SimpleCache mediaCache;
     private PlayerView playerView;
-    private BeidDanmakuView danmakuView;
     private ViewGroup.LayoutParams playerLayout;
     private float density;
     private PluginCall pendingOpenCall;
+    private View embeddedWebView;
+    private View embeddedDecor;
+    private Drawable previousWebViewBackground;
+    private Drawable previousDecorBackground;
+    /** 镂空洞与原生画面的接缝容差（像素）：原生画面外扩，绝不露出底色缝隙。 */
+    private static final int EMBED_BLEED_PX = 1;
+    /** CSS 颜色读取失败时的窗口兜底色，与原生播放器的黑色遮罩一致。 */
+    private static final int OPAQUE_BLACK = 0xFF000000;
     private Map<String, String> mediaHeaders = defaultMediaHeaders("https://www.bilibili.com/");
     private static final long OPEN_TIMEOUT_MS = 15_000L;
     private static final String DESKTOP_UA =
@@ -127,20 +136,19 @@ public class BeidNativePlayerPlugin extends Plugin {
                 return;
             }
             int[] offset = hostOffsetPx();
+            // 网页镂空洞与原生画面各自取整，向外多铺一像素：原生视图永远盖住洞，
+            // 缝隙只可能出现在视频之下，不会露出一条底色。
+            int pixelLeft = (int) Math.floor((float) left * density) + offset[0] - EMBED_BLEED_PX;
+            int pixelTop = (int) Math.floor((float) top * density) + offset[1] - EMBED_BLEED_PX;
+            int pixelRight = (int) Math.ceil((float) (left + width) * density) + offset[0] + EMBED_BLEED_PX;
+            int pixelBottom = (int) Math.ceil((float) (top + height) * density) + offset[1] + EMBED_BLEED_PX;
             updateLayout(playerLayout,
-                Math.max(1, Math.round((float) width * density)),
-                Math.max(1, Math.round((float) height * density)),
-                Math.round((float) left * density) + offset[0],
-                Math.round((float) top * density) + offset[1]);
+                Math.max(1, pixelRight - pixelLeft),
+                Math.max(1, pixelBottom - pixelTop),
+                pixelLeft,
+                pixelTop);
             playerView.setLayoutParams(playerLayout);
             playerView.setVisibility(View.VISIBLE);
-            if (danmakuView != null) {
-                ViewGroup.LayoutParams danmakuLayout = danmakuView.getLayoutParams();
-                updateLayout(danmakuLayout, playerLayout.width, playerLayout.height,
-                    readLeftMargin(playerLayout), readTopMargin(playerLayout));
-                danmakuView.setLayoutParams(danmakuLayout);
-                danmakuView.setVisibility(View.VISIBLE);
-            }
             call.resolve();
         });
     }
@@ -169,7 +177,6 @@ public class BeidNativePlayerPlugin extends Plugin {
             player.prepare();
             player.setPlayWhenReady(true);
             playerView.setVisibility(View.VISIBLE);
-            if (danmakuView != null) danmakuView.setVisibility(View.VISIBLE);
             emitState("loading", null);
             stateHandler.removeCallbacks(openTimeout);
             stateHandler.postDelayed(openTimeout, OPEN_TIMEOUT_MS);
@@ -232,28 +239,106 @@ public class BeidNativePlayerPlugin extends Plugin {
         });
     }
 
+    /**
+     * 打开嵌入模式：WebView 自身背景透明，窗口底色换成页面表面色。
+     * 配合网页侧 .fb-player-surface 的镂空洞，视频从洞中透出，
+     * 洞之外依旧由网页绘制，观感与 Electron/浏览器端一致。
+     */
     @PluginMethod
-    public void setDanmaku(PluginCall call) {
+    public void setEmbeddedBackground(PluginCall call) {
         runOnUi(call, () -> {
-            ensurePlayer();
-            JSONArray rawEntries = call.getArray("entries");
-            List<BeidDanmakuView.Entry> entries = new ArrayList<>();
-            if (rawEntries != null) {
-                for (int i = 0; i < Math.min(rawEntries.length(), 5000); i++) {
-                    org.json.JSONObject raw = rawEntries.optJSONObject(i);
-                    if (raw == null) continue;
-                    String text = raw.optString("text", "").trim();
-                    if (text.isEmpty()) continue;
-                    float start = (float) Math.max(0d, raw.optDouble("startTimeSeconds", 0d));
-                    int mode = raw.optInt("mode", 1);
-                    int color = raw.optInt("color", 0xffffff);
-                    float duration = (float) Math.max(1d, raw.optDouble("durationSeconds", 9d));
-                    entries.add(new BeidDanmakuView.Entry(text, start, mode, color, duration));
-                }
-            }
-            if (danmakuView != null) danmakuView.setEntries(entries);
+            applyEmbeddedBackground(parseEmbeddedColor(call.getString("color", ""), OPAQUE_BLACK));
             call.resolve();
         });
+    }
+
+    /** 退出嵌入模式，恢复 WebView 与窗口的原始背景。 */
+    @PluginMethod
+    public void clearEmbeddedBackground(PluginCall call) {
+        runOnUi(call, () -> {
+            restoreEmbeddedBackground();
+            call.resolve();
+        });
+    }
+
+    /** 与 Color.parseColor 的十六进制子集等价（#rgb/#rgba/#rrggbb/#rrggbbaa），纯 Java 实现，JVM 单测可跑。 */
+    static int parseEmbeddedColor(String raw, int fallback) {
+        String value = raw == null ? "" : raw.trim();
+        if (value.length() < 4 || value.charAt(0) != '#') return fallback;
+        String digits = value.substring(1);
+        int step = digits.length() == 3 || digits.length() == 4 ? 1 : 2;
+        if (digits.length() != 3 * step && digits.length() != 4 * step) return fallback;
+        int[] channels = new int[3];
+        for (int channel = 0; channel < channels.length; channel++) {
+            int high = hexDigit(digits.charAt(channel * step));
+            if (high < 0) return fallback;
+            if (step == 1) {
+                channels[channel] = high * 0x11;
+            } else {
+                int low = hexDigit(digits.charAt(channel * 2 + 1));
+                if (low < 0) return fallback;
+                channels[channel] = (high << 4) | low;
+            }
+        }
+        int alpha = 0xFF;
+        if (digits.length() == 4 * step) {
+            int high = hexDigit(digits.charAt(step == 1 ? 3 : 6));
+            if (high < 0) return fallback;
+            if (step == 1) {
+                alpha = high * 0x11;
+            } else {
+                int low = hexDigit(digits.charAt(7));
+                if (low < 0) return fallback;
+                alpha = (high << 4) | low;
+            }
+        }
+        return (alpha << 24) | (channels[0] << 16) | (channels[1] << 8) | channels[2];
+    }
+
+    private static int hexDigit(char digit) {
+        if (digit >= '0' && digit <= '9') return digit - '0';
+        if (digit >= 'a' && digit <= 'f') return digit - 'a' + 10;
+        if (digit >= 'A' && digit <= 'F') return digit - 'A' + 10;
+        return -1;
+    }
+
+    /** Make the WebView transparent and paint the window behind it with the page surface color. */
+    private void applyEmbeddedBackground(int pageColor) {
+        View webView = getBridge() != null ? getBridge().getWebView() : null;
+        if (webView != null && webView != embeddedWebView) {
+            embeddedWebView = webView;
+            previousWebViewBackground = webView.getBackground();
+            webView.setBackgroundColor(Color.TRANSPARENT);
+        }
+        android.app.Activity activity = getActivity();
+        View decor = activity == null ? null : activity.getWindow().getDecorView();
+        if (decor != null && decor != embeddedDecor) {
+            embeddedDecor = decor;
+            previousDecorBackground = decor.getBackground();
+        }
+        if (decor != null) decor.setBackgroundColor(pageColor);
+    }
+
+    /** Put the WebView and window backgrounds back once embedded playback ends. */
+    private void restoreEmbeddedBackground() {
+        if (embeddedWebView != null) {
+            if (previousWebViewBackground != null) {
+                embeddedWebView.setBackground(previousWebViewBackground);
+            } else {
+                embeddedWebView.setBackground(null);
+            }
+        }
+        if (embeddedDecor != null) {
+            if (previousDecorBackground != null) {
+                embeddedDecor.setBackground(previousDecorBackground);
+            } else {
+                embeddedDecor.setBackground(null);
+            }
+        }
+        embeddedWebView = null;
+        embeddedDecor = null;
+        previousWebViewBackground = null;
+        previousDecorBackground = null;
     }
 
     @PluginMethod
@@ -327,13 +412,14 @@ public class BeidNativePlayerPlugin extends Plugin {
         if (webView != null && webView.getParent() instanceof ViewGroup) {
             host = (ViewGroup) webView.getParent();
             int webIndex = host.indexOfChild(webView);
-            if (webIndex >= 0) insertAt = webIndex + 1;
+            insertAt = Math.max(0, webIndex);
         } else {
             View content = activity.findViewById(android.R.id.content);
             if (!(content instanceof ViewGroup)) {
                 throw new IllegalStateException("播放器容器不可用");
             }
             host = (ViewGroup) content;
+            insertAt = host.getChildCount();
         }
         density = getContext().getResources().getDisplayMetrics().density;
         playerView = (PlayerView) LayoutInflater.from(getContext()).inflate(R.layout.beid_native_player, host, false);
@@ -341,13 +427,11 @@ public class BeidNativePlayerPlugin extends Plugin {
             throw new IllegalStateException("无法创建原生播放器视图");
         }
         playerView.setUseController(false);
-        playerView.setClickable(true);
         playerView.setFocusable(false);
         playerView.setFocusableInTouchMode(false);
         playerView.setBackgroundColor(Color.BLACK);
         playerView.setShutterBackgroundColor(Color.BLACK);
         playerView.setVisibility(View.INVISIBLE);
-        playerView.setOnTouchListener((view, event) -> forwardTouchToWebView(view, event));
         // Let the parent create its own parameter subtype (CoordinatorLayout,
         // FrameLayout, etc.). Passing FrameLayout.LayoutParams to a
         // CoordinatorLayout causes a ClassCastException during the next measure.
@@ -356,13 +440,6 @@ public class BeidNativePlayerPlugin extends Plugin {
         if (playerLayout == null) {
             throw new IllegalStateException("播放器布局参数不可用");
         }
-        danmakuView = new BeidDanmakuView(getContext());
-        danmakuView.setClickable(true);
-        danmakuView.setFocusable(false);
-        danmakuView.setFocusableInTouchMode(false);
-        danmakuView.setVisibility(View.INVISIBLE);
-        danmakuView.setOnTouchListener((view, event) -> forwardTouchToWebView(view, event));
-        host.addView(danmakuView, insertAt + 1);
         DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
             .setUserAgent(DESKTOP_UA)
             .setConnectTimeoutMs(15_000)
@@ -431,16 +508,6 @@ public class BeidNativePlayerPlugin extends Plugin {
         }
     }
 
-    private static int readLeftMargin(ViewGroup.LayoutParams layout) {
-        return layout instanceof ViewGroup.MarginLayoutParams
-            ? ((ViewGroup.MarginLayoutParams) layout).leftMargin : 0;
-    }
-
-    private static int readTopMargin(ViewGroup.LayoutParams layout) {
-        return layout instanceof ViewGroup.MarginLayoutParams
-            ? ((ViewGroup.MarginLayoutParams) layout).topMargin : 0;
-    }
-
     private MediaSource mediaSource(String url) {
         MediaItem item = new MediaItem.Builder().setUri(url).build();
         DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
@@ -499,7 +566,6 @@ public class BeidNativePlayerPlugin extends Plugin {
         try {
             if (player != null) player.stop();
             if (playerView != null) playerView.setVisibility(View.INVISIBLE);
-            if (danmakuView != null) danmakuView.setVisibility(View.INVISIBLE);
         } catch (RuntimeException error) {
             android.util.Log.e("BeidNativePlayer", "failed open cleanup failed", error);
         } finally {
@@ -521,25 +587,6 @@ public class BeidNativePlayerPlugin extends Plugin {
             .setCache(mediaCache)
             .setUpstreamDataSourceFactory(upstream)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR);
-    }
-
-    private boolean forwardTouchToWebView(View source, MotionEvent event) {
-        View webView = getBridge() != null ? getBridge().getWebView() : null;
-        if (webView == null || source == null) return false;
-        MotionEvent copy = MotionEvent.obtain(event);
-        // PlayerView is a sibling overlay and may move independently when the
-        // web player enters fixed-position fullscreen. Map through screen
-        // coordinates so status bars, margins, and fullscreen offsets are all
-        // accounted for.
-        int[] sourceLocation = new int[2];
-        int[] webLocation = new int[2];
-        source.getLocationOnScreen(sourceLocation);
-        webView.getLocationOnScreen(webLocation);
-        copy.offsetLocation(sourceLocation[0] - webLocation[0], sourceLocation[1] - webLocation[1]);
-        boolean handled = webView.dispatchTouchEvent(copy);
-        copy.recycle();
-        android.util.Log.d("BeidNativePlayer", "forward touch action=" + event.getActionMasked() + " handled=" + handled);
-        return true;
     }
 
     private int[] hostOffsetPx() {
@@ -579,10 +626,8 @@ public class BeidNativePlayerPlugin extends Plugin {
         stateHandler.removeCallbacks(stateTicker);
         ExoPlayer releasingPlayer = player;
         PlayerView releasingView = playerView;
-        BeidDanmakuView releasingDanmaku = danmakuView;
         player = null;
         playerView = null;
-        danmakuView = null;
         playerLayout = null;
         try {
             if (releasingView != null) {
@@ -591,14 +636,8 @@ public class BeidNativePlayerPlugin extends Plugin {
                 if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(releasingView);
             }
         } finally {
-            try {
-                if (releasingDanmaku != null) {
-                    View parent = (View) releasingDanmaku.getParent();
-                    if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(releasingDanmaku);
-                }
-            } finally {
-                if (releasingPlayer != null) releasingPlayer.release();
-            }
+            restoreEmbeddedBackground();
+            if (releasingPlayer != null) releasingPlayer.release();
         }
     }
 }

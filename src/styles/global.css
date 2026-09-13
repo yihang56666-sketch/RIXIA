@@ -3767,36 +3767,6 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
   background: var(--focubili-surface);
   color: var(--focubili-ink);
 }
-.fb-player-native-bar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  background: var(--focubili-container);
-  border-bottom: 1px solid var(--focubili-line);
-  z-index: 6;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  -webkit-overflow-scrolling: touch;
-}
-.fb-player-native-bar .player-btn {
-  width: 40px;
-  height: 40px;
-  flex: 0 0 auto;
-}
-.fb-player-native-bar input[type="range"] {
-  flex: 1;
-  min-width: 0;
-  accent-color: var(--focubili-blue);
-}
-.fb-player-native-bar .player-time {
-  flex: 0 0 auto;
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  color: var(--focubili-muted);
-}
-
 /* ---- Video surface ---- */
 .fb-player-surface {
   position: relative;
@@ -3808,11 +3778,25 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
   background: #000;
   overflow: hidden;
 }
+/* Android 原生播放：视频视图在 WebView 之下，镂空播放区让它透出来。
+   黑色遮罩与信箱边由原生 PlayerView 自己负责，网页这里必须完全透明。 */
 .fb-player-surface[data-native="1"] {
-  background: #000;
+  background: transparent;
 }
-.fb-player-native-bar .player-volume { width: 84px; min-width: 64px; flex: 0 0 84px; accent-color: var(--focubili-blue); }
-.fb-player-native-bar .player-quality-select { height: 34px; min-width: 68px; flex: 0 0 auto; border: 1px solid var(--focubili-line); border-radius: 8px; background: var(--focubili-container); color: var(--focubili-ink); padding: 0 6px; }
+
+/* 镂空洞之外的像素由窗口底色（原生侧设为页面表面色）补上，
+   所以镂空期间整条背景链路都要停止绘制，否则会盖住视频。 */
+html.fb-native-hole body,
+html.fb-native-hole .app-background,
+html.fb-native-hole .focubili-shell,
+html.fb-native-hole .fb-player-page {
+  background: transparent !important;
+  background-image: none !important;
+}
+html.fb-native-hole .app-background::before,
+html.fb-native-hole .app-background::after {
+  display: none !important;
+}
 .fb-player-ctl-row .player-volume {
   width: 84px;
   min-width: 56px;

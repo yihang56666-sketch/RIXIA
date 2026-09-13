@@ -27,7 +27,7 @@ describe("native media player bridge", () => {
     await player.seek(18);
     await player.pause();
     await player.setVolume(0.4);
-    await player.setDanmaku([{ text: "重点", startTimeSeconds: 1, mode: 1, color: 0xffffff }]);
+    await player.setEmbeddedBackground("#abcdef");
     await player.dispose();
 
     expect(calls.map((call) => call.method)).toEqual([
@@ -38,7 +38,7 @@ describe("native media player bridge", () => {
       "seek",
       "pause",
       "setVolume",
-      "setDanmaku",
+      "setEmbeddedBackground",
       "dispose",
     ]);
     expect(calls[2]?.args).toEqual({
@@ -51,16 +51,24 @@ describe("native media player bridge", () => {
     });
   });
 
-  it("passes only bounded danmaku payloads to native playback", async () => {
+  it("normalizes embedded background colors before calling native", async () => {
     const bridge: NativeMediaPlayerBridge = {
       addListener: vi.fn(async () => ({ remove: async () => undefined })),
       call: vi.fn(async () => undefined),
     };
     const player = createNativeMediaPlayer(bridge);
-    await player.setDanmaku([{ text: "  hello  ", startTimeSeconds: 2, mode: 5, color: 1 }]);
-    expect(bridge.call).toHaveBeenCalledWith("setDanmaku", {
-      entries: [{ text: "hello", startTimeSeconds: 2, mode: 5, color: 1 }],
-    });
+
+    await player.setEmbeddedBackground("rgb(17, 34, 51)");
+    expect(bridge.call).toHaveBeenLastCalledWith("setEmbeddedBackground", { color: "#112233" });
+
+    await player.setEmbeddedBackground("#fff");
+    expect(bridge.call).toHaveBeenLastCalledWith("setEmbeddedBackground", { color: "#ffffff" });
+
+    await player.setEmbeddedBackground("rgba(1, 2, 3, 0.5)");
+    expect(bridge.call).toHaveBeenLastCalledWith("setEmbeddedBackground", { color: "#01020380" });
+
+    await player.setEmbeddedBackground("not-a-color");
+    expect(bridge.call).toHaveBeenLastCalledWith("setEmbeddedBackground", { color: "#000000" });
   });
 
   it("rejects malformed media bounds and normalizes volume", async () => {
