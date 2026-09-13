@@ -374,7 +374,10 @@ public class BeidNativePlayerPlugin extends Plugin {
             String orientation = call.getString("orientation", "");
             int requested;
             if ("landscape".equals(orientation)) {
-                requested = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+                // 固定横屏而不是 SENSOR_LANDSCAPE：宽平板旋转到竖屏时
+                // SENSOR_LANDSCAPE 不会一直锁住，退全屏后 Activity 会跟着转，
+                // 让返回手势/状态栏事件出现“卡死在横屏”的观感。
+                requested = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
             } else if ("portrait".equals(orientation)) {
                 requested = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
             } else {

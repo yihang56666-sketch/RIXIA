@@ -866,6 +866,107 @@ describe("BilibiliPlayerView", () => {
     expect(nativePlayerTest.requestOrientation).toHaveBeenLastCalledWith("portrait");
   });
 
+  it("restores portrait when the in-app back button leaves fullscreen", async () => {
+    nativePlayerTest.enabled = true;
+    if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
+      (globalThis as { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      } as typeof ResizeObserver;
+    }
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    await waitFor(() => expect(nativePlayerTest.open).toHaveBeenCalled());
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "进入全屏" }))[0]);
+    expect(nativePlayerTest.requestOrientation).toHaveBeenLastCalledWith("landscape");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "返回资料库" })[0]);
+    await waitFor(() => expect(nativePlayerTest.requestOrientation).toHaveBeenLastCalledWith("portrait"));
+  });
+
+  it("restores portrait on unmount while fullscreen is active", async () => {
+    nativePlayerTest.enabled = true;
+    if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
+      (globalThis as { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      } as typeof ResizeObserver;
+    }
+    const { unmount } = render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    await waitFor(() => expect(nativePlayerTest.open).toHaveBeenCalled());
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "进入全屏" }))[0]);
+    expect(nativePlayerTest.requestOrientation).toHaveBeenLastCalledWith("landscape");
+
+    unmount();
+    await waitFor(() => expect(nativePlayerTest.requestOrientation).toHaveBeenLastCalledWith("portrait"));
+  });
+
+  it("marks the document while fullscreen is active so the shell rail can be hidden", async () => {
+    nativePlayerTest.enabled = true;
+    if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
+      (globalThis as { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      } as typeof ResizeObserver;
+    }
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    await waitFor(() => expect(nativePlayerTest.open).toHaveBeenCalled());
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "进入全屏" }))[0]);
+    expect(document.documentElement.classList.contains("fb-player-active-fullscreen")).toBe(true);
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "退出全屏" }))[0]);
+    await waitFor(() => expect(document.documentElement.classList.contains("fb-player-active-fullscreen")).toBe(false));
+  });
+
+  it("does not re-enter fullscreen while Android is restoring portrait", async () => {
+    const originalUserAgent = Object.getOwnPropertyDescriptor(navigator, "userAgent");
+    const originalMatchMedia = window.matchMedia;
+    let landscape = true;
+    const query = {
+      media: "(orientation: landscape)",
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      get matches() {
+        return landscape;
+      },
+    };
+    window.matchMedia = vi.fn(() => query as unknown as MediaQueryList);
+    Object.defineProperty(navigator, "userAgent", { value: "Mozilla/5.0 (Linux; Android 14; Mobile)", configurable: true });
+    nativePlayerTest.enabled = true;
+    if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
+      (globalThis as { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      } as typeof ResizeObserver;
+    }
+    try {
+      render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+      await waitFor(() => expect(nativePlayerTest.open).toHaveBeenCalled());
+      fireEvent.click((await screen.findAllByRole("button", { name: "进入全屏" }))[0]);
+      await waitFor(() => expect(screen.getAllByRole("button", { name: "退出全屏" }).length).toBeGreaterThan(0));
+
+      fireEvent.click(screen.getAllByRole("button", { name: "退出全屏" })[0]);
+      await waitFor(() => expect(nativePlayerTest.requestOrientation).toHaveBeenLastCalledWith("portrait"));
+      // Android 还没完成物理回竖时 matchMedia 仍报 landscape，orientation change
+      // 会再触发一次同步；此时必须跳过自动重进全屏，否则返回后又被拉回横屏。
+      const sync = query.addEventListener.mock.calls[0]?.[1] as (() => void) | undefined;
+      sync?.();
+      expect(screen.getAllByRole("button", { name: "进入全屏" }).length).toBeGreaterThan(0);
+    } finally {
+      if (originalUserAgent) Object.defineProperty(navigator, "userAgent", originalUserAgent);
+      window.matchMedia = originalMatchMedia;
+    }
+  });
+
   it("shows the saved timestamp with an undo entry after saving a note", async () => {
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
 

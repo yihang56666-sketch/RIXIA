@@ -3913,6 +3913,13 @@ html.fb-native-hole .app-background::after {
   aspect-ratio: auto;
   align-self: auto;
 }
+/* 播放器全屏期间 shell 的侧栏/底部导航/截图入口一起收起，
+   否则 Pad 横屏时左侧 88px 竖栏仍压在播放画面旁边。 */
+html.fb-player-active-fullscreen .focubili-rail,
+html.fb-player-active-fullscreen .focubili-bottom-nav,
+html.fb-player-active-fullscreen .capture-fab,
+html.fb-player-active-fullscreen .capture-popover,
+html.fb-player-active-fullscreen .capture-popover-backdrop { display: none; }
 /* 全屏时 surface 盖住页面流，播放器自有弹层（选集/分段信息/合集）
    平时 z 80，会沉到 surface 底下——点开毫无反应。全屏期间提升到
    surface 之上；M3Dialog/专注 Sheet 本就 z 1200 无需处理。 */

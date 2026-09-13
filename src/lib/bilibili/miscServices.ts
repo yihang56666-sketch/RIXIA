@@ -89,7 +89,7 @@ export async function launchExternalLink(url: string): Promise<boolean> {
 
 // ============ App Update (GitHub Releases) ============
 
-export const APP_VERSION = "0.3.2";
+export const APP_VERSION = "0.3.3";
 
 export enum AppUpdateStatus {
   idle = "idle",

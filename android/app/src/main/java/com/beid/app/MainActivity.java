@@ -44,7 +44,7 @@ public class MainActivity extends BridgeActivity {
             finish();
             return;
         }
-        String script = "(function(){var surface=document.querySelector('.fb-player-surface');var active=!!document.fullscreenElement||!!(surface&&surface.dataset.fullscreen==='1');if(active){if(surface)surface.dataset.fullscreen='0';if(document.fullscreenElement&&document.exitFullscreen)document.exitFullscreen().catch(function(){});window.dispatchEvent(new Event('beid:request-exit-fullscreen',{cancelable:true}));}else{window.dispatchEvent(new Event('beid:request-app-back'));}})()";
+        String script = "(function(){var surface=document.querySelector('.fb-player-surface');var active=!!document.fullscreenElement||!!(surface&&surface.dataset.fullscreen==='1');if(active){window.dispatchEvent(new Event('beid:request-exit-fullscreen',{cancelable:true}));}else{window.dispatchEvent(new Event('beid:request-app-back'));}})()";
         Log.i("BeidBack", "dispatching web back script");
         getBridge().getWebView().evaluateJavascript(script, null);
     }

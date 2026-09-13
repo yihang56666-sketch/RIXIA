@@ -211,6 +211,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const fullscreenRef = useRef(false);
+  const restoringPortraitRef = useRef(false);
   const [clock, setClock] = useState(() => new Date());
   const [speedPill, setSpeedPill] = useState(false);
   const controlsTimerRef = useRef<number | null>(null);
@@ -228,9 +229,14 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     // （选集/分段信息/专注 Sheet/M3Dialog），全屏里这些按钮会全部失灵；
     // Android WebView 还经常直接 reject。CSS 全屏三端行为一致。
     // Android/Pad 端同步锁定系统横屏，让全屏按钮真的把设备转过来。
-    void requestNativeOrientation("landscape");
     fullscreenRef.current = true;
     setFullscreen(true);
+    try {
+      await requestNativeOrientation("landscape");
+    } catch {
+      // 方向锁定失败不阻塞全屏本身。
+    }
+    document.documentElement.classList.add("fb-player-active-fullscreen");
   }, []);
 
   const exitFullscreen = useCallback(async () => {
@@ -242,10 +248,28 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       }
     }
     // 先回竖屏再清状态：系统返回手势退出全屏后也不会把设备留在横屏。
-    void requestNativeOrientation("portrait");
+    // 锁竖屏期间屏蔽 orientation change 的自动重进，避免 Android 物理旋转
+    // 还没到位时 matchMedia 仍报 landscape 又立刻拉回全屏。
+    restoringPortraitRef.current = true;
+    document.documentElement.classList.remove("fb-player-active-fullscreen");
     fullscreenRef.current = false;
     setFullscreen(false);
+    try {
+      await requestNativeOrientation("portrait");
+    } catch {
+      // 方向恢复失败也要保证 UI 状态能退出来。
+    } finally {
+      restoringPortraitRef.current = false;
+    }
   }, []);
+
+  useEffect(
+    () => () => {
+      document.documentElement.classList.remove("fb-player-active-fullscreen");
+      if (fullscreenRef.current) void requestNativeOrientation("portrait");
+    },
+    [],
+  );
 
   useEffect(() => {
     const onSystemBack = (event: Event) => {
@@ -1204,7 +1228,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       const isLandscape = landscapeQuery.matches;
       // 设备旋转到横屏时自动进入全屏，回到竖屏时自动退出。
       // 全屏进出都会主动锁定系统方向，宽平板不会出现“退出全屏后又被拉回”。
-      if (isLandscape && !document.fullscreenElement && !fullscreenRef.current) {
+      if (isLandscape && !document.fullscreenElement && !fullscreenRef.current && !restoringPortraitRef.current) {
         void enterFullscreen();
       } else if (!isLandscape && (document.fullscreenElement || fullscreen)) {
         void exitFullscreen();
@@ -1944,6 +1968,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   // player_focus_coordinator.dart 的 _requestLeavePlayer；确认打断后补存最后画面和位置。
   function requestLeavePlayer() {
     if (!focusSessionTracksCurrentPart()) {
+      void exitFullscreen();
       setView("library");
       return;
     }
@@ -2641,6 +2666,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
           onDone={(interrupted) => {
             setShowLeaveInterruptionFlow(false);
             if (!interrupted) return;
+            void exitFullscreen();
             void saveFocusLastSeen();
             setView("library");
           }}
