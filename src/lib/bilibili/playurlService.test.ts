@@ -52,7 +52,39 @@ describe("parsePlayUrl", () => {
     );
   });
 
-  it("does not fall back to unsigned playurl after HTTP 412", async () => {
+  it("falls back to the unsigned playurl with identical params when the signed request is risk-blocked (HTTP 412)", async () => {
+    const nav = JSON.stringify({
+      code: 0,
+      data: {
+        wbi_img: {
+          img_url: "https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png",
+          sub_url: "https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png",
+        },
+      },
+    });
+    const requestJson = vi.fn(async (url: string) => {
+      if (url.includes("/x/web-interface/nav")) return nav;
+      if (url.includes("/wbi/playurl")) throw new Error("HTTP 412");
+      return JSON.stringify({
+        code: 0,
+        data: { quality: 64, accept_quality: [64], timelength: 60000 },
+      });
+    });
+
+    const result = await createPlayurlService(requestJson).resolve("BV1gA411j7Ta", 123);
+
+    expect(result.quality).toBe(64);
+    const playurlCalls = requestJson.mock.calls.filter(([url]) => String(url).includes("playurl"));
+    expect(playurlCalls).toHaveLength(2);
+    expect(String(playurlCalls[0]?.[0])).toContain("/wbi/playurl");
+    expect(String(playurlCalls[1]?.[0])).toContain("/x/player/playurl");
+    expect(String(playurlCalls[1]?.[0])).toContain("qn=80");
+    expect(String(playurlCalls[1]?.[0])).toContain("fnval=16");
+    // 匿名回退带 try_look=1：解锁 720P 试看流（不带则实际流只有 480P）。
+    expect(String(playurlCalls[1]?.[0])).toContain("try_look=1");
+  });
+
+  it("surfaces the last error when both the signed and unsigned playurl fail", async () => {
     const nav = JSON.stringify({
       code: 0,
       data: {
@@ -70,7 +102,6 @@ describe("parsePlayUrl", () => {
     await expect(createPlayurlService(requestJson).resolve("BV1gA411j7Ta", 123)).rejects.toThrow("HTTP 412");
 
     const playurlCalls = requestJson.mock.calls.filter(([url]) => String(url).includes("playurl"));
-    expect(playurlCalls).toHaveLength(1);
-    expect(String(playurlCalls[0]?.[0])).toContain("/wbi/playurl");
+    expect(playurlCalls).toHaveLength(2);
   });
 });

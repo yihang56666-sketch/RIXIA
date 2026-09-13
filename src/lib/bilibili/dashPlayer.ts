@@ -77,6 +77,8 @@ interface BufferPipeline {
   sources: string[];
   queue: ArrayBuffer[];
   pumping: boolean;
+  /** 缓冲区忙（remove/上次追加未完成）时已挂 updateend 续泵监听，避免重复挂。 */
+  awaitingIdle?: boolean;
   finished: boolean;
   firstChunkSettled: boolean;
   firstChunk: Promise<void>;
@@ -232,6 +234,9 @@ export class DashPlayer {
       resolveFirstChunk = resolve;
       rejectFirstChunk = reject;
     });
+    // 兜底挂一个 no-op catch：管线被替换/丢弃后 firstChunk 被拒绝时若已无人等待，
+    // 也不会升级成 unhandled rejection；真实的 await 方不受影响。
+    firstChunk.catch(() => undefined);
     return {
       buffer,
       sources,
@@ -548,7 +553,18 @@ export class DashPlayer {
 
   private pumpPipeline(pipeline: BufferPipeline): void {
     if (pipeline.pumping || pipeline.queue.length === 0) return;
-    if (pipeline.buffer.updating) return;
+    if (pipeline.buffer.updating) {
+      // evictPlayedData 的 remove() 或上一次追加仍在处理：挂一次 updateend 续泵。
+      // 只靠 schedulePumpWake 定时器会在 remove 未完成时空转并卡死队列。
+      if (!pipeline.awaitingIdle) {
+        pipeline.awaitingIdle = true;
+        pipeline.buffer.addEventListener("updateend", () => {
+          pipeline.awaitingIdle = false;
+          this.pumpPipeline(pipeline);
+        }, { once: true });
+      }
+      return;
+    }
     if (!this.hasAppendRoom(pipeline)) {
       this.schedulePumpWake();
       return;
@@ -569,6 +585,13 @@ export class DashPlayer {
     } catch (error) {
       pipeline.buffer.removeEventListener("updateend", onDone);
       pipeline.pumping = false;
+      // 检查 updating 与 appendBuffer 之间存在窗口（hasAppendRoom 内部触发
+      // remove 等）：等缓冲区空闲后原样重试当前块，而不是让整管报废。
+      if (error instanceof DOMException && error.name === "InvalidStateError") {
+        pipeline.queue.unshift(chunk);
+        pipeline.buffer.addEventListener("updateend", () => this.pumpPipeline(pipeline), { once: true });
+        return;
+      }
       const isQuota = error instanceof DOMException && error.name === "QuotaExceededError";
       if (isQuota && pipeline.quotaRetries < 3) {
         // 配额类失败先淘汰已播放数据再重试当前块，而不是整管报废：
@@ -733,7 +756,11 @@ export class DashPlayer {
       }
       const firstChunkTimeout = new Promise<never>((_, reject) => {
         const timer = setTimeout(() => reject(new Error("跳转超时：未收到媒体分片")), 15000);
-        void Promise.all(pipelines.map((pipeline) => pipeline.firstChunk)).finally(() => clearTimeout(timer));
+        // 只用 all() 的结果清定时器：拒绝路径必须先 catch，否则 finally 派生 promise
+        // 会带着同一错误被 void 丢弃，成为 unhandled rejection。
+        void Promise.all(pipelines.map((pipeline) => pipeline.firstChunk))
+          .catch(() => undefined)
+          .finally(() => clearTimeout(timer));
       });
       await Promise.race([Promise.all(pipelines.map((pipeline) => pipeline.firstChunk)), firstChunkTimeout]);
       if (stale()) return;
@@ -761,6 +788,8 @@ export class DashPlayer {
       resolveFirstChunk = resolve;
       rejectFirstChunk = reject;
     });
+    // 与 createPipeline 相同的兜底：替换后的管线被丢弃时，拒绝不会变成 unhandled rejection。
+    firstChunk.catch(() => undefined);
     pipeline.queue = [];
     pipeline.pumping = false;
     pipeline.finished = false;
@@ -809,18 +838,37 @@ export class DashPlayer {
   }
 
   private async appendAndWait(pipeline: BufferPipeline, bytes: ArrayBuffer): Promise<void> {
-    await new Promise<void>((resolve) => {
-      const { buffer } = pipeline;
-      const done = () => resolve();
-      buffer.addEventListener("updateend", done, { once: true });
+    const { buffer } = pipeline;
+    // 追加前等缓冲区空闲：重启流程里 evictPlayedData 的 remove() 或上一次追加可能
+    // 仍在 updating，直接 appendBuffer 会抛 InvalidStateError（「appendBuffer or
+    // remove operation」）打断整个重启。
+    if (buffer.updating) {
+      await new Promise<void>((resolve) => {
+        buffer.addEventListener("updateend", () => resolve(), { once: true });
+      });
+    }
+    for (let attempt = 0; ; attempt += 1) {
       try {
-        buffer.appendBuffer(bytes);
-        pipeline.appendedBytes += bytes.byteLength;
+        await new Promise<void>((resolve) => {
+          const done = () => resolve();
+          buffer.addEventListener("updateend", done, { once: true });
+          try {
+            buffer.appendBuffer(bytes);
+            pipeline.appendedBytes += bytes.byteLength;
+          } catch (error) {
+            buffer.removeEventListener("updateend", done);
+            throw error;
+          }
+        });
+        return;
       } catch (error) {
-        buffer.removeEventListener("updateend", done);
-        throw error;
+        // 守卫与追加之间存在窗口（如唤醒定时器插入了 pump 追加）：空闲后重试一次。
+        if (attempt > 0 || !buffer.updating) throw error;
+        await new Promise<void>((resolve) => {
+          buffer.addEventListener("updateend", () => resolve(), { once: true });
+        });
       }
-    });
+    }
   }
 
   /** 时间 → 字节偏移：优先 sidx 分段索引，缺失时按总大小/总时长线性估算。 */

@@ -86,9 +86,14 @@ export function createPlayurlService(
       try {
         const signed = await signBiliWbiUrl(API_HOST, "/x/player/wbi/playurl", query, requestJson);
         text = await requestJson(signed);
-      } catch (error) {
-        if (error instanceof Error && /HTTP 412/.test(error.message)) throw error;
-        text = await requestJson(`https://${API_HOST}${PLAYURL_PATH}?${params.toString()}`);
+      } catch {
+        // wbi 签名请求被风控（未登录常见 HTTP 412「request was banned」）时，
+        // 未签名 /x/player/playurl 仍可用。附 try_look=1 走 B 站试看机制：
+        // 匿名实际流从 480P 解锁到 720P（1080P+ 仍需登录）。代理侧已为游客
+        // 补齐 buvid Cookie。回退失败则把最后一次错误抛给视图层。
+        const fallbackParams = new URLSearchParams(params);
+        fallbackParams.set("try_look", "1");
+        text = await requestJson(`https://${API_HOST}${PLAYURL_PATH}?${fallbackParams.toString()}`);
       }
       return parsePlayUrl(text);
     },
