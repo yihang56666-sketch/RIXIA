@@ -11,6 +11,7 @@ import { DEFAULT_DANMAKU_PREFERENCES, DEFAULT_PLAYBACK_PREFERENCES } from "../..
 import { qualityLabel } from "../../lib/bilibili/qualityPolicy";
 import { createFocusPreferencesService } from "../../lib/bilibili/focusServices";
 import { createAppUpdatePreferencesService } from "../../lib/bilibili/appUpdatePreferences";
+import { APP_VERSION } from "../../lib/bilibili/miscServices";
 import { M3Dialog, Mi } from "../bilibili/m3";
 import { todayKey } from "../../lib/time";
 
@@ -451,7 +452,7 @@ export function SettingsView() {
 
       <section className="card">
         <h2>关于</h2>
-        <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>BEID · v0.3.0 · 持久化格式 v3</p>
+        <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>BEID · {APP_VERSION} · 持久化格式 v3</p>
         <p className="muted" style={{ fontSize: 12.5, marginTop: 8, lineHeight: 1.6 }}>
           一个安静、本地优先的个人节奏工作台。所有数据仅保存在本机，不依赖云服务、账号或分析追踪。
         </p>

@@ -115,4 +115,27 @@ describe("checkForUpdate", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it("does not treat an older release as an update", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify([{ tag_name: "v0.3.0" }]), { status: 200 })) as typeof fetch;
+    try {
+      const result = await checkForUpdate("0.3.1", { force: true });
+      expect(result.status).toBe(AppUpdateStatus.upToDate);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("treats a genuinely newer semver release as an update", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify([{ tag_name: "v0.3.2" }]), { status: 200 })) as typeof fetch;
+    try {
+      const result = await checkForUpdate("0.3.1", { force: true });
+      expect(result.status).toBe(AppUpdateStatus.available);
+      expect(result.latestVersion).toBe("0.3.2");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

@@ -164,3 +164,18 @@ test("real Windows archive round trip supports Unicode, spaces, apostrophes and 
   await runPowerShell(`Expand-Archive -LiteralPath ${powerShellQuote(zipPath)} -DestinationPath ${powerShellQuote(expanded)}`);
   assert.equal(fs.readFileSync(path.join(expanded, "archive-fixture/payload.txt"), "utf8"), "offline archive fixture");
 });
+
+test("workspace version is aligned across the app, Android manifest and update check", () => {
+  const root = path.resolve(scriptsRoot, "..");
+  const { version } = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  const miscServices = fs.readFileSync(path.join(root, "src/lib/bilibili/miscServices.ts"), "utf8");
+  const aboutView = fs.readFileSync(path.join(root, "src/features/bilibili/AboutView.tsx"), "utf8");
+  const settingsView = fs.readFileSync(path.join(root, "src/features/settings/SettingsView.tsx"), "utf8");
+  const gradle = fs.readFileSync(path.join(root, "android/app/build.gradle"), "utf8");
+
+  assert.match(miscServices, new RegExp(`APP_VERSION = "${version}"`));
+  assert.match(aboutView, /版本 \{APP_VERSION\}/);
+  assert.match(settingsView, /BEID · \{APP_VERSION\}/);
+  assert.match(gradle, new RegExp(`versionName "${version}"`));
+  assert.match(gradle, /versionCode 4/);
+});

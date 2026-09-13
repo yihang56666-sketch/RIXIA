@@ -89,7 +89,7 @@ export async function launchExternalLink(url: string): Promise<boolean> {
 
 // ============ App Update (GitHub Releases) ============
 
-export const APP_VERSION = "0.3.0";
+export const APP_VERSION = "0.3.1";
 
 export enum AppUpdateStatus {
   idle = "idle",
@@ -113,6 +113,22 @@ export interface AppUpdateResult {
 const GITHUB_API = "https://api.github.com/repos/Yihang56666-sketch/RIXIA/releases?per_page=1";
 const UPDATE_CACHE_KEY = "rixia_app_update_cache_v1";
 const UPDATE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+function parseVersion(value: string): [number, number, number] | null {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(value.trim());
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function isNewerVersion(latest: string, current: string): boolean {
+  const left = parseVersion(latest);
+  const right = parseVersion(current);
+  if (!left || !right) return latest !== current;
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index] !== right[index]) return left[index] > right[index];
+  }
+  return false;
+}
 
 interface CachedUpdate {
   savedAt: number;
@@ -203,7 +219,7 @@ async function requestLatestRelease(currentVersion: string): Promise<AppUpdateRe
       };
     }
     const latestRaw = data.tag_name?.replace(/^v/, "") ?? "";
-    const hasUpdate = Boolean(latestRaw && latestRaw !== currentVersion);
+    const hasUpdate = Boolean(latestRaw && isNewerVersion(latestRaw, currentVersion));
     const highlights = (data.body ?? "")
       .split("\n")
       .map((line) => line.replace(/^[-*]\s*/, "").trim())

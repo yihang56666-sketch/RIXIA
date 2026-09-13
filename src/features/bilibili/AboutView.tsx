@@ -1,11 +1,10 @@
 import { useEffect } from "react";
 import { ShieldCheck } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
-import { AppUpdateStatus } from "../../lib/bilibili/miscServices";
+import { APP_VERSION, AppUpdateStatus } from "../../lib/bilibili/miscServices";
 import { useAppUpdateController } from "./AppUpdateContext";
 import { Mi } from "./m3";
 
-const VERSION = "0.3.1";
 const RELEASES_URL = "https://github.com/Yihang56666-sketch/RIXIA/releases";
 
 function updateStatusText(result: ReturnType<typeof useAppUpdateController>["result"]): string {
@@ -42,7 +41,7 @@ export function AboutView() {
           <section className="m3-card focubili-about-hero" style={{ padding: 28, textAlign: "center" }}>
             <img src="/beid-icon.png" alt="" className="focubili-about-icon" style={{ width: 64, height: 64, borderRadius: 16 }} />
             <h2 className="m3-title-lg" style={{ fontWeight: 700, marginTop: 14 }}>BEID</h2>
-            <p className="m3-body-sm fb-on-surface-variant">版本 {VERSION}</p>
+            <p className="m3-body-sm fb-on-surface-variant">版本 {APP_VERSION}</p>
             <p className="m3-body-md" style={{ marginTop: 10 }}>个人节奏工作台与 B 站专注学习客户端。</p>
           </section>
 
