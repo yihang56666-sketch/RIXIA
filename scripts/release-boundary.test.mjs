@@ -177,5 +177,16 @@ test("workspace version is aligned across the app, Android manifest and update c
   assert.match(aboutView, /版本 \{APP_VERSION\}/);
   assert.match(settingsView, /BEID · \{APP_VERSION\}/);
   assert.match(gradle, new RegExp(`versionName "${version}"`));
-  assert.match(gradle, /versionCode 7/);
+  assert.match(gradle, /versionCode 8/);
+});
+
+test("pad fullscreen hides page details and narrow screens keep a single compact control row", () => {
+  const root = path.resolve(scriptsRoot, "..");
+  const css = fs.readFileSync(path.join(root, "src/styles/global.css"), "utf8");
+  const fullscreenRules = css.slice(css.indexOf("html.fb-player-active-fullscreen"));
+  assert.match(fullscreenRules, /\.focubili-rail/);
+  assert.match(fullscreenRules, /\.fb-player-details\s*\{\s*display:\s*none;/);
+  const compactRule = css.slice(css.lastIndexOf(".fb-player-ctl-row {"));
+  assert.match(compactRule, /flex-wrap:\s*nowrap/);
+  assert.match(compactRule, /overflow-x:\s*auto/);
 });

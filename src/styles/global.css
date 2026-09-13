@@ -3876,14 +3876,8 @@ html.fb-native-hole .app-background::after {
 }
 @media (max-width: 700px) {
   .fb-player-ctl-row {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scrollbar-width: thin;
-    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    gap: 2px;
   }
-  .fb-player-ctl-row > * { flex: 0 0 auto; }
-  .fb-player-ctl-row .player-time { flex: 0 0 auto; }
 }
 
 /* 控制层隐藏期间的常驻返回入口：确保播放画面左上角永远有返回可达。 */
@@ -3919,7 +3913,9 @@ html.fb-player-active-fullscreen .focubili-rail,
 html.fb-player-active-fullscreen .focubili-bottom-nav,
 html.fb-player-active-fullscreen .capture-fab,
 html.fb-player-active-fullscreen .capture-popover,
-html.fb-player-active-fullscreen .capture-popover-backdrop { display: none; }
+html.fb-player-active-fullscreen .capture-popover-backdrop,
+html.fb-player-active-fullscreen .fb-player-details { display: none; }
+html.fb-player-active-fullscreen .fb-player-page { overflow: hidden; }
 /* 全屏时 surface 盖住页面流，播放器自有弹层（选集/分段信息/合集）
    平时 z 80，会沉到 surface 底下——点开毫无反应。全屏期间提升到
    surface 之上；M3Dialog/专注 Sheet 本就 z 1200 无需处理。 */
@@ -4331,8 +4327,26 @@ html.fb-player-active-fullscreen .capture-popover-backdrop { display: none; }
   .fb-player-details-inner { padding: 14px 16px 40px; }
   .fb-player-title-lg { font-size: 17px; }
   .fb-player-stats-row { gap: 4px; }
-  .fb-player-ctl-row .player-time { flex-basis: 84px; min-width: 84px; }
+  .fb-player-ctl-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    scroll-snap-type: x proximity;
+    row-gap: 4px;
+  }
+  .fb-player-ctl-row::-webkit-scrollbar { display: none; }
+  .fb-player-ctl-row > * { flex: 0 0 auto; }
+  .fb-player-ctl-row .player-btn { width: 31px; height: 31px; }
+  .fb-player-ctl-row .player-time { flex-basis: auto; min-width: 78px; font-size: 11.5px; }
+  .fb-player-ctl-row .player-volume { width: 58px; min-width: 44px; }
+  .fb-player-ctl-row .player-quality-select,
+  .fb-player-ctl-row .player-sleep-control { height: 28px; font-size: 11px; }
   .fb-player-ctl-row .player-sleep-control { max-width: min(118px, 100%); }
+  .fb-player-topbar { padding-top: max(8px, var(--safe-area-inset-top, env(safe-area-inset-top, 0px))); }
+  .fb-player-topbar-btn { width: 32px; height: 32px; }
+  .fb-player-controls-overlay { padding: 16px 10px 8px; }
 }
 
 .m3-filled-btn.compact,

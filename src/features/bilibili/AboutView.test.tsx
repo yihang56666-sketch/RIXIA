@@ -15,7 +15,7 @@ describe("AboutView", () => {
   it("shows the identity, version and no upstream attribution", () => {
     render(<AboutView />);
     expect(screen.getByRole("heading", { name: /^BEID$/ })).toBeInTheDocument();
-    expect(screen.getByText(/版本 0\.3\.4/)).toBeInTheDocument();
+    expect(screen.getByText(/版本 0\.3\.5/)).toBeInTheDocument();
     // 个人项目：不展示任何上游/借鉴来源信息
     expect(screen.queryByText(/FocuBili/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /GitHub/ })).not.toBeInTheDocument();
