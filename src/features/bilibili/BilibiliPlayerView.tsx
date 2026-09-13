@@ -2188,6 +2188,14 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
           <button className="fb-player-topbar-btn" onClick={() => setShowPrefs((s) => !s)} aria-label="弹幕设置">
             <Settings2 size={18} />
           </button>
+          <button
+            className="fb-player-topbar-btn"
+            onClick={() => (fullscreen ? void exitFullscreen() : void enterFullscreen())}
+            aria-label={fullscreen ? "退出全屏" : "进入全屏"}
+            title={fullscreen ? "退出全屏" : "进入全屏"}
+          >
+            {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
         </div>
 
         {/* 控制层自动隐藏后仍保留一个可点的返回入口，
@@ -2533,6 +2541,14 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             <a className="m3-outlined-btn" href={`https://www.bilibili.com/video/${video.bvid}`} target="_blank" rel="noreferrer">
               <ExternalLink size={14} /> 在 B 站打开
             </a>
+            <button
+              className="m3-outlined-btn fb-player-details-fullscreen"
+              onClick={() => (fullscreen ? void exitFullscreen() : void enterFullscreen())}
+              aria-label={fullscreen ? "退出全屏" : "进入全屏"}
+              title={fullscreen ? "退出全屏" : "进入全屏"}
+            >
+              {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />} 全屏
+            </button>
             {video.collection && video.collection.entries.length > 0 && (
               <button className="m3-outlined-btn" onClick={() => setShowCollection(true)} aria-label="打开合集">
                 <ListVideo size={14} /> 合集

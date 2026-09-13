@@ -860,6 +860,13 @@ describe("BilibiliPlayerView", () => {
     expect(screen.getAllByRole("button", { name: "进入全屏" }).length).toBeGreaterThan(0);
   });
 
+  it("keeps fullscreen reachable from the top bar and details after the details scroll into view", async () => {
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    await screen.findByRole("button", { name: "专注观看" });
+    expect(document.querySelector(".fb-player-topbar")?.querySelector("button[aria-label='进入全屏']")).not.toBeNull();
+    expect(document.querySelector(".fb-player-details")?.querySelector("button[aria-label='进入全屏']")).not.toBeNull();
+  });
+
   it("keeps a persistent danmaku toggle outside the scrollable control row", async () => {
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
     await screen.findByText("暂无弹幕");
