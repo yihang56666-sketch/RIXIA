@@ -47,6 +47,7 @@ interface NativeMediaPlayerPlugin {
   setPlaybackSpeed(args: { speed: number }): Promise<unknown>;
   setEmbeddedBackground(args: { color: string }): Promise<unknown>;
   enterPictureInPicture(args: { aspectRatio: number }): Promise<unknown>;
+  requestOrientation(args: { orientation: "landscape" | "portrait" }): Promise<unknown>;
   dispose(): Promise<unknown>;
   addListener(
     eventName: "stateChange",
@@ -80,6 +81,7 @@ export interface NativeMediaPlayer {
    */
   setEmbeddedBackground(color: string): Promise<void>;
   enterPictureInPicture(aspectRatio: number): Promise<boolean>;
+  requestOrientation(orientation: "landscape" | "portrait"): Promise<void>;
   onStateChange(listener: (state: NativePlayerState) => void): Promise<() => Promise<void>>;
   dispose(): Promise<void>;
 }
@@ -196,6 +198,13 @@ export function createNativeMediaPlayer(
       const result = await bridge.call("enterPictureInPicture", { aspectRatio });
       return result === true || (typeof result === "object" && result !== null && (result as { entered?: unknown }).entered === true);
     },
+    async requestOrientation(orientation) {
+      ensureActive();
+      if (orientation !== "landscape" && orientation !== "portrait") {
+        throw new Error("屏幕方向无效");
+      }
+      await bridge.call("requestOrientation", { orientation });
+    },
     async onStateChange(listener) {
       ensureActive();
       await stateSubscription?.remove();
@@ -221,4 +230,15 @@ export function createNativeMediaPlayer(
 export function isAndroidNativeMediaPlayerAvailable(): boolean {
   return typeof window !== "undefined" &&
     (window as Window & { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.() === "android";
+}
+
+/**
+ * 请求 Android 系统随播放器一起横竖屏旋转。
+ * 网页端没有系统方向可切，静默跳过，保持与桌面端一致的简单全屏行为。
+ */
+export async function requestNativeOrientation(
+  orientation: "landscape" | "portrait",
+): Promise<void> {
+  if (!isAndroidNativeMediaPlayerAvailable()) return;
+  await nativePlugin.requestOrientation({ orientation });
 }

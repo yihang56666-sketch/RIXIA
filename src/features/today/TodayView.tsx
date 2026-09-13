@@ -7,6 +7,7 @@ import {
   Minus,
   Play,
   Plus,
+  Quote,
   Timer,
   TrendingDown,
   TrendingUp,
@@ -27,6 +28,7 @@ import { JournalView } from "../journal/JournalView";
 import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useAppStore } from "../../store/useAppStore";
 import { resourceSourceLabel } from "../../lib/resourceSources";
+import { getDailyQuote } from "../../lib/dailyQuotes";
 
 function TrendBadge({ summary }: { summary: ReturnType<typeof trendSummary> }) {
   if (summary.deltaPercent === null) {
@@ -84,6 +86,7 @@ export function TodayView() {
   } = useAppStore();
   const today = useCalendarDay();
   const [showReviewChart, setShowReviewChart] = useState(false);
+  const dailyQuote = useMemo(() => getDailyQuote(today), [today]);
 
   const summary = useMemo(
     () => buildTodaySummary({ today, tasks, habits, focusSessions, inbox, countdowns }),
@@ -164,6 +167,12 @@ export function TodayView() {
   return (
     <RixiaWorkspacePage title="今日节奏">
     <div className="stack">
+      <section className="card today-quote" data-testid="daily-quote" aria-label="每日语录">
+        <Quote size={15} aria-hidden="true" />
+        <blockquote>{dailyQuote.text}</blockquote>
+        <span className="muted">{dailyQuote.source}</span>
+      </section>
+
       <section className="card today-action">
         <div className="today-action-icon">
           <ActionIcon kind={action.kind} />

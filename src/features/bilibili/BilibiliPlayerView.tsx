@@ -57,6 +57,7 @@ import { Capacitor } from "@capacitor/core";
 import {
   createNativeMediaPlayer,
   isAndroidNativeMediaPlayerAvailable,
+  requestNativeOrientation,
   type NativeMediaPlayer,
   type NativePlayerBounds,
 } from "../../lib/bilibili/nativeMediaPlayer";
@@ -226,6 +227,8 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     // 它会把 surface 放进浏览器 top layer，压掉 surface 之外的所有弹窗
     // （选集/分段信息/专注 Sheet/M3Dialog），全屏里这些按钮会全部失灵；
     // Android WebView 还经常直接 reject。CSS 全屏三端行为一致。
+    // Android/Pad 端同步锁定系统横屏，让全屏按钮真的把设备转过来。
+    void requestNativeOrientation("landscape");
     fullscreenRef.current = true;
     setFullscreen(true);
   }, []);
@@ -238,6 +241,8 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         // Fall through to the local CSS fullscreen fallback.
       }
     }
+    // 先回竖屏再清状态：系统返回手势退出全屏后也不会把设备留在横屏。
+    void requestNativeOrientation("portrait");
     fullscreenRef.current = false;
     setFullscreen(false);
   }, []);
@@ -1197,12 +1202,8 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     const landscapeQuery = window.matchMedia("(orientation: landscape)");
     function syncFullscreen() {
       const isLandscape = landscapeQuery.matches;
-      // FocuBili keeps wide tablet/desktop workspaces in the embedded player
-      // layout. Only phone-sized landscape viewports auto-enter fullscreen;
-      // otherwise a system Back press would immediately be undone by this
-      // effect while the tablet remains landscape.
-      const isWideWorkspace = window.innerWidth >= 900 && window.innerWidth > window.innerHeight;
-      if (isWideWorkspace) return;
+      // 设备旋转到横屏时自动进入全屏，回到竖屏时自动退出。
+      // 全屏进出都会主动锁定系统方向，宽平板不会出现“退出全屏后又被拉回”。
       if (isLandscape && !document.fullscreenElement && !fullscreenRef.current) {
         void enterFullscreen();
       } else if (!isLandscape && (document.fullscreenElement || fullscreen)) {

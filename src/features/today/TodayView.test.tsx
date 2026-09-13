@@ -46,6 +46,13 @@ describe("TodayView", () => {
     expect(useAppStore.getState().view).toBe("plan");
   });
 
+  it("shows a daily quote on the today page", () => {
+    render(<TodayView />);
+
+    const quote = screen.getByTestId("daily-quote");
+    expect(quote.textContent?.trim().length ?? 0).toBeGreaterThan(0);
+  });
+
   it.each(["0/0 习惯", "管理"])("opens habits from the %s action", (actionName) => {
     render(<TodayView />);
 

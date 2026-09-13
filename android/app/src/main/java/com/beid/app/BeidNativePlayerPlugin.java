@@ -364,6 +364,33 @@ public class BeidNativePlayerPlugin extends Plugin {
         });
     }
 
+    /**
+     * 播放器进入/退出全屏时锁定系统屏幕方向，让 Pad 端像桌面端一样
+     * 横屏看课，而不是只在 WebView 内部铺满画面。
+     */
+    @PluginMethod
+    public void requestOrientation(PluginCall call) {
+        runOnUi(call, () -> {
+            String orientation = call.getString("orientation", "");
+            int requested;
+            if ("landscape".equals(orientation)) {
+                requested = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+            } else if ("portrait".equals(orientation)) {
+                requested = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+            } else {
+                call.reject("屏幕方向无效");
+                return;
+            }
+            android.app.Activity activity = getActivity();
+            if (activity == null) {
+                call.reject("播放器窗口不可用");
+                return;
+            }
+            activity.setRequestedOrientation(requested);
+            call.resolve();
+        });
+    }
+
     @PluginMethod
     public void dispose(PluginCall call) {
         runOnUi(call, () -> {

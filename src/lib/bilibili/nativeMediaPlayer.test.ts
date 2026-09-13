@@ -84,4 +84,22 @@ describe("native media player bridge", () => {
     await player.setVolume(2);
     expect(bridge.call).toHaveBeenCalledWith("setVolume", { volume: 1 });
   });
+
+  it("forwards landscape and portrait orientation requests", async () => {
+    const bridge: NativeMediaPlayerBridge = {
+      addListener: vi.fn(async () => ({ remove: async () => undefined })),
+      call: vi.fn(async () => undefined),
+    };
+    const player = createNativeMediaPlayer(bridge);
+
+    await player.requestOrientation("landscape");
+    expect(bridge.call).toHaveBeenLastCalledWith("requestOrientation", { orientation: "landscape" });
+
+    await player.requestOrientation("portrait");
+    expect(bridge.call).toHaveBeenLastCalledWith("requestOrientation", { orientation: "portrait" });
+
+    await expect(player.requestOrientation("upside-down" as "landscape")).rejects.toThrow(
+      "屏幕方向无效",
+    );
+  });
 });

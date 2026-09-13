@@ -18,6 +18,7 @@ const { dashSetVolume, dashLoad, dashInstances, saveVideoNote, removeVideoNote, 
     play: vi.fn().mockResolvedValue(undefined),
     pause: vi.fn().mockResolvedValue(undefined),
     seek: vi.fn().mockResolvedValue(undefined),
+    requestOrientation: vi.fn().mockResolvedValue(undefined),
     listeners: [] as Array<(state: { phase: string; positionSeconds: number; durationSeconds: number; isPlaying: boolean; message?: string }) => void>,
   },
 }));
@@ -149,6 +150,7 @@ vi.mock("../../lib/bilibili/playurlService", () => ({
 
 vi.mock("../../lib/bilibili/nativeMediaPlayer", () => ({
   isAndroidNativeMediaPlayerAvailable: () => nativePlayerTest.enabled,
+  requestNativeOrientation: nativePlayerTest.requestOrientation,
   createNativeMediaPlayer: () => ({
     initialize: vi.fn().mockResolvedValue(undefined),
     setBounds: vi.fn().mockResolvedValue(undefined),
@@ -843,6 +845,25 @@ describe("BilibiliPlayerView", () => {
     window.dispatchEvent(back);
     expect(back.defaultPrevented).toBe(true);
     await waitFor(() => expect(screen.getAllByRole("button", { name: "进入全屏" }).length).toBeGreaterThan(0));
+  });
+
+  it("rotates Android to landscape while CSS fullscreen is active", async () => {
+    nativePlayerTest.enabled = true;
+    if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
+      (globalThis as { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      } as typeof ResizeObserver;
+    }
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    await waitFor(() => expect(nativePlayerTest.open).toHaveBeenCalled());
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "进入全屏" }))[0]);
+    expect(nativePlayerTest.requestOrientation).toHaveBeenLastCalledWith("landscape");
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "退出全屏" }))[0]);
+    expect(nativePlayerTest.requestOrientation).toHaveBeenLastCalledWith("portrait");
   });
 
   it("shows the saved timestamp with an undo entry after saving a note", async () => {

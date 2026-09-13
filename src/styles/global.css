@@ -660,6 +660,7 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   transition: all 0.25s var(--ease-spring);
 }
 .chip:hover { color: var(--text); border-color: var(--line-strong); transform: translateY(-1px); }
+.chip:active { transform: scale(0.96); }
 .chip.active {
   background: var(--accent);
   border-color: transparent;
@@ -722,6 +723,7 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   transition: all 0.28s var(--ease-spring);
 }
 .check:hover { border-color: var(--accent); }
+.check:active { transform: scale(0.88); }
 .check.on {
   background: var(--good);
   border-color: var(--good);
@@ -1371,6 +1373,10 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   60% { transform: scale(1.04); }
   100% { transform: scale(1); opacity: 1; }
 }
+@keyframes barGrow {
+  from { transform: scaleY(0.08); opacity: 0.35; }
+  to { transform: scaleY(1); opacity: 1; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -1516,6 +1522,12 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   border-radius: var(--radius-sm);
   background: var(--surface-soft);
   border: 1px solid var(--line);
+  transition: transform 0.28s var(--ease-spring), border-color 0.22s, background 0.22s;
+}
+.review-cell:hover {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: var(--content-surface-strong);
+  transform: translateY(-1px);
 }
 
 /* ---------- 柱状图 ---------- */
@@ -2033,6 +2045,10 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   align-items: center;
   gap: 14px;
   padding: 18px;
+  transition: transform 0.3s var(--ease-spring), border-color 0.22s, box-shadow 0.3s;
+}
+.today-action:active {
+  transform: scale(0.99);
 }
 .today-action-icon {
   width: 48px;
@@ -2042,6 +2058,7 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   color: var(--accent);
   display: grid;
   place-items: center;
+  transition: transform 0.3s var(--ease-spring);
 }
 .today-action-body { min-width: 0; }
 .today-action-label {
@@ -2055,7 +2072,33 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   white-space: nowrap;
 }
 .today-action-sub { font-size: 12.5px; margin-top: 2px; }
-.today-action-btn { padding: 11px 22px; }
+.today-action-btn { padding: 11px 22px; width: auto; white-space: nowrap; }
+
+.today-quote {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: center;
+  padding: 13px 16px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 52%, var(--content-surface));
+  animation-delay: 0ms;
+}
+.today-quote > svg {
+  grid-row: span 2;
+  color: var(--accent);
+  margin-top: 2px;
+}
+.today-quote blockquote {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.today-quote > span {
+  grid-column: 2;
+  font-size: 11.5px;
+}
 
 .today-status-strip {
   display: flex;
@@ -2077,10 +2120,33 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   color: var(--text-2);
   font-size: 13px;
   cursor: pointer;
-  transition: border-color 0.18s var(--ease-out), color 0.18s;
+  min-height: 38px;
+  transition: transform 0.24s var(--ease-spring), border-color 0.18s var(--ease-out), color 0.18s, background 0.18s, box-shadow 0.24s;
 }
 .status-pill:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); color: var(--text); }
+.status-pill:active { transform: scale(0.96); }
 .status-pill strong { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.today-action { animation-delay: 40ms; }
+.today-status-strip { animation: fadeUp 0.5s var(--ease-out) both; animation-delay: 80ms; }
+.today-columns { animation: fadeUp 0.5s var(--ease-out) both; animation-delay: 120ms; }
+@media (pointer: fine) {
+  .today-action:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+    box-shadow: var(--shadow-lg);
+  }
+  .today-action:hover .today-action-icon { transform: scale(1.06); }
+  .status-pill:hover {
+    transform: translateY(-1px);
+    background: var(--content-surface-strong);
+    box-shadow: var(--shadow-lg);
+  }
+  .today-resource:hover {
+    transform: translateX(2px);
+    background: color-mix(in srgb, var(--accent-soft) 65%, transparent);
+  }
+}
 
 .today-columns {
   display: grid;
@@ -2095,19 +2161,20 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   display: grid;
   gap: 4px;
   width: 100%;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  background: var(--content-surface);
-  border: 1px solid var(--line);
+  padding: 11px 10px;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
   color: var(--text);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.18s var(--ease-out);
+  transition: transform 0.24s var(--ease-spring), background 0.2s;
 }
-.today-resource:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.today-resource:active { transform: scale(0.985); background: var(--accent-soft); }
 .today-resource-title { font-weight: 550; }
 .today-resource-meta { font-size: 12.5px; }
-.today-resource + .today-resource { margin-top: 8px; }
+.today-resource + .today-resource { margin-top: 4px; }
 
 .review-bars {
   display: flex;
@@ -2135,7 +2202,10 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   width: 100%;
   background: var(--accent);
   border-radius: 4px 4px 0 0;
+  transform-origin: bottom;
+  animation: barGrow 0.55s var(--ease-spring) both;
 }
+.review-bars { animation: viewIn 0.35s var(--ease-out) both; }
 
 /* ---------- 习惯频率编辑器 ---------- */
 
@@ -3032,9 +3102,10 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
   cursor: pointer;
   display: grid;
   place-items: center;
-  transition: background 0.18s;
+  transition: background 0.18s, color 0.18s, transform 0.22s var(--ease-spring);
 }
-.player-btn:hover { background: var(--accent-soft); color: var(--accent); }
+.player-btn:hover { background: var(--accent-soft); color: var(--accent); transform: translateY(-1px); }
+.player-btn:active { transform: scale(0.9); }
 .player-btn.active { background: var(--accent-soft); color: var(--accent); }
 .player-seek {
   flex: 1;
