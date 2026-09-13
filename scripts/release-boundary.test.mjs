@@ -177,7 +177,7 @@ test("workspace version is aligned across the app, Android manifest and update c
   assert.match(aboutView, /版本 \{APP_VERSION\}/);
   assert.match(settingsView, /BEID · \{APP_VERSION\}/);
   assert.match(gradle, new RegExp(`versionName "${version}"`));
-  assert.match(gradle, /versionCode 10/);
+  assert.match(gradle, /versionCode 11/);
 });
 
 test("pad fullscreen hides page details and narrow screens keep a single compact control row", () => {
