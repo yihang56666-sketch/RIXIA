@@ -32,6 +32,7 @@ import {
   SkipBack,
   SkipForward,
   RefreshCw,
+  GraduationCap,
 } from "lucide-react";
 import { createBilibiliPublicContentService } from "../../lib/bilibili/publicContentService";
 import { createDanmakuFetchService } from "../../lib/bilibili/danmakuFetchService";
@@ -88,6 +89,7 @@ import { isPlaybackComplete, nextIncompleteLearningEntry } from "../../lib/bilib
 import { PlaybackCompletionOverlay } from "./PlaybackCompletionOverlay";
 import { InteractiveVideoChoiceOverlay } from "./InteractiveVideoChoiceOverlay";
 import { shouldPresentInteractiveChoice, interactiveChoiceTarget } from "../../lib/bilibili/interactivePlaybackPolicy";
+import { DanmakuStudyPanel } from "./DanmakuStudyPanel";
 import type { InteractiveVideoNode } from "../../lib/bilibili/extendedModels";
 import { createWatchHistoryService } from "../../lib/bilibili/watchHistoryService";
 import { PlayerCollectionSheet } from "./PlayerCollectionSheet";
@@ -183,6 +185,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [showPrefs, setShowPrefs] = useState(false);
+  const [showStudy, setShowStudy] = useState(false);
   const [activePartCid, setActivePartCid] = useState<number | null>(null);
   const [requestedQuality, setRequestedQuality] = useState(80);
   // Load pipeline uses this quality. Auto-correction after playurl resolve updates
@@ -2206,6 +2209,15 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
           </button>
           <button
             className="fb-player-topbar-btn"
+            onClick={() => setShowStudy((v) => !v)}
+            aria-label="弹幕学习模式"
+            title="弹幕学习模式"
+            data-tour-target="player-danmaku-study"
+          >
+            <GraduationCap size={18} />
+          </button>
+          <button
+            className="fb-player-topbar-btn"
             onClick={() => (fullscreen ? void exitFullscreen() : void enterFullscreen())}
             aria-label={fullscreen ? "退出全屏" : "进入全屏"}
             title={fullscreen ? "退出全屏" : "进入全屏"}
@@ -2295,6 +2307,18 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             </button>
           </div>
         )}
+
+        <DanmakuStudyPanel
+          open={showStudy}
+          entries={danmaku}
+          currentTimeSeconds={currentTime}
+          preferences={prefs}
+          loading={danmakuStatus === "loading"}
+          failed={danmakuFailed}
+          onClose={() => setShowStudy(false)}
+          onRetry={() => setDanmakuReload((count) => count + 1)}
+          onOpenPreferences={() => setShowPrefs(true)}
+        />
 
         {/* 底部控制层 */}
         <div className="fb-player-controls-overlay" data-visible={controlsVisible}>
