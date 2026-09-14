@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { useAppStore } from "../../store/useAppStore";
 import { FeatureMapDialog } from "./FeatureMapDialog";
 
 describe("FeatureMapDialog", () => {
@@ -15,5 +16,12 @@ describe("FeatureMapDialog", () => {
     render(<FeatureMapDialog open onClose={vi.fn()} onStartTour={onStartTour} />);
     fireEvent.click(screen.getByRole("button", { name: /搜索视频/ }));
     expect(onStartTour).toHaveBeenCalledWith("watch");
+  });
+
+  it("navigates directly for entries without a dedicated tour", () => {
+    useAppStore.getState().setView("focus-dashboard");
+    render(<FeatureMapDialog open onClose={vi.fn()} onStartTour={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /资料库/ }));
+    expect(useAppStore.getState().view).toBe("library");
   });
 });

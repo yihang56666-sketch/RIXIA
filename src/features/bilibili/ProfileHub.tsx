@@ -15,7 +15,8 @@ import { useAppStore } from "../../store/useAppStore";
 import type { ViewKey } from "../../types";
 import { M3Dialog, Mi, useM3Feedback } from "./m3";
 import { useAppUpdateController } from "./AppUpdateContext";
-import { restartTourPlayback } from "../tour/FeatureTour";
+import { startTourTask } from "../tour/FeatureTour";
+import { FeatureMapDialog } from "../tour/FeatureMapDialog";
 
 type AccountStatus = "active" | "expired" | "networkError" | "signedOut";
 
@@ -59,6 +60,7 @@ export function ProfileHub() {
   const [loadingAccount, setLoadingAccount] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmSwitch, setConfirmSwitch] = useState(false);
+  const [featureMapOpen, setFeatureMapOpen] = useState(false);
   const [workspace, setWorkspace] = useState(usesWorkspace);
   const refreshGeneration = useRef(0);
 
@@ -258,7 +260,7 @@ export function ProfileHub() {
           className="m3-list-tile"
           onClick={() => {
             if (title === "功能教学") {
-              restartTourPlayback();
+              setFeatureMapOpen(true);
               return;
             }
             setView(tile.view);
@@ -323,6 +325,15 @@ export function ProfileHub() {
           将清除当前 B 站登录状态并打开官方网页登录。
         </M3Dialog>
       )}
+
+      <FeatureMapDialog
+        open={featureMapOpen}
+        onClose={() => setFeatureMapOpen(false)}
+        onStartTour={(taskId) => {
+          setFeatureMapOpen(false);
+          if (taskId) startTourTask(taskId);
+        }}
+      />
     </div>
   );
 }

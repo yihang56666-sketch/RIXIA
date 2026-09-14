@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, test, vi } from "vitest";
 import { useAppStore } from "../../store/useAppStore";
+import { FeatureTour } from "../tour/FeatureTour";
 
 const loadCurrentUser = vi.fn().mockResolvedValue({ mid: 42, userName: "测试用户", avatarUrl: "" });
 
@@ -43,6 +44,23 @@ describe("ProfileHub", () => {
     // 满载并发下轮询调度可能变慢，放宽超时避免偶发抖动
     await waitFor(() => expect(screen.getByText("登录状态已失效，请重新登录")).toBeInTheDocument(), { timeout: 5000 });
     expect(screen.getByRole("button", { name: "重新登录" })).toBeInTheDocument();
+  });
+
+  test("opens the feature map and starts a selected task tour", async () => {
+    render(
+      <>
+        <ProfileHub />
+        <FeatureTour />
+      </>,
+    );
+
+    fireEvent.click(screen.getByText("功能教学"));
+    expect(screen.getByRole("dialog", { name: "功能地图" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /搜索视频/ }));
+
+    expect(screen.queryByRole("dialog", { name: "功能地图" })).not.toBeInTheDocument();
+    expect(screen.getByText("看课1/4")).toBeInTheDocument();
+    expect(screen.getByText("从首页找到入口")).toBeInTheDocument();
   });
 
   it("switching accounts signs out and opens the official login automatically", async () => {

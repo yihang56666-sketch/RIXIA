@@ -4,11 +4,13 @@ import { getDailyQuote } from "../../lib/dailyQuotes";
 import { todayKey } from "../../lib/time";
 import { createTourService } from "../../lib/tourService";
 import { useAppStore } from "../../store/useAppStore";
+import type { ViewKey } from "../../types";
 import { TOUR_TASKS, type TourStep, type TourTaskId } from "./featureTourTasks";
 
 export const TOUR_PALETTE_OPEN_EVENT = "beid:tour-open-palette";
 export const TOUR_PALETTE_OPENED_EVENT = "beid:tour-palette-opened";
 export const TOUR_REPLAY_EVENT = "beid:tour-replay";
+export const TOUR_TASK_START_EVENT = "beid:tour-start-task";
 
 interface TourStepWithPalette extends TourStep {
   openPalette?: boolean;
@@ -110,31 +112,60 @@ export function restartTourPlayback(storage: Storage = localStorage): void {
   window.dispatchEvent(new Event(TOUR_REPLAY_EVENT));
 }
 
+export function startTourTask(taskId: TourTaskId | null, fallbackView?: ViewKey): void {
+  window.dispatchEvent(new CustomEvent(TOUR_TASK_START_EVENT, {
+    detail: { taskId, fallbackView },
+  }));
+}
+
 export function FeatureTour({ initialTask }: { initialTask?: TourTaskId }) {
   const service = useMemo(() => createTourService(), []);
   const setView = useAppStore((state) => state.setView);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [activeTask, setActiveTask] = useState<TourTaskId | null>(null);
   const [spotlight, setSpotlight] = useState<DOMRect | null>(null);
   const advanceRef = useRef<() => void>(() => {});
-  const steps: TourStepWithPalette[] = initialTask ? TOUR_TASKS[initialTask] : TOUR_STEPS;
+  const steps: TourStepWithPalette[] = activeTask
+    ? TOUR_TASKS[activeTask]
+    : initialTask
+      ? TOUR_TASKS[initialTask]
+      : TOUR_STEPS;
 
   useEffect(() => {
-    if (initialTask) {
+    if (initialTask || activeTask) {
       setActiveIndex(0);
       return;
     }
     const state = service.load();
     setActiveIndex(service.isFinished(state, steps.length) ? null : nextStep(state.completedSteps, steps.length));
-  }, [initialTask, service, steps]);
+  }, [activeTask, initialTask, service, steps]);
 
   // 「我的 → 功能教学」随时可以重播巡览：清除完成/跳过状态并从第一步开始。
   useEffect(() => {
     const onReplay = () => {
+      setActiveTask(null);
       setView("focus-dashboard");
       setActiveIndex(0);
     };
     window.addEventListener(TOUR_REPLAY_EVENT, onReplay);
     return () => window.removeEventListener(TOUR_REPLAY_EVENT, onReplay);
+  }, [setView]);
+
+  // 功能地图选中一项后，把对应的任务巡览交给 App 层挂载的 FeatureTour。
+  useEffect(() => {
+    const onTaskStart = (event: Event) => {
+      const { taskId, fallbackView } = (event as CustomEvent<{ taskId?: TourTaskId | null; fallbackView?: ViewKey }>).detail ?? {};
+      if (taskId) {
+        setActiveTask(taskId);
+        setActiveIndex(0);
+        setView(TOUR_TASKS[taskId][0].view);
+      } else if (fallbackView) {
+        setActiveIndex(null);
+        setView(fallbackView);
+      }
+    };
+    window.addEventListener(TOUR_TASK_START_EVENT, onTaskStart);
+    return () => window.removeEventListener(TOUR_TASK_START_EVENT, onTaskStart);
   }, [setView]);
 
   const advance = useCallback(() => {
@@ -143,6 +174,7 @@ export function FeatureTour({ initialTask }: { initialTask?: TourTaskId }) {
       const next = current + 1;
       if (next >= steps.length) {
         service.dismiss();
+        setActiveTask(null);
         return null;
       }
       service.completeStep(current);
@@ -229,7 +261,7 @@ export function FeatureTour({ initialTask }: { initialTask?: TourTaskId }) {
       >
         <div className="feature-tour-heading">
           <Sparkles size={16} />
-          <span>{step.label}{activeIndex + 1}/{steps.length}</span>
+          <span>{`${step.label}${activeIndex + 1}/${steps.length}`}</span>
         </div>
         <h2>{step.title}</h2>
         <p>{step.description}</p>

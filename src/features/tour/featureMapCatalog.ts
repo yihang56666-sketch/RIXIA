@@ -12,6 +12,7 @@ import {
   Timer,
 } from "lucide-react";
 import type { ViewKey } from "../../types";
+import type { TourTaskId } from "./featureTourTasks";
 
 export type FeatureMapCategoryId = "watch" | "focus" | "review" | "organize" | "system";
 
@@ -22,7 +23,7 @@ export interface FeatureMapEntry {
   how: string;
   route: ViewKey;
   icon: typeof Search;
-  tourTaskId?: string;
+  tourTaskId?: TourTaskId;
 }
 
 export interface FeatureMapCategory {

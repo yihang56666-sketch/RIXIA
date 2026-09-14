@@ -1,13 +1,16 @@
 import { X } from "lucide-react";
+import { useAppStore } from "../../store/useAppStore";
 import { FEATURE_MAP_CATEGORIES } from "./featureMapCatalog";
+import type { TourTaskId } from "./featureTourTasks";
 
 interface FeatureMapDialogProps {
   open: boolean;
   onClose: () => void;
-  onStartTour: (taskId?: string) => void;
+  onStartTour: (taskId?: TourTaskId) => void;
 }
 
 export function FeatureMapDialog({ open, onClose, onStartTour }: FeatureMapDialogProps) {
+  const setView = useAppStore((state) => state.setView);
   if (!open) return null;
 
   return (
@@ -39,7 +42,11 @@ export function FeatureMapDialog({ open, onClose, onStartTour }: FeatureMapDialo
                     key={item.id}
                     className="feature-map-item"
                     onClick={() => {
-                      onStartTour(item.tourTaskId);
+                      if (item.tourTaskId) {
+                        onStartTour(item.tourTaskId);
+                      } else {
+                        setView(item.route);
+                      }
                     }}
                     aria-label={`${item.title} · ${item.purpose}`}
                   >
