@@ -26,6 +26,7 @@ release
 output
 .readonly-focubili
 .claude/
+.worktrees/
 
 device-screen.png
 
