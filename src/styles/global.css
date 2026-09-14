@@ -3964,6 +3964,29 @@ html.fb-native-hole .app-background::after {
   -webkit-backdrop-filter: blur(6px);
   animation: fadeUp 0.24s ease both;
 }
+.fb-player-danmaku-status[data-failed="1"] {
+  color: #ffd6d0;
+  border-color: rgba(255, 179, 160, 0.28);
+  background: rgba(60, 18, 10, 0.52);
+}
+.fb-player-danmaku-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.16s ease, transform 0.16s ease;
+}
+.fb-player-danmaku-retry:hover { background: rgba(255, 255, 255, 0.24); }
+.fb-player-danmaku-retry:active { transform: scale(0.94); }
+.fb-player-danmaku-status[data-failed="1"] .fb-player-danmaku-retry svg { animation: spin 1.6s linear infinite; }
 /* 常驻弹幕开关：与全屏入口同处一层，窄屏滚动控制条也不影响可达性。 */
 .fb-player-persistent-danmaku {
   position: absolute;
@@ -3990,6 +4013,59 @@ html.fb-native-hole .app-background::after {
 }
 .fb-player-persistent-danmaku:active { transform: scale(0.9); }
 .fb-player-persistent-danmaku[aria-pressed="true"] { color: #7cc0ff; }
+/* 首次播放时的弹幕微教学：紧贴常驻弹幕开关，必须真实点击一次后消失。 */
+.fb-player-danmaku-coach {
+  position: absolute;
+  right: 56px;
+  bottom: calc(max(12px, env(safe-area-inset-bottom, 0px)) + 48px);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(300px, 62vw);
+  padding: 8px 10px 8px 14px;
+  border-radius: 12px;
+  background: rgba(13, 20, 32, 0.86);
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 12.5px;
+  line-height: 1.35;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: fadeUp 0.28s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.fb-player-danmaku-coach::after {
+  content: "";
+  position: absolute;
+  right: 26px;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  transform: rotate(45deg);
+  background: rgba(13, 20, 32, 0.86);
+}
+.fb-player-danmaku-coach-close {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: rgba(124, 192, 255, 0.18);
+  color: #9fd1ff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.16s ease, transform 0.16s ease;
+}
+.fb-player-danmaku-coach-close:hover { background: rgba(124, 192, 255, 0.3); }
+.fb-player-danmaku-coach-close:active { transform: scale(0.94); }
+.fb-player-persistent-danmaku.fb-player-danmaku-coaching {
+  animation: coachPulse 1.8s ease-in-out 0.4s infinite;
+}
+@keyframes coachPulse {
+  0%, 100% { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); }
+  50% { box-shadow: 0 0 0 5px rgba(124, 192, 255, 0.18), 0 4px 18px rgba(0, 0, 0, 0.32); }
+}
 .fb-player-surface[data-fullscreen="1"] {
   position: fixed;
   inset: 0;

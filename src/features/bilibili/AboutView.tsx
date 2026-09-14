@@ -4,6 +4,7 @@ import { useAppStore } from "../../store/useAppStore";
 import { APP_VERSION, AppUpdateStatus } from "../../lib/bilibili/miscServices";
 import { useAppUpdateController } from "./AppUpdateContext";
 import { Mi } from "./m3";
+import { restartTourPlayback } from "../tour/FeatureTour";
 
 const RELEASES_URL = "https://github.com/Yihang56666-sketch/RIXIA/releases";
 
@@ -44,6 +45,19 @@ export function AboutView() {
             <p className="m3-body-sm fb-on-surface-variant">版本 {APP_VERSION}</p>
             <p className="m3-body-md" style={{ marginTop: 10 }}>个人节奏工作台与 B 站专注学习客户端。</p>
           </section>
+
+          <button
+            className="m3-card"
+            style={{ padding: 20, display: "flex", alignItems: "center", gap: 12, textAlign: "left", border: "none", cursor: "pointer", width: "100%" }}
+            onClick={() => restartTourPlayback()}
+          >
+            <Mi name="help_center" size={22} />
+            <span style={{ flex: 1 }}>
+              <span className="m3-body-lg" style={{ display: "block", fontWeight: 700 }}>功能教学</span>
+              <span className="m3-body-sm fb-on-surface-variant">重播新手巡览，认识首页、搜索、资料库、弹幕、专注与命令面板</span>
+            </span>
+            <Mi name="chevron_right" />
+          </button>
 
           <button
             className="m3-card"

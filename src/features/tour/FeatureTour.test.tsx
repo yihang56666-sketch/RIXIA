@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/useAppStore";
-import { FeatureTour, TOUR_PALETTE_OPEN_EVENT } from "./FeatureTour";
+import { FeatureTour, restartTourPlayback, TOUR_PALETTE_OPEN_EVENT } from "./FeatureTour";
 
 describe("FeatureTour", () => {
   beforeEach(() => {
@@ -40,10 +40,20 @@ describe("FeatureTour", () => {
     const openListener = vi.fn();
     window.addEventListener(TOUR_PALETTE_OPEN_EVENT, openListener);
 
-    const steps = ["开始巡览", "下一步", "下一步", "下一步", "下一步"];
+    const steps = ["开始巡览", "下一步", "下一步", "下一步", "下一步", "下一步", "下一步"];
     steps.forEach((label) => fireEvent.click(screen.getByRole("button", { name: label })));
     expect(openListener).toHaveBeenCalledTimes(1);
     expect(screen.getByText("一键到达任何页面")).toBeInTheDocument();
+  });
+
+  it("restarts from the first step when replay is requested", () => {
+    render(<FeatureTour />);
+    fireEvent.click(screen.getByRole("button", { name: "跳过巡览" }));
+    expect(screen.queryByLabelText("欢迎")).not.toBeInTheDocument();
+
+    act(() => restartTourPlayback());
+    expect(screen.getByLabelText("欢迎")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始巡览"})).toBeInTheDocument();
   });
 
   it("persists completion and skips the tour next time", () => {

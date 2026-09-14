@@ -7,6 +7,7 @@ import { useAppStore } from "../../store/useAppStore";
 
 export const TOUR_PALETTE_OPEN_EVENT = "beid:tour-open-palette";
 export const TOUR_PALETTE_OPENED_EVENT = "beid:tour-palette-opened";
+export const TOUR_REPLAY_EVENT = "beid:tour-replay";
 
 interface TourStep {
   view: "focus-dashboard" | "search" | "library" | "today" | "settings";
@@ -44,6 +45,18 @@ const TOUR_STEPS: TourStep[] = [
     title: "所有课程都集中在这里",
     description: "继续学习、已保存和笔记都在资料库，点封面就会进入全屏播放器。",
     target: "library-nav",
+  },
+  {
+    view: "focus-dashboard",
+    label: "播放器",
+    title: "播放页不只是能看视频",
+    description: "视频上有滚动弹幕，右上角常驻弹幕按钮可以随时开关；控制条里还能调字号、透明度、显示区域和屏蔽词。",
+  },
+  {
+    view: "focus-dashboard",
+    label: "专注",
+    title: "把一次观看变成一次专注",
+    description: "进任意视频后点「专注观看」，观看时间会进入专注计时；也可以回到首页先开专注再选视频。",
   },
   {
     view: "today",
@@ -88,6 +101,19 @@ function nextStep(completedSteps: number[], totalSteps: number): number | null {
   return null;
 }
 
+/** 清除已完成的巡览进度并让 FeatureTour 重新从第一步开始。 */
+export function restartTourPlayback(storage: Storage = localStorage): void {
+  try {
+    storage.setItem(
+      "rixia_feature_tour_v1",
+      JSON.stringify({ completedSteps: [], dismissed: false, updatedAt: new Date().toISOString() }),
+    );
+  } catch {
+    // 存储不可用时只保留内存状态，replay 事件仍会让巡览重新出现。
+  }
+  window.dispatchEvent(new Event(TOUR_REPLAY_EVENT));
+}
+
 export function FeatureTour() {
   const service = useMemo(() => createTourService(), []);
   const setView = useAppStore((state) => state.setView);
@@ -99,6 +125,16 @@ export function FeatureTour() {
     const state = service.load();
     setActiveIndex(service.isFinished(state, TOUR_STEPS.length) ? null : nextStep(state.completedSteps, TOUR_STEPS.length));
   }, [service]);
+
+  // 「我的 → 功能教学」随时可以重播巡览：清除完成/跳过状态并从第一步开始。
+  useEffect(() => {
+    const onReplay = () => {
+      setView("focus-dashboard");
+      setActiveIndex(0);
+    };
+    window.addEventListener(TOUR_REPLAY_EVENT, onReplay);
+    return () => window.removeEventListener(TOUR_REPLAY_EVENT, onReplay);
+  }, [setView]);
 
   const advance = useCallback(() => {
     setActiveIndex((current) => {
@@ -203,7 +239,16 @@ export function FeatureTour() {
           </blockquote>
         )}
         <div className="feature-tour-actions">
-          <button className="feature-tour-skip" onClick={() => service.dismiss()} aria-label="跳过巡览">暂时不看</button>
+          <button
+            className="feature-tour-skip"
+            onClick={() => {
+              service.dismiss();
+              setActiveIndex(null);
+            }}
+            aria-label="跳过巡览"
+          >
+            暂时不看
+          </button>
           <button className="feature-tour-next" onClick={advance}>
             {activeIndex === 0 ? "开始巡览" : activeIndex === TOUR_STEPS.length - 1 ? "完成" : "下一步"}
           </button>

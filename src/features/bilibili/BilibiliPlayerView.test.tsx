@@ -838,8 +838,8 @@ describe("BilibiliPlayerView", () => {
     expect(controls?.querySelector("select[aria-label='播放倍速']")).not.toBeNull();
     await vi.waitFor(() => expect(controls?.querySelector("select[aria-label='清晰度']")).not.toBeNull());
     expect(controls?.querySelector("input[aria-label='音量']")).not.toBeNull();
-    // 全屏入口独立于可横向滚动的控制条，窄屏下不会滚出可视区。
-    expect(controls?.querySelector("button[aria-label='进入全屏']")).toBeNull();
+    // 全屏入口既在控制条内常用位置，也在表面常驻，窄屏下不会滚出可视区。
+    expect(controls?.querySelector("button[aria-label='进入全屏']")).not.toBeNull();
     expect(document.querySelector(".fb-player-persistent-fullscreen")?.getAttribute("aria-label")).toBe("进入全屏");
   });
 
@@ -857,6 +857,7 @@ describe("BilibiliPlayerView", () => {
     const surface = document.querySelector(".fb-player-surface");
     expect(surface?.querySelector(".fb-player-persistent-fullscreen")).not.toBeNull();
     expect(document.querySelector(".fb-player-ctl-row")?.querySelector(".fb-player-persistent-fullscreen")).toBeNull();
+    expect(document.querySelector(".fb-player-ctl-row")?.querySelector(".fb-player-controls-fullscreen")).not.toBeNull();
     expect(screen.getAllByRole("button", { name: "进入全屏" }).length).toBeGreaterThan(0);
   });
 
@@ -869,7 +870,7 @@ describe("BilibiliPlayerView", () => {
 
   it("keeps a persistent danmaku toggle outside the scrollable control row", async () => {
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
-    await screen.findByText("暂无弹幕");
+    await screen.findByText("这个视频还没有弹幕");
     await screen.findByRole("button", { name: "关闭弹幕" });
 
     expect(document.querySelector(".fb-player-ctl-row")?.querySelector("button[aria-label='关闭弹幕']")).toBeNull();
@@ -886,13 +887,32 @@ describe("BilibiliPlayerView", () => {
     expect(await screen.findByText("弹幕 1 条")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭弹幕" }));
     expect(screen.getByRole("button", { name: "开启弹幕" })).toBeInTheDocument();
-    expect(screen.queryByText("弹幕 1 条")).not.toBeInTheDocument();
+    expect(await screen.findByText("弹幕已关闭")).toBeInTheDocument();
   });
 
   it("shows an empty danmaku state when the part has no danmaku", async () => {
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
 
-    expect(await screen.findByText("暂无弹幕")).toBeInTheDocument();
+    expect(await screen.findByText("这个视频还没有弹幕")).toBeInTheDocument();
+  });
+
+  it("teaches the danmaku toggle once and hides the coach after a real toggle", async () => {
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    await screen.findByRole("button", { name: "关闭弹幕" });
+    expect(screen.getByText("弹幕开关在这里，点一下试试")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭弹幕" }));
+    expect(screen.getByRole("button", { name: "开启弹幕" })).toBeInTheDocument();
+    expect(screen.queryByText("弹幕开关在这里，点一下试试")).not.toBeInTheDocument();
+    expect(localStorage.getItem("rixia_danmaku_coach_v1")).toBe("done");
+  });
+
+  it("does not show the danmaku coach after the user dismisses it", async () => {
+    localStorage.setItem("rixia_danmaku_coach_v1", "done");
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    await screen.findByRole("button", { name: "关闭弹幕" });
+
+    expect(screen.queryByText("弹幕开关在这里，点一下试试")).not.toBeInTheDocument();
   });
 
   it("consumes the system back request while CSS fullscreen is active", async () => {

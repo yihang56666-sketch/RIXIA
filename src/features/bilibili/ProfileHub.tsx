@@ -15,10 +15,12 @@ import { useAppStore } from "../../store/useAppStore";
 import type { ViewKey } from "../../types";
 import { M3Dialog, Mi, useM3Feedback } from "./m3";
 import { useAppUpdateController } from "./AppUpdateContext";
+import { restartTourPlayback } from "../tour/FeatureTour";
 
 type AccountStatus = "active" | "expired" | "networkError" | "signedOut";
 
 const FEATURE_TILES: Array<{ icon: string; title: string; view: ViewKey }> = [
+  { icon: "help_center", title: "功能教学", view: "focus-dashboard" },
   { icon: "history", title: "观看记录", view: "local-watch-history" },
   { icon: "star", title: "我的收藏", view: "favorites" },
   { icon: "subscriptions", title: "我的订阅", view: "subscribed-collections" },
@@ -249,9 +251,19 @@ export function ProfileHub() {
   }
 
   function Tile({ icon, title }: { icon: string; title: string }) {
+    const tile = FEATURE_TILES.find((item) => item.title === title)!;
     return (
       <div className="m3-card" style={{ display: "grid" }}>
-        <button className="m3-list-tile" onClick={() => setView(FEATURE_TILES.find((tile) => tile.title === title)!.view)}>
+        <button
+          className="m3-list-tile"
+          onClick={() => {
+            if (title === "功能教学") {
+              restartTourPlayback();
+              return;
+            }
+            setView(tile.view);
+          }}
+        >
           <span className="m3-tile-leading" style={{ position: "relative" }}>
             <Mi name={icon} />
             {title === "设置" && hasUpdate && (

@@ -16,7 +16,8 @@ createRoot(document.getElementById("root")!).render(
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {
+    // 带版本参数的注册地址确保旧 WebView 里的服务缓存会换新。
+    navigator.serviceWorker.register("/sw.js?v=5").catch(() => {
       // 离线能力静默降级
     });
   });
