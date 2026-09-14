@@ -430,7 +430,7 @@ export function SettingsView() {
           <div className="data-stat"><strong>{timestampNotes.length}</strong><span>时间点笔记</span></div>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
-          <button className="ghost-btn" onClick={exportData}>
+          <button className="ghost-btn" onClick={exportData} data-tour-target="backup-export">
             <Download size={16} /> 导出数据备份（JSON）
           </button>
           <input

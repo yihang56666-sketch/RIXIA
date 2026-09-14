@@ -309,7 +309,7 @@ function ReviewTab({ today }: { today: string }) {
   }, [wrongQuestions]);
 
   return <div className="stack" style={{ gap: 13 }}>
-    <section className="card">
+    <section className="card" data-tour-target="kaoyan-review">
       <div className="row" style={{ marginBottom: 10 }}>
         <div>
           <h3>今日复习</h3>
@@ -323,7 +323,7 @@ function ReviewTab({ today }: { today: string }) {
       </div>
       {dueItems.length === 0
         ? <p className="empty">今天没有到期的复习内容。错题和笔记会在合适的时间回到这里。</p>
-        : <div className="kaoyan-review-queue">
+        : <div className="kaoyan-review-queue" data-tour-target="review-queue">
           {dueItems.slice(0, 8).map((item) => {
             const subject = subjects.find((entry) => entry.id === item.subjectId);
             const overdue = item.dueDate < today;

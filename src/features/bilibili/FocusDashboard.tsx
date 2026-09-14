@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LearningListEntry, LearningListStatus } from "../../lib/bilibili/types";
+import type { ViewKey } from "../../types";
 import { createLearningListService } from "../../lib/bilibili/services";
 import { createBilibiliAuthService } from "../../lib/bilibili/accountService";
 import { useAppStore } from "../../store/useAppStore";
@@ -201,6 +202,7 @@ function ReadyCard({
       <p className="m3-body-md" style={{ marginTop: 6 }}>先写下这段时间唯一要完成的事。</p>
       <div className="m3-field m3-field-floating" style={{ margin: "18px 0 8px" }}>
         <input
+          data-tour-target="focus-goal"
           value={goal}
           onChange={(e) => onGoalChange(e.target.value.slice(0, 60))}
           onKeyDown={(e) => {
@@ -212,7 +214,7 @@ function ReadyCard({
         <Mi name="flag" />
       </div>
       <h3 className="m3-title-md" style={{ marginTop: 8 }}>计划时长</h3>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+      <div data-tour-target="focus-duration" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
         {PRESET_MINUTES.map((minutes) => (
           <button
             key={minutes}
@@ -229,7 +231,13 @@ function ReadyCard({
           {customSelected ? `${selectedMinutes} 分钟` : "自定义"}
         </button>
       </div>
-      <button className="m3-filled-btn full" style={{ marginTop: 20 }} disabled={!canStart} onClick={onStart}>
+      <button
+        className="m3-filled-btn full"
+        style={{ marginTop: 20 }}
+        disabled={!canStart}
+        onClick={onStart}
+        data-tour-target="focus-start"
+      >
         <Mi name="timer" size={18} /> 开始专注
       </button>
       <button className="m3-text-btn full" style={{ marginTop: 6 }} onClick={onOpenVideo}>
@@ -450,23 +458,80 @@ function KaoyanTodayCard({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-// ============ 辅助入口卡（_buildHomeActionsCard） ============
+// ============ 按意图分组的首页入口（_buildHomeIntentGroups） ============
 
-function HomeActionsCard({ onOpenLearningList, onOpenStatistics, onOpenKaoyan, onOpenDiscover }: { onOpenLearningList: () => void; onOpenStatistics: () => void; onOpenKaoyan: () => void; onOpenDiscover: () => void }) {
+const HOME_INTENT_GROUPS = [
+  {
+    id: "watch",
+    title: "继续看课",
+    description: "找到视频、继续学习、边看边记。",
+    actions: [
+      { label: "学习清单", icon: "menu_book", action: "learning-list" as ViewKey },
+      { label: "搜索", icon: "search", action: "search" as ViewKey },
+      { label: "B站发现", icon: "trending_up", action: "home-feed" as ViewKey },
+    ],
+  },
+  {
+    id: "focus",
+    title: "留一段专注",
+    description: "把一段时间留给明确目标。",
+    actions: [
+      { label: "准备专注", icon: "timer", action: "focus" as ViewKey },
+      { label: "专注数据", icon: "insights", action: "focus-statistics" as ViewKey },
+    ],
+  },
+  {
+    id: "review",
+    title: "安排复习",
+    description: "错题、任务和倒计时收在一起。",
+    actions: [
+      { label: "考研计划", icon: "school", action: "kaoyan" as ViewKey },
+      { label: "任务", icon: "list_alt", action: "tasks" as ViewKey },
+      { label: "倒计时", icon: "hourglass_empty", action: "countdowns" as ViewKey },
+    ],
+  },
+  {
+    id: "organize",
+    title: "整理想法",
+    description: "笔记、收集箱、日记和习惯。",
+    actions: [
+      { label: "笔记", icon: "sticky_note_2", action: "notes" as ViewKey },
+      { label: "收集箱", icon: "inbox", action: "inbox" as ViewKey },
+      { label: "日记", icon: "calendar_today", action: "journal" as ViewKey },
+      { label: "习惯", icon: "local_fire_department", action: "habits" as ViewKey },
+    ],
+  },
+  {
+    id: "system",
+    title: "数据与系统",
+    description: "备份、诊断和维护。",
+    actions: [
+      { label: "我的", icon: "person", action: "settings" as ViewKey },
+      { label: "工具", icon: "build", action: "tools" as ViewKey },
+    ],
+  },
+] as const;
+
+function HomeIntentGroups({ onOpen }: { onOpen: (view: ViewKey) => void }) {
   return (
-    <section className="m3-card" style={{ padding: "8px 14px", display: "flex", flexWrap: "wrap" }}>
-      <button className="m3-text-btn full" onClick={onOpenLearningList}>
-        <Mi name="menu_book" size={18} /> 学习清单
-      </button>
-      <button className="m3-text-btn full" onClick={onOpenStatistics}>
-        <Mi name="insights" size={18} /> 专注数据
-      </button>
-      <button className="m3-text-btn full" onClick={onOpenKaoyan}>
-        <Mi name="school" size={18} /> 考研计划
-      </button>
-      <button className="m3-text-btn full" onClick={onOpenDiscover}>
-        <Mi name="trending_up" size={18} /> B站发现
-      </button>
+    <section aria-label="功能分组入口" className="home-intent-groups">
+      {HOME_INTENT_GROUPS.map((group) => (
+        <section key={group.id} className="home-intent-group">
+          <h3>{group.title}</h3>
+          <p>{group.description}</p>
+          <div className="home-intent-actions">
+            {group.actions.map((action) => (
+              <button
+                key={`${group.id}-${action.label}`}
+                className="ghost-btn compact"
+                onClick={() => onOpen(action.action)}
+              >
+                <Mi name={action.icon} size={16} /> {action.label}
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
     </section>
   );
 }
@@ -813,7 +878,7 @@ export function FocusDashboard({ onOpenStatistics }: { onOpenStatistics: () => v
       />
       <RecentHistoryCard history={timer.history} />
       <KaoyanTodayCard onOpen={() => setView("kaoyan")} />
-      <HomeActionsCard onOpenLearningList={openLearningList} onOpenStatistics={onOpenStatistics} onOpenKaoyan={() => setView("kaoyan")} onOpenDiscover={() => setView("home-feed")} />
+      <HomeIntentGroups onOpen={setView} />
     </>
   );
 

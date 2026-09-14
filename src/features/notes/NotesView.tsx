@@ -74,7 +74,7 @@ export function NotesView() {
     <RixiaWorkspacePage title="笔记">
     <div className="stack">
       <section className="card">
-        <form className="stack" onSubmit={handleSubmit}>
+        <form className="stack" onSubmit={handleSubmit} data-tour-target="notes-input">
           <textarea className="field" value={body} onChange={(e) => setBody(e.target.value)} placeholder="写下此刻的想法" />
           <button className="primary compact" type="submit" disabled={!valid}>保存笔记</button>
         </form>
@@ -85,7 +85,7 @@ export function NotesView() {
           <p className="empty">还没有笔记，灵感来的时候随手记下</p>
         </section>
       ) : (
-        <div className="note-grid">
+        <div className="note-grid" data-tour-target="notes-list">
           {notes.map((note) => <NoteCard key={note.id} note={note} />)}
         </div>
       )}

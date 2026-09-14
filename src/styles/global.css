@@ -5298,6 +5298,51 @@ html.fb-player-active-fullscreen .fb-player-page { overflow: hidden; }
   from { opacity: 0; transform: translateX(-50%) translateY(18px) scale(0.98); }
   to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 }
+
+.home-intent-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.home-intent-group {
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--m3-surface-container-low, #f7f7fa) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--m3-outline-variant, #cac4d0) 52%, transparent);
+  transition: transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
+}
+
+.home-intent-group:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.home-intent-group h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--m3-on-surface, #111);
+}
+
+.home-intent-group p {
+  margin: 4px 0 0;
+  color: var(--m3-on-surface-variant, #57565c);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.home-intent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.home-intent-actions .ghost-btn.compact {
+  min-height: 32px;
+  border-radius: 10px;
+  font-size: 13px;
+}
 @keyframes tourSpotPulse {
   from { box-shadow: 0 0 0 4px var(--focubili-blue-soft), 0 0 0 200vmax color-mix(in srgb, var(--bg-base, #0b1020) 46%, transparent); }
   to { box-shadow: 0 0 0 5px var(--focubili-blue-soft), 0 0 0 200vmax color-mix(in srgb, var(--bg-base, #0b1020) 46%, transparent); }
