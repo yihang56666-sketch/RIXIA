@@ -82,6 +82,12 @@ export default function App() {
   const view = useAppStore((state) => state.view);
   const theme = useAppStore((state) => state.theme);
   const backgroundImage = useAppStore((state) => state.backgroundImage);
+  const [launching, setLaunching] = useState(true);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLaunching(false), 620);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const diagnostics = createDiagnosticsService();
@@ -166,6 +172,10 @@ export default function App() {
       style={backgroundImage ? { backgroundImage: `url(${backgroundImage})` } : undefined}
     >
       <div className="app-overlay" />
+      <div className={launching ? "launch-overlay active" : "launch-overlay"} aria-hidden={!launching}>
+        <img src="/beid-icon.png" alt="" />
+        <span>BEID</span>
+      </div>
       <FirstLaunchGate>
         <M3FeedbackProvider>
         <AppUpdateProvider>

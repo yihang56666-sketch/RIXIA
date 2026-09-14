@@ -5352,7 +5352,58 @@ html.fb-player-active-fullscreen .fb-player-page { overflow: hidden; }
   .focubili-view-frame,
   .feature-tour-veil,
   .feature-tour-card,
-  .feature-tour-spotlight {
+  .feature-tour-spotlight,
+  .launch-overlay,
+  .launch-overlay img,
+  .launch-overlay span {
     animation: none !important;
+  }
+}
+
+/* ---------- Launch animation ---------- */
+
+.launch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  background: var(--bg-base, #0b1020);
+  color: var(--text-2, #dbe4ff);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.34s var(--ease-apple, cubic-bezier(0.32, 0.72, 0, 1));
+}
+
+.launch-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.launch-overlay img {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  animation: launchMark 0.54s var(--ease-apple, cubic-bezier(0.32, 0.72, 0, 1)) both;
+}
+
+.launch-overlay span {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  animation: fadeUp 0.34s var(--ease-out, ease) both;
+}
+
+@keyframes launchMark {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
