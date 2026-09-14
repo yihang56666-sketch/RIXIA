@@ -16,7 +16,7 @@
 - Create: `src/features/tour/featureMapCatalog.ts`
 - Test: `src/features/tour/featureMapCatalog.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -48,12 +48,12 @@ describe("feature map catalog", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/features/tour/featureMapCatalog.test.ts`
 Expected: FAIL because `featureMapCatalog.ts` does not exist.
 
-- [ ] **Step 3: Implement the catalog**
+- [x] **Step 3: Implement the catalog**
 
 Create `src/features/tour/featureMapCatalog.ts`:
 
@@ -256,12 +256,12 @@ export const FEATURE_MAP_CATEGORIES: FeatureMapCategory[] = [
 ];
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/features/tour/featureMapCatalog.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/tour/featureMapCatalog.ts src/features/tour/featureMapCatalog.test.ts
@@ -274,7 +274,7 @@ git commit -m "feat(onboarding): add feature map catalog"
 - Create: `src/features/tour/FeatureMapDialog.tsx`
 - Test: `src/features/tour/FeatureMapDialog.test.tsx`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```tsx
 import { render, screen } from "@testing-library/react";
@@ -299,12 +299,12 @@ describe("FeatureMapDialog", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/features/tour/FeatureMapDialog.test.tsx`
 Expected: FAIL because `FeatureMapDialog` does not exist.
 
-- [ ] **Step 3: Implement the dialog**
+- [x] **Step 3: Implement the dialog**
 
 Create `src/features/tour/FeatureMapDialog.tsx`:
 
@@ -373,12 +373,12 @@ export function FeatureMapDialog({ open, onClose, onStartTour }: FeatureMapDialo
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/features/tour/FeatureMapDialog.test.tsx`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/tour/FeatureMapDialog.tsx src/features/tour/FeatureMapDialog.test.tsx
@@ -392,7 +392,7 @@ git commit -m "feat(onboarding): add feature map dialog"
 - Modify: `src/features/tour/FeatureTour.tsx`
 - Test: `src/features/tour/FeatureTour.test.tsx`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```tsx
 it("starts the selected tour task", () => {
@@ -401,12 +401,12 @@ it("starts the selected tour task", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/features/tour/FeatureTour.test.tsx`
 Expected: FAIL because `initialTask` is not supported.
 
-- [ ] **Step 3: Add task step sets**
+- [x] **Step 3: Add task step sets**
 
 Create `src/features/tour/featureTourTasks.ts`:
 
@@ -526,7 +526,7 @@ export const TOUR_TASKS: Record<TourTaskId, TourStep[]> = {
 };
 ```
 
-- [ ] **Step 4: Support initial task in FeatureTour**
+- [x] **Step 4: Support initial task in FeatureTour**
 
 Modify `FeatureTour` props:
 
@@ -538,12 +538,12 @@ interface FeatureTourProps {
 
 When `initialTask` is provided, initialize `steps = TOUR_TASKS[initialTask]` and `activeIndex = 0`. Otherwise keep the existing first-run steps.
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run src/features/tour/FeatureTour.test.tsx`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/features/tour/featureTourTasks.ts src/features/tour/FeatureTour.tsx src/features/tour/FeatureTour.test.tsx
@@ -559,7 +559,7 @@ git commit -m "feat(onboarding): add task-based tour"
 - Modify: `src/features/settings/SettingsView.tsx`
 - Modify: `src/styles/global.css`
 
-- [ ] **Step 1: Add target markers**
+- [x] **Step 1: Add target markers**
 
 Add these stable attributes to the relevant controls:
 
@@ -574,7 +574,7 @@ data-tour-target="notes-list"
 data-tour-target="backup-export"
 ```
 
-- [ ] **Step 2: Group home content**
+- [x] **Step 2: Group home content**
 
 In `FocusDashboard`, replace the flat helper-entry list with grouped sections:
 
@@ -591,7 +591,7 @@ In `FocusDashboard`, replace the flat helper-entry list with grouped sections:
 
 Repeat for 专注, 复习, 整理, 数据与系统.
 
-- [ ] **Step 3: Add styles**
+- [x] **Step 3: Add styles**
 
 Append to `global.css`:
 
@@ -621,12 +621,12 @@ Append to `global.css`:
 }
 ```
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run: `npx vitest run src/features/bilibili/FocusDashboard.test.tsx src/features/kaoyan/KaoyanView.test.tsx src/features/notes/NotesView.test.tsx src/features/settings/SettingsView.test.tsx`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/bilibili/FocusDashboard.tsx src/features/kaoyan/KaoyanView.tsx src/features/notes/NotesView.tsx src/features/settings/SettingsView.tsx src/styles/global.css
@@ -639,7 +639,7 @@ git commit -m "feat(ui): group home and add tour targets"
 - Modify: `src/App.tsx`
 - Modify: `src/styles/global.css`
 
-- [ ] **Step 1: Add launch state**
+- [x] **Step 1: Add launch state**
 
 In `App`, add:
 
@@ -652,7 +652,7 @@ useEffect(() => {
 }, []);
 ```
 
-- [ ] **Step 2: Add launch overlay**
+- [x] **Step 2: Add launch overlay**
 
 Inside the root `div`, add:
 
@@ -663,7 +663,7 @@ Inside the root `div`, add:
 </div>
 ```
 
-- [ ] **Step 3: Add styles**
+- [x] **Step 3: Add styles**
 
 Append to `global.css`:
 
@@ -708,12 +708,12 @@ Append to `global.css`:
 }
 ```
 
-- [ ] **Step 4: Run app tests**
+- [x] **Step 4: Run app tests**
 
 Run: `npx vitest run src/App.theme.test.tsx src/App.storage.test.tsx`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/App.tsx src/styles/global.css
@@ -725,29 +725,30 @@ git commit -m "feat(ui): add launch animation"
 **Files:**
 - Verify only
 
-- [ ] **Step 1: Run full tests**
+- [x] **Step 1: Run full tests**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 2: Run type check**
+- [x] **Step 2: Run type check**
 
 Run: `npm run typecheck`
 Expected: PASS
 
-- [ ] **Step 3: Build**
+- [x] **Step 3: Build**
 
 Run: `npm run build`
 Expected: PASS
 
-- [ ] **Step 4: Cross-viewport check**
+- [x] **Step 4: Cross-viewport check**
 
 Run: `node scripts/verify-cross-viewport.mjs`
 Expected: PASS
 
-- [ ] **Step 5: Commit final fixes**
+- [x] **Step 5: Commit final fixes**
 
 ```bash
 git add .
 git commit -m "chore(ui): onboarding polish"
 ```
+
