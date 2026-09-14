@@ -116,7 +116,7 @@ export function FeatureTour({ initialTask }: { initialTask?: TourTaskId }) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [spotlight, setSpotlight] = useState<DOMRect | null>(null);
   const advanceRef = useRef<() => void>(() => {});
-  const steps: TourStep[] = initialTask ? TOUR_TASKS[initialTask] : TOUR_STEPS;
+  const steps: TourStepWithPalette[] = initialTask ? TOUR_TASKS[initialTask] : TOUR_STEPS;
 
   useEffect(() => {
     if (initialTask) {

@@ -156,7 +156,7 @@ export const FEATURE_MAP_CATEGORIES: FeatureMapCategory[] = [
         title: "日记",
         purpose: "按天记录学习状态和复盘。",
         how: "选择日期，写完自动保存。",
-        route: "journal",
+        route: "today",
         icon: CalendarDays,
       },
       {

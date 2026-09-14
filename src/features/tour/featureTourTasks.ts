@@ -1,7 +1,9 @@
+import type { ViewKey } from "../../types";
+
 export type TourTaskId = "watch" | "focus" | "review" | "organize" | "backup";
 
 export interface TourStep {
-  view: string;
+  view: ViewKey;
   label: string;
   title: string;
   description: string;

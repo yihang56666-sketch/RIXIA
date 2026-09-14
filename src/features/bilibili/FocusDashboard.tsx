@@ -512,7 +512,13 @@ const HOME_INTENT_GROUPS = [
   },
 ] as const;
 
-function HomeIntentGroups({ onOpen }: { onOpen: (view: ViewKey) => void }) {
+function HomeIntentGroups({
+  onOpen,
+  onOpenStatistics,
+}: {
+  onOpen: (view: ViewKey) => void;
+  onOpenStatistics: () => void;
+}) {
   return (
     <section aria-label="功能分组入口" className="home-intent-groups">
       {HOME_INTENT_GROUPS.map((group) => (
@@ -524,7 +530,7 @@ function HomeIntentGroups({ onOpen }: { onOpen: (view: ViewKey) => void }) {
               <button
                 key={`${group.id}-${action.label}`}
                 className="ghost-btn compact"
-                onClick={() => onOpen(action.action)}
+                onClick={() => action.action === "focus-statistics" ? onOpenStatistics() : onOpen(action.action)}
               >
                 <Mi name={action.icon} size={16} /> {action.label}
               </button>
@@ -878,7 +884,7 @@ export function FocusDashboard({ onOpenStatistics }: { onOpenStatistics: () => v
       />
       <RecentHistoryCard history={timer.history} />
       <KaoyanTodayCard onOpen={() => setView("kaoyan")} />
-      <HomeIntentGroups onOpen={setView} />
+      <HomeIntentGroups onOpen={setView} onOpenStatistics={onOpenStatistics} />
     </>
   );
 
