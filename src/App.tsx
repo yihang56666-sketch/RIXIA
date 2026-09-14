@@ -175,6 +175,7 @@ export default function App() {
       <div className={launching ? "launch-overlay active" : "launch-overlay"} aria-hidden={!launching}>
         <img src="/beid-icon.png" alt="" />
         <span>BEID</span>
+        <i className="launch-focus" aria-hidden="true" />
       </div>
       <FirstLaunchGate>
         <M3FeedbackProvider>

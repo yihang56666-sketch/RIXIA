@@ -120,7 +120,7 @@ function ContinueLearningCard({
 }) {
   if (loading) {
     return (
-      <section className="m3-card" style={{ padding: 18, display: "flex", alignItems: "center", gap: 12 }}>
+      <section className="m3-card primary-card motion-card" style={{ padding: 18, display: "flex", alignItems: "center", gap: 12 }}>
         <span className="m3-circular-progress" />
         <span className="m3-body-md">正在读取继续学习任务…</span>
       </section>
@@ -128,7 +128,7 @@ function ContinueLearningCard({
   }
   if (!entry) {
     return (
-      <section className="m3-card" style={{ padding: 18, display: "flex", alignItems: "center", gap: 10 }}>
+      <section className="m3-card primary-card motion-card" style={{ padding: 18, display: "flex", alignItems: "center", gap: 10 }}>
         <Mi name="menu_book" />
         <div style={{ flex: 1 }} className="m3-body-md">
           继续学习<br />还没有未完成的学习任务。
@@ -141,7 +141,7 @@ function ContinueLearningCard({
   const positionMs = (entry.positionSeconds ?? 0) * 1000;
   const progress = durationMs > 0 ? Math.min(1, Math.max(0, positionMs / durationMs)) : 0;
   return (
-    <section className="m3-card" style={{ padding: 18 }}>
+    <section className="m3-card primary-card motion-card" style={{ padding: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Mi name="play_circle" fill className="fb-primary-color" />
         <span className="m3-title-md" style={{ fontWeight: 800 }}>继续学习</span>
@@ -162,7 +162,7 @@ function ContinueLearningCard({
           {formatPosition(positionMs)} / {formatPosition(durationMs)}
         </span>
       </div>
-      <button className="m3-filled-btn full" style={{ marginTop: 14 }} onClick={() => onOpen(entry)}>
+      <button className="m3-filled-btn full motion-feedback" style={{ marginTop: 14 }} onClick={() => onOpen(entry)}>
         <Mi name="play_arrow" size={18} /> 继续学习
       </button>
     </section>
@@ -197,7 +197,7 @@ function ReadyCard({
   const canStart = goal.trim().length > 0;
   const customSelected = !PRESET_MINUTES.includes(selectedMinutes as (typeof PRESET_MINUTES)[number]);
   return (
-    <section className="m3-card" style={{ padding: 20 }}>
+    <section className="m3-card primary-card motion-card" style={{ padding: 20 }}>
       <h2 className="m3-headline-sm">准备专注</h2>
       <p className="m3-body-md" style={{ marginTop: 6 }}>先写下这段时间唯一要完成的事。</p>
       <div className="m3-field m3-field-floating" style={{ margin: "18px 0 8px" }}>
@@ -232,7 +232,7 @@ function ReadyCard({
         </button>
       </div>
       <button
-        className="m3-filled-btn full"
+        className="m3-filled-btn full motion-feedback"
         style={{ marginTop: 20 }}
         disabled={!canStart}
         onClick={onStart}
@@ -271,7 +271,7 @@ function ActiveCard({
   const paused = session.status === FocusSessionStatus.paused;
   const lastReason = latestInterruptionReason(session);
   return (
-    <section className="m3-card" style={{ padding: 20 }}>
+    <section className="m3-card primary-card motion-card" style={{ padding: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }} className="m3-body-md">
         <Mi
           name={paused ? "pause_circle" : "adjust"}
@@ -333,7 +333,7 @@ function ActiveCard({
       )}
       <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
         <button
-          className={paused ? "m3-filled-btn full" : "m3-filled-btn full"}
+          className={paused ? "m3-filled-btn full motion-feedback" : "m3-filled-btn full motion-feedback"}
           onClick={paused ? onResume : onPause}
         >
           <Mi name={paused ? "play_arrow" : "pause"} size={18} /> {paused ? "继续" : "暂停"}
@@ -354,7 +354,7 @@ function ActiveCard({
 function FinishedCard({ session, onClose }: { session: FullFocusSession; onClose: () => void }) {
   const completed = session.status === FocusSessionStatus.completed;
   return (
-    <section className="m3-card">
+    <section className="m3-card motion-card">
       <div className="m3-list-tile" style={{ padding: "10px 8px 10px 18px" }}>
         <span className="m3-tile-leading"><span className="m3-avatar"><Mi name={completed ? "check" : "stop"} size={20} /></span></span>
         <span className="m3-tile-body">
@@ -390,7 +390,7 @@ function FocusMetric({ label, value, unit }: { label: string; value: string; uni
 
 function TodaySummaryCard({ focusedMinutes, completedCount }: { focusedMinutes: number; completedCount: number }) {
   return (
-    <section className="m3-card" style={{ padding: 18, display: "flex", alignItems: "center" }}>
+    <section className="m3-card motion-card" style={{ padding: 18, display: "flex", alignItems: "center" }}>
       <div style={{ flex: 1 }}>
         <FocusMetric label="今日专注" value={String(focusedMinutes)} unit="分钟" />
       </div>
@@ -407,7 +407,7 @@ function TodaySummaryCard({ focusedMinutes, completedCount }: { focusedMinutes: 
 function RecentHistoryCard({ history }: { history: FullFocusSession[] }) {
   const recent = history.slice(0, 5);
   return (
-    <section className="m3-card" style={{ padding: "8px 0" }}>
+    <section className="m3-card motion-card" style={{ padding: "8px 0" }}>
       <p style={{ padding: "10px 18px 8px", fontSize: 18, fontWeight: 700 }}>最近记录</p>
       {recent.length === 0 ? (
         <p className="m3-body-md" style={{ padding: "4px 18px 14px" }}>
@@ -415,7 +415,7 @@ function RecentHistoryCard({ history }: { history: FullFocusSession[] }) {
         </p>
       ) : (
         recent.map((session) => (
-          <div className="m3-list-tile" key={session.id}>
+          <div className="m3-list-tile compact-item" key={session.id}>
             <span className="m3-tile-leading">
               <Mi name={session.status === FocusSessionStatus.completed ? "check_circle" : "timelapse"} />
             </span>
@@ -445,7 +445,7 @@ function KaoyanTodayCard({ onOpen }: { onOpen: () => void }) {
   const dueToday = reviewStats(reviewItems, today).dueToday;
   const countdown = days > 0 ? `距初试 ${days} 天` : "初试已到";
   return (
-    <section className="m3-card">
+    <section className="m3-card motion-card">
       <button className="m3-list-tile" type="button" onClick={onOpen} aria-label={`今日考研 ${countdown} · 待复习 ${dueToday}`}>
         <span className="m3-tile-leading"><span className="m3-avatar"><Mi name="school" /></span></span>
         <span className="m3-tile-body">
@@ -632,7 +632,7 @@ function HomeHero({
 
 function WorkspaceIntro({ onOpenSearch }: { onOpenSearch: () => void }) {
   return (
-    <section className="m3-card" style={{ padding: 24 }}>
+    <section className="m3-card motion-card" style={{ padding: 24 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <Mi name="filter_center_focus" className="fb-primary-color" />
         <h2 className="m3-title-lg" style={{ fontWeight: 800 }}>BEID</h2>
@@ -952,8 +952,8 @@ export function FocusDashboard({ onOpenStatistics }: { onOpenStatistics: () => v
       />
       <div style={cardsStyle}>{timer.ready ? (
         <>
-          {continueCard}
           {coreCards}
+          {continueCard}
         </>
       ) : (
         <section className="m3-card" style={{ padding: 32, display: "grid", placeItems: "center" }}>

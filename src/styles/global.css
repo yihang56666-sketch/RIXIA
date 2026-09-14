@@ -5710,3 +5710,73 @@ html.fb-player-active-fullscreen .fb-player-page { overflow: hidden; }
     animation: none !important;
   }
 }
+
+/* ---------- Mature layout and motion ---------- */
+
+.primary-card {
+  border-radius: 18px;
+  padding: 20px;
+  background: color-mix(in srgb, var(--m3-surface-container-high, #fff) 96%, transparent);
+  border: 1px solid color-mix(in srgb, var(--m3-outline-variant, #cac4d0) 48%, transparent);
+  box-shadow: 0 14px 36px rgba(9, 14, 30, 0.1);
+}
+
+.compact-item {
+  min-height: 44px;
+  display: grid;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--m3-surface-container-low, #f7f7fa) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--m3-outline-variant, #cac4d0) 34%, transparent);
+}
+
+.motion-rise {
+  animation: fadeUp 0.22s var(--ease-out, ease) both;
+}
+
+.motion-card {
+  animation: fadeUp 0.3s var(--ease-out, ease) both;
+}
+
+.motion-dialog {
+  animation: popIn 0.24s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) both;
+}
+
+.motion-feedback {
+  transition: transform 140ms var(--ease-out, ease), filter 140ms var(--ease-out, ease);
+}
+
+.motion-feedback:active {
+  transform: scale(0.98);
+}
+
+.launch-focus {
+  width: 4px;
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 50%;
+  background: var(--focubili-blue, #2563eb);
+  opacity: 0;
+  animation: launchFocus 0.54s var(--ease-apple, cubic-bezier(0.32, 0.72, 0, 1)) 0.22s both;
+}
+
+@keyframes launchFocus {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-card,
+  .motion-rise,
+  .motion-dialog,
+  .launch-focus {
+    animation: none !important;
+  }
+}
