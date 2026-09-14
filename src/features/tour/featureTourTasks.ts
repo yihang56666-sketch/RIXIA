@@ -1,6 +1,6 @@
 import type { ViewKey } from "../../types";
 
-export type TourTaskId = "watch" | "focus" | "review" | "organize" | "backup";
+export type TourTaskId = "watch" | "focus" | "review" | "organize" | "backup" | "danmaku";
 
 export interface TourStep {
   view: ViewKey;
@@ -39,6 +39,29 @@ export const TOUR_TASKS: Record<TourTaskId, TourStep[]> = {
       title: "弹幕随时可开关",
       description: "点常驻弹幕按钮控制显示。",
       target: "player-danmaku-toggle",
+    },
+  ],
+  danmaku: [
+    {
+      view: "bilibili-player",
+      label: "弹幕",
+      title: "打开或关闭弹幕",
+      description: "点常驻弹幕按钮，把弹幕切到你喜欢的状态。",
+      target: "player-danmaku-toggle",
+    },
+    {
+      view: "bilibili-player",
+      label: "弹幕",
+      title: "打开学习模式",
+      description: "点弹幕学习按钮，查看当前片段的问题和时间点。",
+      target: "player-danmaku-study",
+    },
+    {
+      view: "bilibili-player",
+      label: "弹幕",
+      title: "看高信号摘要",
+      description: "学习面板会把提问和时间点放在最前面。",
+      target: "danmaku-study-body",
     },
   ],
   focus: [

@@ -19,13 +19,13 @@ export function FeatureMapDialog({ open, onClose, onStartTour }: FeatureMapDialo
         className="feature-map-card"
         role="dialog"
         aria-modal="true"
-        aria-label="功能地图"
+        aria-label="教学中心"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="feature-map-head">
           <div>
-            <h2>功能地图</h2>
-            <p>先看要做什么，再点对应功能。</p>
+            <h2>教学中心</h2>
+            <p>先看要做什么，再点对应功能开始教学或直达页面。</p>
           </div>
           <button className="feature-map-close" onClick={onClose} aria-label="关闭功能地图">
             <X size={16} />
