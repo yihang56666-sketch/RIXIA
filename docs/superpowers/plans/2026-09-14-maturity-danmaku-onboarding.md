@@ -1,6 +1,6 @@
 # Maturity, Danmaku, And Onboarding Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make danmaku a study signal, unify the mature visual system, and expand dynamic teaching to the core workflows.
 
@@ -16,7 +16,7 @@
 - Create: `src/lib/bilibili/danmakuStudyModel.ts`
 - Test: `src/lib/bilibili/danmakuStudyModel.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -81,12 +81,12 @@ describe("buildDanmakuStudySummary", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/lib/bilibili/danmakuStudyModel.test.ts`
 Expected: FAIL because `danmakuStudyModel.ts` does not exist.
 
-- [ ] **Step 3: Implement the model**
+- [x] **Step 3: Implement the model**
 
 ```ts
 import type { DanmakuEntry, DanmakuPreferences } from "./types";
@@ -193,12 +193,12 @@ export function buildDanmakuStudySummary(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/lib/bilibili/danmakuStudyModel.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/bilibili/danmakuStudyModel.ts src/lib/bilibili/danmakuStudyModel.test.ts
@@ -211,7 +211,7 @@ git commit -m "feat(danmaku): add study signal model"
 - Create: `src/features/bilibili/DanmakuStudyPanel.tsx`
 - Test: `src/features/bilibili/DanmakuStudyPanel.test.tsx`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```tsx
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -273,12 +273,12 @@ describe("DanmakuStudyPanel", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/features/bilibili/DanmakuStudyPanel.test.tsx`
 Expected: FAIL because `DanmakuStudyPanel` does not exist.
 
-- [ ] **Step 3: Implement the panel**
+- [x] **Step 3: Implement the panel**
 
 ```tsx
 import { X } from "lucide-react";
@@ -365,12 +365,12 @@ export function DanmakuStudyPanel({
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/features/bilibili/DanmakuStudyPanel.test.tsx`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/bilibili/DanmakuStudyPanel.tsx src/features/bilibili/DanmakuStudyPanel.test.tsx
@@ -383,7 +383,7 @@ git commit -m "feat(danmaku): add study panel"
 - Modify: `src/features/bilibili/BilibiliPlayerView.tsx`
 - Modify: `src/styles/global.css`
 
-- [ ] **Step 1: Add state and import**
+- [x] **Step 1: Add state and import**
 
 In `BilibiliPlayerView.tsx`, add the import near the other player components:
 
@@ -398,7 +398,7 @@ const [showStudy, setShowStudy] = useState(false);
 const [studyStrength, setStudyStrength] = useState<"standard" | "high">("standard");
 ```
 
-- [ ] **Step 2: Add the study entry and panel**
+- [x] **Step 2: Add the study entry and panel**
 
 Next to the existing danmaku settings button in the player topbar, add:
 
@@ -432,7 +432,7 @@ After the existing `showDanmakuCoach` block, add:
 
 Also import `GraduationCap` from `lucide-react`.
 
-- [ ] **Step 3: Add CSS**
+- [x] **Step 3: Add CSS**
 
 Append to `global.css`:
 
@@ -543,12 +543,12 @@ Append to `global.css`:
 }
 ```
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run: `npx vitest run src/features/bilibili/DanmakuStudyPanel.test.tsx src/lib/bilibili/danmakuStudyModel.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/bilibili/BilibiliPlayerView.tsx src/styles/global.css
@@ -561,7 +561,7 @@ git commit -m "feat(danmaku): integrate study mode into player"
 - Modify: `src/features/bilibili/FocusDashboard.tsx`
 - Modify: `src/styles/global.css`
 
-- [ ] **Step 1: Reorder home cards by primary intent**
+- [x] **Step 1: Reorder home cards by primary intent**
 
 In `FocusDashboard`, update the mobile `coreCards` order so the active/ready focus card is visually first when present, followed by continue learning:
 
@@ -624,7 +624,7 @@ Also update the mobile cards container to use:
 </div>
 ```
 
-- [ ] **Step 2: Unify motion and compact surfaces**
+- [x] **Step 2: Unify motion and compact surfaces**
 
 Append to `global.css`:
 
@@ -666,7 +666,7 @@ Append to `global.css`:
 
 Then apply `primary-card` to `ContinueLearningCard`, `ReadyCard`, and `ActiveCard`; apply `compact-item` to `RecentHistoryCard` rows; apply `motion-card` to core cards and `motion-feedback` to primary action buttons.
 
-- [ ] **Step 3: Improve launch sequence**
+- [x] **Step 3: Improve launch sequence**
 
 In `App.tsx`, keep the current launch state, but change the overlay markup to include a hidden action emphasis marker:
 
@@ -707,12 +707,12 @@ Then extend the existing reduced-motion rule:
 }
 ```
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run: `npx vitest run src/features/bilibili/FocusDashboard.test.tsx src/App.theme.test.tsx src/App.storage.test.tsx`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/bilibili/FocusDashboard.tsx src/styles/global.css src/App.tsx
@@ -726,7 +726,7 @@ git commit -m "feat(ui): unify mature layout and motion"
 - Modify: `src/features/tour/featureMapCatalog.ts`
 - Modify: `src/features/tour/FeatureMapDialog.tsx`
 
-- [ ] **Step 1: Add danmaku tour steps**
+- [x] **Step 1: Add danmaku tour steps**
 
 In `featureTourTasks.ts`, update the task id type:
 
@@ -762,7 +762,7 @@ danmaku: [
 ],
 ```
 
-- [ ] **Step 2: Add danmaku to feature catalog**
+- [x] **Step 2: Add danmaku to feature catalog**
 
 In `featureMapCatalog.ts`, import `MessageSquare` from `lucide-react`, then add this entry to the existing `watch` category:
 
@@ -778,7 +778,7 @@ In `featureMapCatalog.ts`, import `MessageSquare` from `lucide-react`, then add 
 },
 ```
 
-- [ ] **Step 3: Clarify teaching copy**
+- [x] **Step 3: Clarify teaching copy**
 
 In `FeatureMapDialog.tsx`, update the dialog header and footer copy:
 
@@ -789,12 +789,12 @@ In `FeatureMapDialog.tsx`, update the dialog header and footer copy:
 
 Also change the dialog `aria-label` from `"功能地图"` to `"教学中心"`.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run: `npx vitest run src/features/tour/featureMapCatalog.test.ts src/features/tour/FeatureMapDialog.test.tsx src/features/tour/FeatureTour.test.tsx`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/tour/featureTourTasks.ts src/features/tour/featureMapCatalog.ts src/features/tour/FeatureMapDialog.tsx
@@ -806,29 +806,30 @@ git commit -m "feat(onboarding): expand teaching center"
 **Files:**
 - Verify only
 
-- [ ] **Step 1: Run full tests**
+- [x] **Step 1: Run full tests**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 2: Run type check**
+- [x] **Step 2: Run type check**
 
 Run: `npm run typecheck`
 Expected: PASS
 
-- [ ] **Step 3: Build**
+- [x] **Step 3: Build**
 
 Run: `npm run build`
 Expected: PASS
 
-- [ ] **Step 4: Cross-viewport check**
+- [x] **Step 4: Cross-viewport check**
 
 Run: `node scripts/verify-cross-viewport.mjs`
 Expected: PASS
 
-- [ ] **Step 5: Final commit**
+- [x] **Step 5: Final commit**
 
 ```bash
 git add .
 git commit -m "chore(ui): danmaku and onboarding maturity"
 ```
+
