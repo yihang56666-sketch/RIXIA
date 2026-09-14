@@ -76,7 +76,7 @@ describe("FocusStatisticsView", () => {
 
     await waitFor(() => expect(timerMock.deleteHistoryEntry).toHaveBeenCalledWith("s1"));
     expect(screen.getByRole("alertdialog", { name: "删除这条专注记录？" })).toBeInTheDocument();
-    expect(screen.getByText("删除失败，请重试。")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("删除失败，请重试。")).toBeInTheDocument());
   });
 
   it("keeps the clear confirmation open and reports failure when clearing fails", async () => {

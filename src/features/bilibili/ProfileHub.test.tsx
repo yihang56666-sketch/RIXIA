@@ -55,10 +55,10 @@ describe("ProfileHub", () => {
     );
 
     fireEvent.click(screen.getByText("功能教学"));
-    expect(screen.getByRole("dialog", { name: "功能地图" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "教学中心" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /搜索视频/ }));
 
-    expect(screen.queryByRole("dialog", { name: "功能地图" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "教学中心" })).not.toBeInTheDocument();
     expect(screen.getByText("看课1/4")).toBeInTheDocument();
     expect(screen.getByText("从首页找到入口")).toBeInTheDocument();
   });
