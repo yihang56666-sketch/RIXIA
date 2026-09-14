@@ -22,6 +22,11 @@ describe("FeatureTour", () => {
     expect(screen.getByText("真正搜你想看的内容")).toBeInTheDocument();
   });
 
+  it("starts the selected tour task", () => {
+    render(<FeatureTour initialTask="watch" />);
+    expect(screen.getByText("从首页找到入口")).toBeInTheDocument();
+  });
+
   it("advances when the user clicks the real target", () => {
     const heroSearch = document.createElement("button");
     heroSearch.dataset.tourTarget = "home-search";

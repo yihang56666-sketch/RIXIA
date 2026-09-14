@@ -4,21 +4,17 @@ import { getDailyQuote } from "../../lib/dailyQuotes";
 import { todayKey } from "../../lib/time";
 import { createTourService } from "../../lib/tourService";
 import { useAppStore } from "../../store/useAppStore";
+import { TOUR_TASKS, type TourStep, type TourTaskId } from "./featureTourTasks";
 
 export const TOUR_PALETTE_OPEN_EVENT = "beid:tour-open-palette";
 export const TOUR_PALETTE_OPENED_EVENT = "beid:tour-palette-opened";
 export const TOUR_REPLAY_EVENT = "beid:tour-replay";
 
-interface TourStep {
-  view: "focus-dashboard" | "search" | "library" | "today" | "settings";
-  label: string;
-  title: string;
-  description: string;
-  target?: string;
+interface TourStepWithPalette extends TourStep {
   openPalette?: boolean;
 }
 
-const TOUR_STEPS: TourStep[] = [
+const TOUR_STEPS: TourStepWithPalette[] = [
   {
     view: "focus-dashboard",
     label: "欢迎",
@@ -114,17 +110,22 @@ export function restartTourPlayback(storage: Storage = localStorage): void {
   window.dispatchEvent(new Event(TOUR_REPLAY_EVENT));
 }
 
-export function FeatureTour() {
+export function FeatureTour({ initialTask }: { initialTask?: TourTaskId }) {
   const service = useMemo(() => createTourService(), []);
   const setView = useAppStore((state) => state.setView);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [spotlight, setSpotlight] = useState<DOMRect | null>(null);
   const advanceRef = useRef<() => void>(() => {});
+  const steps: TourStep[] = initialTask ? TOUR_TASKS[initialTask] : TOUR_STEPS;
 
   useEffect(() => {
+    if (initialTask) {
+      setActiveIndex(0);
+      return;
+    }
     const state = service.load();
-    setActiveIndex(service.isFinished(state, TOUR_STEPS.length) ? null : nextStep(state.completedSteps, TOUR_STEPS.length));
-  }, [service]);
+    setActiveIndex(service.isFinished(state, steps.length) ? null : nextStep(state.completedSteps, steps.length));
+  }, [initialTask, service, steps]);
 
   // 「我的 → 功能教学」随时可以重播巡览：清除完成/跳过状态并从第一步开始。
   useEffect(() => {
@@ -140,24 +141,24 @@ export function FeatureTour() {
     setActiveIndex((current) => {
       if (current === null) return null;
       const next = current + 1;
-      if (next >= TOUR_STEPS.length) {
+      if (next >= steps.length) {
         service.dismiss();
         return null;
       }
       service.completeStep(current);
-      const nextStep = TOUR_STEPS[next];
+      const nextStep = steps[next];
       setView(nextStep.view);
       if (nextStep.openPalette) {
       window.dispatchEvent(new Event(TOUR_PALETTE_OPEN_EVENT));
       }
       return next;
     });
-  }, [service, setView]);
+  }, [initialTask, service, setView, steps]);
   advanceRef.current = advance;
 
   useEffect(() => {
     if (activeIndex === null) return;
-    const step = TOUR_STEPS[activeIndex];
+    const step = steps[activeIndex];
     setView(step.view);
     const updateSpotlight = () => {
       setSpotlight(step.target ? elementRect(step.target) : null);
@@ -169,12 +170,12 @@ export function FeatureTour() {
       window.clearTimeout(timer);
       window.removeEventListener("resize", updateSpotlight);
     };
-  }, [activeIndex, setView]);
+  }, [activeIndex, setView, steps]);
 
   // 走到目标上的真实按钮/输入框时，点击目标也算一次"我完成了"。
   useEffect(() => {
     if (activeIndex === null) return;
-    const step = TOUR_STEPS[activeIndex];
+    const step = steps[activeIndex];
     if (!step.target || step.openPalette) return;
     const advance = advanceRef.current;
     const onClick = (event: MouseEvent) => {
@@ -191,18 +192,18 @@ export function FeatureTour() {
     };
     document.addEventListener("click", onClick);
     return () => document.removeEventListener("click", onClick);
-  }, [activeIndex]);
+  }, [activeIndex, steps]);
 
   // 命令面板由 Shell 打开；真实打开后这一步行成为"已看到"。
   useEffect(() => {
-    if (activeIndex === null || !TOUR_STEPS[activeIndex]?.openPalette) return undefined;
+  if (activeIndex === null || !(steps[activeIndex] as TourStepWithPalette)?.openPalette) return undefined;
     const onOpened = () => advanceRef.current();
     window.addEventListener(TOUR_PALETTE_OPENED_EVENT, onOpened);
     return () => window.removeEventListener(TOUR_PALETTE_OPENED_EVENT, onOpened);
   }, [activeIndex]);
 
   if (activeIndex === null) return null;
-  const step = TOUR_STEPS[activeIndex];
+  const step = steps[activeIndex];
   const quote = getDailyQuote(todayKey());
 
   return (
@@ -228,7 +229,7 @@ export function FeatureTour() {
       >
         <div className="feature-tour-heading">
           <Sparkles size={16} />
-          <span>{step.label}{activeIndex + 1}/{TOUR_STEPS.length}</span>
+          <span>{step.label}{activeIndex + 1}/{steps.length}</span>
         </div>
         <h2>{step.title}</h2>
         <p>{step.description}</p>
@@ -250,7 +251,7 @@ export function FeatureTour() {
             暂时不看
           </button>
           <button className="feature-tour-next" onClick={advance}>
-            {activeIndex === 0 ? "开始巡览" : activeIndex === TOUR_STEPS.length - 1 ? "完成" : "下一步"}
+            {activeIndex === 0 ? "开始巡览" : activeIndex === steps.length - 1 ? "完成" : "下一步"}
           </button>
         </div>
       </aside>
