@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { AboutView } from "./AboutView";
 import { AppUpdateProvider } from "./AppUpdateContext";
 import { useAppStore } from "../../store/useAppStore";
+import { APP_VERSION } from "../../lib/bilibili/miscServices";
 
 describe("AboutView", () => {
   afterEach(() => {
@@ -15,7 +16,7 @@ describe("AboutView", () => {
   it("shows the identity, version and no upstream attribution", () => {
     render(<AboutView />);
     expect(screen.getByRole("heading", { name: /^BEID$/ })).toBeInTheDocument();
-    expect(screen.getByText(/版本 0\.3\.10/)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`版本 ${APP_VERSION.replaceAll(".", "\\.")}`))).toBeInTheDocument();
     // 个人项目：不展示任何上游/借鉴来源信息
     expect(screen.queryByText(/FocuBili/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /GitHub/ })).not.toBeInTheDocument();

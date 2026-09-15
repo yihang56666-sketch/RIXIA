@@ -868,6 +868,17 @@ describe("BilibiliPlayerView", () => {
     expect(document.querySelector(".fb-player-details")?.querySelector("button[aria-label='进入全屏']")).not.toBeNull();
   });
 
+  it("shows a prominent fullscreen play action first in the details actions", async () => {
+    render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
+    await screen.findByRole("button", { name: "专注观看" });
+
+    const firstAction = document.querySelector(".fb-player-actions > :first-child");
+    expect(firstAction).not.toBeNull();
+    expect(firstAction).toHaveClass("fb-player-details-fullscreen");
+    expect(firstAction).toHaveTextContent("全屏播放");
+    expect(firstAction).toHaveAttribute("data-tour-target", "player-fullscreen");
+  });
+
   it("keeps a persistent danmaku toggle outside the scrollable control row", async () => {
     render(<BilibiliPlayerView bvid="BV1xx411c7mD" />);
     await screen.findByText("这个视频还没有弹幕");
