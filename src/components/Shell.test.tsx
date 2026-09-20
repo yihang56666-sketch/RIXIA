@@ -112,7 +112,7 @@ describe("Shell", () => {
     render(<Shell><div>内容</div></Shell>);
 
     const button = screen.getByRole("button", { name: "回到正在看的视频：线代强化第3讲" });
-    expect(button).toHaveTextContent("12:34");
+    expect(button).toHaveAttribute("title", "回到正在看的视频：线代强化第3讲");
 
     fireEvent.click(button);
     const state = useAppStore.getState();

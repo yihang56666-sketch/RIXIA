@@ -14,16 +14,6 @@ import { useAppStore } from "../store/useAppStore";
 import type { ViewKey } from "../types";
 import { TOUR_PALETTE_OPEN_EVENT } from "../features/tour/FeatureTour";
 
-function formatClock(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
-  const total = Math.floor(seconds);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const core = `${m}:${String(s).padStart(2, "0")}`;
-  return h > 0 ? `${h}:${core.padStart(4, "0")}` : core;
-}
-
 const PRIMARY_NAV: Array<{ view: ViewKey; label: string; icon: typeof Home }> = [
   { view: "focus-dashboard", label: "首页", icon: Home },
   { view: "search", label: "搜索", icon: Search },
@@ -249,10 +239,6 @@ export function Shell({ children }: { children: ReactNode }) {
           title={`回到正在看的视频：${nowPlaying.title}`}
         >
           <MonitorPlay size={17} strokeWidth={1.9} />
-          <span className="focubili-now-playing-text">
-            <strong>{nowPlaying.title}</strong>
-            <em>看到 {formatClock(nowPlaying.seconds)} · 一键回到</em>
-          </span>
         </button>
       )}
       <CaptureButton />

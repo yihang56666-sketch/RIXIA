@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowLeft,
   ChevronLeft,
@@ -2305,6 +2305,10 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     </div>
   );
 
+  const seekFillPercent = duration > 0
+    ? Math.min(100, Math.max(0, ((scrubTime ?? currentTime) / duration) * 100))
+    : 0;
+
   return (
     <div className="fb-player-page" ref={playerPageRef} data-player-fullscreen={fullscreen ? "1" : "0"} data-seek-skin={seekBarSkin}>
       <div
@@ -2550,6 +2554,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             <input
               type="range"
               className="player-seek"
+              style={{ "--seek-fill": `${seekFillPercent}%` } as CSSProperties}
               min={0}
               max={duration}
               value={scrubTime ?? currentTime}

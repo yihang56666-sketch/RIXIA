@@ -242,6 +242,19 @@ function KaoyanDailyPlanCard({ today }: { today: string }) {
       <span className={percent === 100 && items.length > 0 ? "kaoyan-chip done" : "kaoyan-chip accent"}>{percent}% 今日完成</span>
     </div>
     <ProgressBar percent={percent} color={percent === 100 && items.length > 0 ? "#43A88B" : "#5B8DEF"} />
+    <label className="kaoyan-daily-note">
+      <span className="muted">今日进度（学到哪、下次从哪继续）</span>
+      <textarea
+        className="field"
+        rows={4}
+        value={noteDraft}
+        placeholder="例：高数刷完第 3 章例题，明天从 3.4 继续…"
+        onChange={(event) => {
+          noteDirtyRef.current = true;
+          setNoteDraft(event.target.value);
+        }}
+      />
+    </label>
     <div className="kaoyan-daily-items">
       {items.map((item) => {
         const done = entry.done.includes(item.id);
@@ -272,19 +285,6 @@ function KaoyanDailyPlanCard({ today }: { today: string }) {
         </button>
       </div>
     )}
-    <label className="kaoyan-daily-note">
-      <span className="muted">今日进度（学到哪、下次从哪继续）</span>
-      <textarea
-        className="field"
-        rows={3}
-        value={noteDraft}
-        placeholder="例：高数刷完第 3 章例题，明天从 3.4 继续…"
-        onChange={(event) => {
-          noteDirtyRef.current = true;
-          setNoteDraft(event.target.value);
-        }}
-      />
-    </label>
     <div className="row" style={{ justifyContent: "space-between", marginTop: 8, gap: 8 }}>
       <span className="muted" style={{ fontSize: 12 }}>
         进度自动保存{lastDate && lastEntry?.note.trim() ? ` · 上次（${lastDate.slice(5)}）：${lastEntry.note.trim().slice(0, 26)}` : ""}

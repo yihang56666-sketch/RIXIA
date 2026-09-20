@@ -561,6 +561,7 @@ function HomeHero({
   const fallOffset = scrollOffset * HOME_HERO_FALL_RATIO;
   return (
     <div
+      className="fb-home-hero"
       style={{
         height,
         position: "relative",
@@ -577,12 +578,14 @@ function HomeHero({
           transform: `translateY(${fallOffset}px)`,
           display: "flex",
           flexDirection: "column",
-          padding: "18px 24px 12px",
+          padding: "20px 24px 18px",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <h1 className="m3-headline-sm" style={{ fontWeight: 800 }}>BEID</h1>
-          <span style={{ flex: 1 }} />
+        <div className="fb-home-masthead">
+          <div>
+            <h1 className="m3-headline-sm" style={{ fontWeight: 800 }}>BEID</h1>
+            <span>今日更新</span>
+          </div>
           <button
             className="m3-icon-btn-filled"
             onClick={onOpenProfile}
@@ -592,36 +595,39 @@ function HomeHero({
             {profileAvatarUrl ? (
               <img src={profileAvatarUrl} alt="" referrerPolicy="no-referrer" />
             ) : (
-              <Mi name="person" />
-            )}
-          </button>
+            <Mi name="person" />
+          )}
+        </button>
         </div>
-        <div style={{ flex: 1 }} />
-        <h2 className="m3-headline-md" style={{ textAlign: "center", fontWeight: 500 }}>
-          今天要学点什么？
-        </h2>
-        <p
-          className="fb-home-quote"
-          data-testid="daily-quote"
-          data-tour-target="daily-quote"
-          aria-label="每日语录"
-        >
-          <Mi name="format_quote" size={14} />
-          <span>{getDailyQuote(todayKey()).text}</span>
-        </p>
-        <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
-          <button
-            className="m3-filled-btn"
-            style={{ minWidth: 160, height: 58, borderRadius: 30, padding: "0 28px" }}
-            onClick={onOpenSearch}
-            data-tour-target="home-search"
-          >
-            开始搜索
-          </button>
-        </div>
-        <div style={{ flex: 1 }} />
-        <div style={{ display: "flex", justifyContent: "center", paddingBottom: 4 }}>
-          <Mi name="keyboard_double_arrow_up" size={34} />
+        <div className="fb-home-editorial">
+          <div className="fb-home-editorial-copy">
+            <h2 className="m3-headline-md" style={{ fontWeight: 650 }}>今天要学点什么？</h2>
+            <p>从一个明确的视频开始，把注意力留给真正想完成的事。</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <button
+                className="m3-filled-btn"
+                style={{ minWidth: 160, height: 52, borderRadius: 26, padding: "0 26px" }}
+                onClick={onOpenSearch}
+                data-tour-target="home-search"
+              >
+                开始搜索
+              </button>
+            </div>
+            <p
+              className="fb-home-quote"
+              data-testid="daily-quote"
+              data-tour-target="daily-quote"
+              aria-label="每日语录"
+            >
+              <Mi name="format_quote" size={14} />
+              <span>{getDailyQuote(todayKey()).text}</span>
+            </p>
+          </div>
+          <aside className="fb-home-featured">
+            <span>今日节奏</span>
+            <strong>看一节，专注一段</strong>
+            <p>把视频、笔记和计时收在同一条线上。</p>
+          </aside>
         </div>
       </div>
     </div>
@@ -632,22 +638,36 @@ function HomeHero({
 
 function WorkspaceIntro({ onOpenSearch }: { onOpenSearch: () => void }) {
   return (
-    <section className="m3-card motion-card" style={{ padding: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <Mi name="filter_center_focus" className="fb-primary-color" />
-        <h2 className="m3-title-lg" style={{ fontWeight: 800 }}>BEID</h2>
+    <section className="fb-home-editorial" aria-label="今日更新">
+      <div className="fb-home-editorial-copy">
+        <div className="fb-home-masthead">
+          <div>
+            <h2 className="m3-title-lg" style={{ fontWeight: 800 }}>BEID</h2>
+            <span>今日更新</span>
+          </div>
+        </div>
+        <h3 className="m3-headline-md" style={{ fontWeight: 650 }}>今天要学点什么？</h3>
+        <p>从一个明确的视频开始，把注意力留给真正想完成的事。</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button
+            className="m3-filled-btn"
+            style={{ minWidth: 176, height: 52, borderRadius: 26, padding: "0 26px" }}
+            onClick={onOpenSearch}
+            data-tour-target="home-search"
+          >
+            <Mi name="search" size={18} /> 开始搜索
+          </button>
+        </div>
+        <p className="fb-home-quote" data-testid="daily-quote" data-tour-target="daily-quote">
+          <Mi name="format_quote" size={15} />
+          <span>{getDailyQuote(todayKey()).text}</span>
+        </p>
       </div>
-      <h3 className="m3-headline-md" style={{ fontWeight: 600, marginTop: 42 }}>今天要学点什么？</h3>
-      <p className="m3-body-lg fb-on-surface-variant" style={{ marginTop: 12 }}>
-        从一个明确的视频开始，把注意力留给真正想完成的事。
-      </p>
-      <button className="m3-filled-btn" style={{ marginTop: 28, minWidth: 176, height: 52 }} onClick={onOpenSearch}>
-        <Mi name="search" size={18} /> 开始搜索
-      </button>
-      <p className="fb-dashboard-quote" data-testid="daily-quote" data-tour-target="daily-quote">
-        <Mi name="format_quote" size={15} />
-        <span>{getDailyQuote(todayKey()).text}</span>
-      </p>
+      <aside className="fb-home-featured">
+        <span>今日节奏</span>
+        <strong>看一节，专注一段</strong>
+        <p>把视频、笔记和计时收在同一条线上。</p>
+      </aside>
     </section>
   );
 }
@@ -686,8 +706,8 @@ export function FocusDashboard({ onOpenStatistics }: { onOpenStatistics: () => v
 
   const needsCompactHeight = windowSize.width >= 600 || windowSize.height < 648;
   const heroHeight = needsCompactHeight
-    ? Math.min(720, Math.max(280, windowSize.height - 64))
-    : Math.min(760, Math.max(560, windowSize.height - 88));
+    ? Math.min(420, Math.max(260, windowSize.height - 64))
+    : Math.min(460, Math.max(300, windowSize.height - 88));
 
   useEffect(() => {
     let active = true;
