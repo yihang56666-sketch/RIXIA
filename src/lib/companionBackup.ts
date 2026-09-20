@@ -12,6 +12,11 @@ export const COMPANION_RESTORED_EVENT = "beid:companion-restored";
 /** 分P续播进度键前缀：续播位置不在主 store，按前缀整组采集。 */
 const PLAYBACK_PROGRESS_PREFIX = "focubili.playback-progress.v1:";
 const SEARCH_HISTORY_KEY = "rixia_search_history_v1";
+const DANMAKU_PREFERENCES_KEY = "rixia_danmaku_preferences_v1";
+const PLAYBACK_PREFERENCES_KEY = "rixia_playback_preferences_v1";
+const FOCUS_SESSIONS_KEY = "rixia_focus_sessions_v1";
+const BILIBILI_COOKIE_KEY = "rixia_bilibili_cookie_v1";
+const BILIBILI_AUTH_KEY = "rixia_bilibili_auth_v1";
 
 /**
  * 兄弟存储的备份采集层。主 store（rixia-v1）之外，专注历史、视频笔记、
@@ -56,6 +61,8 @@ function readSearchHistory(storage: Storage): string[] {
 
 /** 导出：从当前设备存储读取全部兄弟数据。损坏键按空数据处理。 */
 export function exportCompanionBackup(storage: Storage = localStorage): CompanionBackupData {
+  const focusSessions = readJson(storage, FOCUS_SESSIONS_KEY);
+  const cookie = storage.getItem(BILIBILI_COOKIE_KEY);
   return {
     focusActiveSession: readJson(storage, ACTIVE_KEY),
     focusHistory: asArray(readJson(storage, FOCUS_HISTORY_KEY)),
@@ -65,6 +72,11 @@ export function exportCompanionBackup(storage: Storage = localStorage): Companio
     localWatchHistory: asArray(readJson(storage, LOCAL_WATCH_HISTORY_KEY)),
     playbackProgress: readPlaybackProgress(storage),
     searchHistory: readSearchHistory(storage),
+    danmakuPreferences: readJson(storage, DANMAKU_PREFERENCES_KEY),
+    playbackPreferences: readJson(storage, PLAYBACK_PREFERENCES_KEY),
+    focusSessions: Array.isArray(focusSessions) ? focusSessions : null,
+    bilibiliCookie: typeof cookie === "string" && cookie.trim() ? cookie : null,
+    bilibiliAuth: readJson(storage, BILIBILI_AUTH_KEY),
   };
 }
 
@@ -89,6 +101,8 @@ export function sanitizeCompanionBackup(input: unknown): CompanionBackupData | n
         )
       : null;
   const rawSearch = value.searchHistory;
+  const rawFocusSessions = value.focusSessions;
+  const rawCookie = value.bilibiliCookie;
   return {
     focusActiveSession: typeof active === "object" && active !== null ? active : null,
     focusHistory: asArray(value.focusHistory),
@@ -100,6 +114,15 @@ export function sanitizeCompanionBackup(input: unknown): CompanionBackupData | n
     searchHistory: Array.isArray(rawSearch)
       ? rawSearch.filter((item): item is string => typeof item === "string")
       : null,
+    danmakuPreferences: typeof value.danmakuPreferences === "object" && value.danmakuPreferences !== null
+      ? value.danmakuPreferences
+      : null,
+    playbackPreferences: typeof value.playbackPreferences === "object" && value.playbackPreferences !== null
+      ? value.playbackPreferences
+      : null,
+    focusSessions: Array.isArray(rawFocusSessions) ? rawFocusSessions : null,
+    bilibiliCookie: typeof rawCookie === "string" && rawCookie.trim() ? rawCookie : null,
+    bilibiliAuth: typeof value.bilibiliAuth === "object" && value.bilibiliAuth !== null ? value.bilibiliAuth : null,
   };
 }
 
@@ -140,6 +163,21 @@ export function importCompanionBackup(
   }
   if (data.searchHistory !== null) {
     writes.push([SEARCH_HISTORY_KEY, JSON.stringify(data.searchHistory)]);
+  }
+  if (data.danmakuPreferences !== null) {
+    writes.push([DANMAKU_PREFERENCES_KEY, JSON.stringify(data.danmakuPreferences)]);
+  }
+  if (data.playbackPreferences !== null) {
+    writes.push([PLAYBACK_PREFERENCES_KEY, JSON.stringify(data.playbackPreferences)]);
+  }
+  if (data.focusSessions !== null) {
+    writes.push([FOCUS_SESSIONS_KEY, JSON.stringify(data.focusSessions)]);
+  }
+  if (data.bilibiliCookie !== null) {
+    writes.push([BILIBILI_COOKIE_KEY, data.bilibiliCookie]);
+  }
+  if (data.bilibiliAuth !== null) {
+    writes.push([BILIBILI_AUTH_KEY, JSON.stringify(data.bilibiliAuth)]);
   }
   const failedKeys: string[] = [];
   for (const [key, raw] of writes) {

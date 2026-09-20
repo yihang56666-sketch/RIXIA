@@ -29,7 +29,7 @@ vi.mock("../../store/useAppStore", () => ({
 
 vi.mock("../../lib/bilibili/services", () => ({
   createPlaybackPreferencesService: () => ({
-    load: vi.fn().mockResolvedValue({ enableDoubleTapSeek: true, wifiDefaultQuality: 80, mobileDefaultQuality: 64, autoplayNext: false, resumeFromLastPosition: true, defaultQuality: 80, defaultVolume: 1, playbackRate: 1 }),
+    load: vi.fn().mockResolvedValue({ doubleTapAction: "toggle", seekBarSkin: "classic", wifiDefaultQuality: 80, mobileDefaultQuality: 64, autoplayNext: false, resumeFromLastPosition: true, defaultQuality: 80, defaultVolume: 1, playbackRate: 1 }),
     save,
   }),
   createDanmakuPreferencesService: () => ({
@@ -76,7 +76,8 @@ describe("SettingsView playback preferences", () => {
     expect(screen.queryAllByRole("option", { name: /128/ })).toHaveLength(0);
     expect(resume).toHaveAttribute("aria-checked", "true");
     fireEvent.click(resume);
-    fireEvent.click(screen.getByRole("switch", { name: "双击快进快退" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "双击视频画面行为" }), { target: { value: "seek" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "播放进度条皮肤" }), { target: { value: "neon" } });
     fireEvent.change(screen.getByRole("combobox", { name: "Wi-Fi 默认清晰度" }), { target: { value: "64" } });
     fireEvent.change(screen.getByRole("combobox", { name: "移动网络默认清晰度" }), { target: { value: "32" } });
     fireEvent.change(screen.getByRole("combobox", { name: "默认倍速" }), { target: { value: "1.5" } });
@@ -84,7 +85,8 @@ describe("SettingsView playback preferences", () => {
 
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
       resumeFromLastPosition: false,
-      enableDoubleTapSeek: false,
+      doubleTapAction: "seek",
+      seekBarSkin: "neon",
       wifiDefaultQuality: 64,
       mobileDefaultQuality: 32,
       playbackRate: 1.5,

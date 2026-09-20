@@ -151,6 +151,11 @@ describe("persisted state v2 migration", () => {
       localWatchHistory: [],
       playbackProgress: { "focubili.playback-progress.v1:BV1:100": '{"positionSeconds":42}' },
       searchHistory: ["高数"],
+      danmakuPreferences: null,
+      playbackPreferences: null,
+      focusSessions: null,
+      bilibiliCookie: null,
+      bilibiliAuth: null,
     });
   });
 

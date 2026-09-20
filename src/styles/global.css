@@ -1941,6 +1941,59 @@ textarea.field { min-height: 96px; resize: vertical; line-height: 1.6; }
   .capture-fab, .capture-popover, .capture-popover-backdrop { display: none; }
 }
 
+/* 全局"回到正在看的视频"悬浮按钮：其他页面随时一键回到上次的视频与进度。 */
+.focubili-now-playing-return {
+  position: fixed;
+  left: calc(18px + env(safe-area-inset-left));
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  max-width: min(340px, calc(100vw - 36px));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 10px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--nav-surface);
+  color: var(--focubili-ink, var(--text));
+  backdrop-filter: blur(var(--blur-nav)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--blur-nav)) saturate(1.2);
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  z-index: 34;
+  text-align: left;
+  transition: transform 0.2s var(--ease-spring, var(--ease-out)), box-shadow 0.2s var(--ease-out);
+}
+.focubili-now-playing-return:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.focubili-now-playing-return:active { transform: scale(0.97); }
+.focubili-now-playing-return svg { flex: 0 0 auto; color: var(--accent); }
+.focubili-now-playing-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.focubili-now-playing-text strong {
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.focubili-now-playing-text em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--focubili-muted, var(--muted));
+  white-space: nowrap;
+}
+
+@media (min-width: 700px) {
+  .focubili-now-playing-return { bottom: calc(24px + env(safe-area-inset-bottom)); }
+}
+
 /* 捕获弹层打开时的透明点击捕获层：点外面即可关闭 */
 .capture-popover-backdrop {
   position: fixed;
@@ -3161,6 +3214,48 @@ a.bilibili-account-row:hover { border-color: var(--accent); }
   background: var(--accent);
   cursor: pointer;
 }
+
+/* ---- 播放进度条皮肤（偏好：classic/neon/aurora/mono）---- */
+.fb-player-page[data-seek-skin="neon"] .player-seek {
+  height: 6px;
+  background: linear-gradient(90deg, var(--accent), #00e5ff);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.fb-player-page[data-seek-skin="neon"] .player-seek::-webkit-slider-thumb {
+  width: 15px;
+  height: 15px;
+  background: #ffffff;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent), 0 0 14px var(--accent);
+}
+.fb-player-page[data-seek-skin="neon"] .fb-player-mini-progress > span {
+  background: linear-gradient(90deg, var(--accent), #00e5ff);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.fb-player-page[data-seek-skin="aurora"] .player-seek {
+  height: 5px;
+  background: linear-gradient(90deg, #7c4dff, #00bfa5 55%, #64ffda);
+}
+.fb-player-page[data-seek-skin="aurora"] .player-seek::-webkit-slider-thumb {
+  width: 15px;
+  height: 15px;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(124, 77, 255, 0.35);
+}
+.fb-player-page[data-seek-skin="aurora"] .fb-player-mini-progress > span {
+  background: linear-gradient(90deg, #7c4dff, #00bfa5);
+}
+.fb-player-page[data-seek-skin="mono"] .player-seek {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.28);
+}
+.fb-player-page[data-seek-skin="mono"] .player-seek::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  background: #ffffff;
+}
+.fb-player-page[data-seek-skin="mono"] .fb-player-mini-progress > span {
+  background: #ffffff;
+}
 .player-time {
   font-variant-numeric: tabular-nums;
   font-size: 12.5px;
@@ -4242,6 +4337,8 @@ html.fb-player-active-fullscreen .fb-player-page { overflow: hidden; }
   background-repeat: no-repeat;
   z-index: 9;
 }
+/* 控制层隐藏后预览小窗没有存在意义：防止触摸残留的 hoveredFrame 让它一直挂着。 */
+.fb-player-controls-overlay[data-visible="false"] .fb-player-shot-preview { display: none; }
 .fb-player-ctl-row {
   display: flex;
   align-items: center;
@@ -4653,6 +4750,118 @@ html.fb-player-active-fullscreen .fb-player-page { overflow: hidden; }
 }
 .fb-player-popup .field-row select option { color: #172033; }
 
+/* ---- 本地字幕导入 ---- */
+.fb-subtitle-import-row input[type="file"] {
+  max-width: 170px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.fb-subtitle-hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ---- 评论导入面板 ---- */.fb-player-comments { width: min(360px, calc(100% - 24px)); }
+.fb-player-comments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fb-player-comments-head strong { font-size: 15px; }
+.fb-player-comments-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fb-player-comments-actions select {
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 12px;
+}
+.fb-player-comments-actions select option { color: #172033; }
+.fb-player-comments-import-all,
+.fb-player-comments-more {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fb-player-comments-import-all:disabled { opacity: 0.45; cursor: default; }
+.fb-player-comments-import-all:not(:disabled):hover,
+.fb-player-comments-more:hover { background: rgba(255, 255, 255, 0.2); }
+.fb-player-comments-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(340px, 50vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.fb-player-comments-hint {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12.5px;
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.fb-player-comments-hint button {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fb-player-comment {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+}
+.fb-player-comment[data-imported="1"] { opacity: 0.55; }
+.fb-player-comment-main { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.fb-player-comment-author {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.62);
+}
+.fb-player-comment-main p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.fb-player-comment-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.fb-player-comment-import {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent, #1677ff);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fb-player-comment-import:disabled { background: rgba(255, 255, 255, 0.16); cursor: default; }
+.fb-player-comments-more { justify-self: center; }
+
 /* ---- Loading / error status inside the surface ---- */
 .fb-player-status {
   position: absolute;
@@ -4891,6 +5100,20 @@ html.fb-player-active-fullscreen .fb-player-page { overflow: hidden; }
 
 .kaoyan-exam-hero { padding: 18px; }
 .kaoyan-plan-overview { padding: 16px 18px; }
+/* 每日计划与进度卡 */
+.kaoyan-daily-plan { padding: 16px 18px; }
+.kaoyan-daily-items { display: grid; gap: 6px; margin-top: 12px; }
+.kaoyan-daily-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 10px;
+  background: var(--surface-2);
+}
+.kaoyan-daily-title { flex: 1; min-width: 0; font-size: 13.5px; overflow-wrap: anywhere; }
+.kaoyan-daily-title.done { color: var(--muted); text-decoration: line-through; }
+.kaoyan-daily-item .day-check { flex: 0 0 auto; width: 26px; height: 26px; }
+.kaoyan-daily-plan .kaoyan-form { margin-top: 10px; }
+.kaoyan-daily-note { display: grid; gap: 6px; margin-top: 12px; }
+.kaoyan-daily-note textarea { width: 100%; resize: vertical; min-height: 64px; }
 .kaoyan-overview-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
 .kaoyan-overview-grid > div { min-width: 0; padding: 10px 8px; border-radius: 8px; background: var(--surface-2); text-align: center; }
 .kaoyan-overview-grid strong { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }

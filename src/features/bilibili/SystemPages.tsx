@@ -104,7 +104,7 @@ export function ProblemDiagnosticsPage() {
       lines.push(`Default quality: ${playbackPrefs.defaultQuality ?? 80}`);
       lines.push(`Playback rate: ${playbackPrefs.playbackRate ?? 1}`);
       lines.push(`Resume from last position: ${playbackPrefs.resumeFromLastPosition ?? true}`);
-      lines.push(`Enable double-tap seek: ${playbackPrefs.enableDoubleTapSeek ?? true}`);
+      lines.push(`Double-tap action: ${playbackPrefs.doubleTapAction ?? "toggle"}`);
     }
     if (cacheStats) {
       lines.push(`Cache entries: ${cacheStats.count}`);

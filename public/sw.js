@@ -1,5 +1,5 @@
 /* BEID Service Worker：应用外壳缓存，离线可安装（Windows / Android / 桌面 PWA） */
-const CACHE = "beid-shell-v5";
+const CACHE = "beid-shell-v6";
 const PRECACHE = ["/", "/index.html", "/manifest.webmanifest", "/favicon.png", "/favicon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -24,6 +24,9 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET" || !request.url.startsWith(self.location.origin)) return;
   const url = new URL(request.url);
+  // B 站本地代理响应（/bili-*）是动态数据（弹幕/搜索/接口），必须直连网络，
+  // 缓存优先会让弹幕和搜索结果永久停留在旧数据上。
+  if (url.pathname.startsWith("/bili-")) return;
   if (request.mode === "navigate" || url.pathname === "/" || url.pathname === "/index.html") {
     // 导航请求网络优先：新版本发布立即生效，离线才回退缓存外壳。
     // 缓存优先会让旧 index 引用已被新构建删除的 hash bundle，升级即白屏。

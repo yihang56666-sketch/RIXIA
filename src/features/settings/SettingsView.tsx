@@ -1,4 +1,4 @@
-import { Download, ImagePlus, RotateCcw, Upload } from "lucide-react";
+import { ClipboardPaste, Copy, Download, ImagePlus, RotateCcw, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DENSITIES, THEMES, TOOLS } from "../../catalog";
 import { Switch } from "../../components/Switch";
@@ -118,7 +118,7 @@ export function SettingsView() {
     }
   }
 
-  function exportData() {
+  function buildBackupJson(compact = false): string {
     const payload = useAppStore.getState().exportBackup();
     const wrapper = {
       exportedAt: new Date().toISOString(),
@@ -126,7 +126,11 @@ export function SettingsView() {
       formatVersion: 3,
       data: payload,
     };
-    const blob = new Blob([JSON.stringify(wrapper, null, 2)], { type: "application/json" });
+    return JSON.stringify(wrapper, null, compact ? 0 : 2);
+  }
+
+  function exportData() {
+    const blob = new Blob([buildBackupJson()], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -135,6 +139,27 @@ export function SettingsView() {
     anchor.click();
     // 下载导航异步消费 blob URL：同步 revoke 在 Firefox/Safari 上可能中断下载。
     window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    setImportMessage("已生成备份文件（浏览器可能保存到下载目录）");
+  }
+
+  /** 跨设备传输的第二通道：复制 JSON 文本，经 QQ/微信粘贴到另一台设备导入。 */
+  async function copyBackupToClipboard() {
+    try {
+      const text = buildBackupJson(true);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const helper = document.createElement("textarea");
+        helper.value = text;
+        document.body.appendChild(helper);
+        helper.select();
+        document.execCommand("copy");
+        helper.remove();
+      }
+      setImportMessage("备份已复制到剪贴板，在另一台设备上点「从剪贴板粘贴导入」即可");
+    } catch (error) {
+      setImportMessage(error instanceof Error ? `复制失败：${error.message}` : "复制失败，请改用文件导出");
+    }
   }
 
   async function importData(file: File | undefined) {
@@ -145,6 +170,18 @@ export function SettingsView() {
       setPendingImport({ data: parsed });
     } catch (error) {
       setImportMessage(error instanceof Error ? error.message : "导入失败");
+    }
+  }
+
+  async function importFromClipboard() {
+    setImportMessage("");
+    try {
+      if (!navigator.clipboard?.readText) throw new Error("当前环境不支持读取剪贴板");
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) throw new Error("剪贴板是空的");
+      setPendingImport({ data: JSON.parse(text) });
+    } catch (error) {
+      setImportMessage(error instanceof Error ? error.message : "剪贴板导入失败");
     }
   }
 
@@ -220,15 +257,30 @@ export function SettingsView() {
             <div><p>记住上次播放位置</p><p className="muted" style={{ fontSize: 12.5 }}>打开视频时从上次停下的位置继续</p></div>
             <span />
           </div>
-          <div className="item">
-            <Switch
-              checked={playbackPreferences.enableDoubleTapSeek}
-              onChange={(checked) => updatePlaybackPreferences({ enableDoubleTapSeek: checked })}
-              label="双击快进快退"
-            />
-            <div><p>双击快进快退</p><p className="muted" style={{ fontSize: 12.5 }}>关闭后双击只切换播放与暂停</p></div>
-            <span />
-          </div>
+          <label className="settings-field">
+            双击视频画面
+            <select
+              aria-label="双击视频画面行为"
+              value={playbackPreferences.doubleTapAction}
+              onChange={(event) => updatePlaybackPreferences({ doubleTapAction: event.target.value === "seek" ? "seek" : "toggle" })}
+            >
+              <option value="toggle">播放 / 暂停（默认）</option>
+              <option value="seek">双击左右快进快退</option>
+            </select>
+          </label>
+          <label className="settings-field">
+            播放进度条皮肤
+            <select
+              aria-label="播放进度条皮肤"
+              value={playbackPreferences.seekBarSkin}
+              onChange={(event) => updatePlaybackPreferences({ seekBarSkin: event.target.value as PlaybackPreferences["seekBarSkin"] })}
+            >
+              <option value="classic">经典</option>
+              <option value="neon">霓虹</option>
+              <option value="aurora">极光</option>
+              <option value="mono">极简</option>
+            </select>
+          </label>
           <label className="settings-field">
             Wi-Fi 默认清晰度
             <select aria-label="Wi-Fi 默认清晰度" value={playbackPreferences.wifiDefaultQuality} onChange={(event) => updatePlaybackPreferences({ wifiDefaultQuality: Number(event.target.value) })}>
@@ -431,7 +483,10 @@ export function SettingsView() {
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
           <button className="ghost-btn" onClick={exportData} data-tour-target="backup-export">
-            <Download size={16} /> 导出数据备份（JSON）
+            <Download size={16} /> 导出备份文件（JSON）
+          </button>
+          <button className="ghost-btn" onClick={() => void copyBackupToClipboard()}>
+            <Copy size={16} /> 复制到剪贴板
           </button>
           <input
             ref={importInput}
@@ -441,12 +496,16 @@ export function SettingsView() {
             onChange={(event) => void importData(event.target.files?.[0])}
           />
           <button className="ghost-btn" onClick={() => importInput.current?.click()}>
-            <Upload size={16} /> 从备份导入
+            <Upload size={16} /> 从备份文件导入
+          </button>
+          <button className="ghost-btn" onClick={() => void importFromClipboard()}>
+            <ClipboardPaste size={16} /> 从剪贴板粘贴导入
           </button>
         </div>
         {importMessage && <p className="muted" style={{ fontSize: 13, marginTop: 10 }}>{importMessage}</p>}
         <p className="muted" style={{ fontSize: 12.5, marginTop: 10 }}>
-          所有内容仅保存在当前设备的本地存储中，不会上传到任何服务器。
+          跨设备迁移：A 设备「复制到剪贴板」→ 通过 QQ/微信把文本发给 B 设备 → B 设备「从剪贴板粘贴导入」。
+          手机上无法直接下载文件时，剪贴板通道同样可用。
         </p>
       </section>
 

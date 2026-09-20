@@ -5,7 +5,7 @@ import { todayKey } from "../lib/time";
 
 describe("Kaoyan store", () => {
   beforeEach(() => {
-    useAppStore.setState({ subjects: [], studyUnits: [] });
+    useAppStore.setState({ subjects: [], studyUnits: [], kaoyanDailyPlan: { items: [], history: {} } });
   });
 
   it("creates a subject and study unit, then records a daily completion", () => {
@@ -149,5 +149,42 @@ describe("Kaoyan mock exams", () => {
     useAppStore.getState().addMockExam({ date: "2026-10-08", subject: "数学", paperName: "卷", score: 1, total: 0 });
 
     expect(useAppStore.getState().mockExams).toHaveLength(0);
+  });
+});
+
+describe("Kaoyan daily plan", () => {
+  beforeEach(() => {
+    useAppStore.setState({ kaoyanDailyPlan: { items: [], history: {} } });
+  });
+
+  it("adds daily items, toggles completion per date and saves progress notes", () => {
+    const store = useAppStore.getState();
+    store.addKaoyanDailyItem("背 50 词");
+    store.addKaoyanDailyItem("一套数学卷");
+    store.addKaoyanDailyItem("   ");
+    const items = useAppStore.getState().kaoyanDailyPlan.items;
+    expect(items).toHaveLength(2);
+
+    const today = todayKey();
+    store.toggleKaoyanDailyItem(items[0]!.id, today);
+    store.setKaoyanDailyNote(today, "背词完成，明天开始数学");
+
+    const state = useAppStore.getState().kaoyanDailyPlan;
+    expect(state.history[today]).toMatchObject({ done: [items[0]!.id], note: "背词完成，明天开始数学" });
+
+    store.toggleKaoyanDailyItem(items[0]!.id, today);
+    expect(useAppStore.getState().kaoyanDailyPlan.history[today]!.done).toEqual([]);
+  });
+
+  it("removes an item without touching history of other days", () => {
+    const store = useAppStore.getState();
+    store.addKaoyanDailyItem("英语真题一篇");
+    const item = useAppStore.getState().kaoyanDailyPlan.items[0]!;
+    store.toggleKaoyanDailyItem(item.id, "2026-09-18");
+    store.removeKaoyanDailyItem(item.id);
+
+    const plan = useAppStore.getState().kaoyanDailyPlan;
+    expect(plan.items).toHaveLength(0);
+    expect(plan.history["2026-09-18"]!.done).toEqual([item.id]);
   });
 });

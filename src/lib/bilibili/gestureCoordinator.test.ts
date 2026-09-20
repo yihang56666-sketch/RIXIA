@@ -98,4 +98,43 @@ describe("GestureCoordinator", () => {
     expect(onSeekAbsolute).toHaveBeenLastCalledWith(30);
     coord.destroy();
   });
+
+  it("toggles play/pause on a double-tap anywhere by default", () => {
+    vi.useFakeTimers();
+    const element = makeElement();
+    Object.defineProperty(element, "clientWidth", { value: 800, configurable: true });
+    const onTogglePlay = vi.fn();
+    const onSeek = vi.fn();
+    const onTap = vi.fn();
+
+    const coord = new GestureCoordinator({ element, onTogglePlay, onSeek, onTap });
+    dispatchPointer(element, "pointerdown", 60, 100); // 左侧区域也切换播放/暂停
+    dispatchPointer(element, "pointerup", 60, 100);
+    vi.advanceTimersByTime(100);
+    dispatchPointer(element, "pointerdown", 60, 100);
+    dispatchPointer(element, "pointerup", 60, 100);
+
+    expect(onTogglePlay).toHaveBeenCalledTimes(1);
+    expect(onSeek).not.toHaveBeenCalled();
+    expect(onTap).not.toHaveBeenCalled();
+    coord.destroy();
+  });
+
+  it("keeps left/right double-tap seek when doubleTapAction is seek", () => {
+    vi.useFakeTimers();
+    const element = makeElement();
+    Object.defineProperty(element, "clientWidth", { value: 800, configurable: true });
+    const onTogglePlay = vi.fn();
+    const onSeek = vi.fn();
+
+    const coord = new GestureCoordinator({ element, onTogglePlay, onSeek, doubleTapAction: "seek" });
+    dispatchPointer(element, "pointerdown", 60, 100);
+    dispatchPointer(element, "pointerup", 60, 100);
+    vi.advanceTimersByTime(100);
+    dispatchPointer(element, "pointerdown", 60, 100);
+    dispatchPointer(element, "pointerup", 60, 100);
+    expect(onSeek).toHaveBeenLastCalledWith(-10);
+    expect(onTogglePlay).not.toHaveBeenCalled();
+    coord.destroy();
+  });
 });

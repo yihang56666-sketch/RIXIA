@@ -76,6 +76,11 @@ describe("companion backup", () => {
         localWatchHistory: [{ bvid: "BV1" }],
         playbackProgress: { "focubili.playback-progress.v1:BV1:100": '{"positionSeconds":42}' },
         searchHistory: ["考研英语"],
+        danmakuPreferences: { enabled: true, opacity: 0.8, blockedKeywords: ["广告"] },
+        playbackPreferences: { doubleTapAction: "toggle", seekBarSkin: "neon" },
+        focusSessions: [{ id: "fs1", minutes: 25 }],
+        bilibiliCookie: "SESSDATA=abc; bili_jct=xyz",
+        bilibiliAuth: { mid: 123, name: " tester" },
       },
       storage,
     );
@@ -86,6 +91,62 @@ describe("companion backup", () => {
     expect(storage.getItem("rixia_watch_history_v1")).toBe("[]");
     expect(storage.getItem("focubili.playback-progress.v1:BV1:100")).toBe('{"positionSeconds":42}');
     expect(storage.getItem("rixia_search_history_v1")).toBe('["考研英语"]');
+    expect(JSON.parse(storage.getItem("rixia_danmaku_preferences_v1") ?? "{}")).toEqual({ enabled: true, opacity: 0.8, blockedKeywords: ["广告"] });
+    expect(JSON.parse(storage.getItem("rixia_playback_preferences_v1") ?? "{}")).toEqual({ doubleTapAction: "toggle", seekBarSkin: "neon" });
+    expect(JSON.parse(storage.getItem("rixia_focus_sessions_v1") ?? "[]")).toEqual([{ id: "fs1", minutes: 25 }]);
+    expect(storage.getItem("rixia_bilibili_cookie_v1")).toBe("SESSDATA=abc; bili_jct=xyz");
+    expect(JSON.parse(storage.getItem("rixia_bilibili_auth_v1") ?? "{}")).toEqual({ mid: 123, name: " tester" });
+  });
+
+  it("exports and restores preferences, focus sessions and login state", () => {
+    const storage = createMemoryStorage({
+      rixia_danmaku_preferences_v1: JSON.stringify({ enabled: true }),
+      rixia_playback_preferences_v1: JSON.stringify({ doubleTapAction: "seek" }),
+      rixia_focus_sessions_v1: JSON.stringify([{ id: "fs1" }]),
+      rixia_bilibili_cookie_v1: "SESSDATA=abc",
+      rixia_bilibili_auth_v1: JSON.stringify({ mid: 9 }),
+    });
+    const exported = exportCompanionBackup(storage);
+    expect(exported.danmakuPreferences).toEqual({ enabled: true });
+    expect(exported.playbackPreferences).toEqual({ doubleTapAction: "seek" });
+    expect(exported.focusSessions).toEqual([{ id: "fs1" }]);
+    expect(exported.bilibiliCookie).toBe("SESSDATA=abc");
+    expect(exported.bilibiliAuth).toEqual({ mid: 9 });
+
+    const target = createMemoryStorage();
+    const sanitized = sanitizeCompanionBackup(exported);
+    expect(sanitized).not.toBeNull();
+    importCompanionBackup(sanitized!, target);
+    expect(JSON.parse(target.getItem("rixia_danmaku_preferences_v1") ?? "{}")).toEqual({ enabled: true });
+    expect(target.getItem("rixia_bilibili_cookie_v1")).toBe("SESSDATA=abc");
+    expect(JSON.parse(target.getItem("rixia_focus_sessions_v1") ?? "[]")).toEqual([{ id: "fs1" }]);
+  });
+
+  it("keeps device preferences untouched when restoring a legacy backup without them", () => {
+    const storage = createMemoryStorage({
+      rixia_danmaku_preferences_v1: '{"enabled":true}',
+      rixia_bilibili_cookie_v1: "SESSDATA=device",
+    });
+    importCompanionBackup(
+      {
+        focusActiveSession: null,
+        focusHistory: [],
+        videoNotes: [],
+        watchHistory: [],
+        learningList: [],
+        localWatchHistory: [],
+        playbackProgress: null,
+        searchHistory: null,
+        danmakuPreferences: null,
+        playbackPreferences: null,
+        focusSessions: null,
+        bilibiliCookie: null,
+        bilibiliAuth: null,
+      },
+      storage,
+    );
+    expect(storage.getItem("rixia_danmaku_preferences_v1")).toBe('{"enabled":true}');
+    expect(storage.getItem("rixia_bilibili_cookie_v1")).toBe("SESSDATA=device");
   });
 
   it("removes the active-session key when the backup has no active session", () => {
@@ -100,6 +161,11 @@ describe("companion backup", () => {
         localWatchHistory: [],
         playbackProgress: {},
         searchHistory: [],
+        danmakuPreferences: null,
+        playbackPreferences: null,
+        focusSessions: null,
+        bilibiliCookie: null,
+        bilibiliAuth: null,
       },
       storage,
     );
@@ -121,6 +187,11 @@ describe("companion backup", () => {
         localWatchHistory: [],
         playbackProgress: null,
         searchHistory: null,
+        danmakuPreferences: null,
+        playbackPreferences: null,
+        focusSessions: null,
+        bilibiliCookie: null,
+        bilibiliAuth: null,
       },
       storage,
     );
@@ -143,6 +214,11 @@ describe("companion backup", () => {
         localWatchHistory: [],
         playbackProgress: { "focubili.playback-progress.v1:BV1:100": '{"positionSeconds":42}' },
         searchHistory: [],
+        danmakuPreferences: null,
+        playbackPreferences: null,
+        focusSessions: null,
+        bilibiliCookie: null,
+        bilibiliAuth: null,
       },
       storage,
     );
@@ -164,6 +240,11 @@ describe("companion backup", () => {
         "focubili.playback-progress.v1:BV2:200": 42,
       },
       searchHistory: ["ok", 42],
+      danmakuPreferences: { enabled: true },
+      playbackPreferences: "not-an-object",
+      focusSessions: [{ id: "fs1" }, "bad"],
+      bilibiliCookie: "SESSDATA=keep",
+      bilibiliAuth: { mid: 7 },
     });
     expect(sanitized).toEqual({
       focusActiveSession: { id: "a1" },
@@ -174,6 +255,11 @@ describe("companion backup", () => {
       localWatchHistory: [],
       playbackProgress: { "focubili.playback-progress.v1:BV1:100": '{"positionSeconds":42}' },
       searchHistory: ["ok"],
+      danmakuPreferences: { enabled: true },
+      playbackPreferences: null,
+      focusSessions: [{ id: "fs1" }, "bad"],
+      bilibiliCookie: "SESSDATA=keep",
+      bilibiliAuth: { mid: 7 },
     });
   });
 
@@ -220,6 +306,11 @@ describe("companion backup", () => {
           localWatchHistory: [],
           playbackProgress: {},
           searchHistory: [],
+        danmakuPreferences: null,
+        playbackPreferences: null,
+        focusSessions: null,
+        bilibiliCookie: null,
+        bilibiliAuth: null,
         },
         flaky,
       ),

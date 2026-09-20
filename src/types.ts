@@ -46,6 +46,7 @@ export type ViewKey =
   | "tasks"
   | "habits"
   | "notes"
+  | "journal"
   | "countdowns"
   | "videos"
   | "kaoyan";
@@ -132,6 +133,21 @@ export interface StudyUnit {
   endDate: string;
   completedDates: string[];
   createdAt: string;
+}
+
+/** 考研每日计划项：每天可勾选的固定清单（如"背 50 词""一套数学卷"）。 */
+export interface KaoyanDailyItem {
+  id: string;
+  title: string;
+  createdAt: string;
+}
+
+/** 某一天的每日计划完成情况 + 进度备注，方便下一次接着学。 */
+export interface KaoyanDailyEntry {
+  /** 当天勾选完成的项目 id。 */
+  done: string[];
+  /** 当天进度备注（学到哪、下次从哪继续）。 */
+  note: string;
 }
 
 /** 错题本条目：按错误原因打标签，录入后自动进入艾宾浩斯复习队列。 */
@@ -230,12 +246,25 @@ export interface ActiveFocus {
   completedRounds?: number;
 }
 
+/** 最近一次正在看的视频快照：驱动全局"回到视频"悬浮按钮（跨重启保留）。 */
+export interface NowPlayingSnapshot {
+  bvid: string;
+  cid: number;
+  title: string;
+  ownerName?: string;
+  thumbnailUrl?: string;
+  /** 快照时刻的播放位置（秒）。 */
+  seconds: number;
+  durationSeconds?: number;
+  updatedAt: string;
+}
+
 export interface AppState {
   theme: ThemeName;
   density: Density;
   backgroundImage: string | null;
   view: ViewKey;
-  enabledTools: ToolKey[];
+  nowPlaying: NowPlayingSnapshot | null;  enabledTools: ToolKey[];
   inbox: InboxItem[];
   tasks: TaskItem[];
   habits: HabitItem[];
@@ -243,6 +272,7 @@ export interface AppState {
   countdowns: CountdownItem[];
   subjects: StudySubject[];
   studyUnits: StudyUnit[];
+  kaoyanDailyPlan: { items: KaoyanDailyItem[]; history: Record<string, KaoyanDailyEntry> };
   wrongQuestions: WrongQuestion[];
   reviewItems: ReviewItem[];
   mockExams: MockExam[];
@@ -282,6 +312,16 @@ export interface CompanionBackupData {
   playbackProgress: Record<string, string> | null;
   /** 搜索历史（单键 JSON 数组）。旧版备份无此字段（null）：导入时保留设备现有数据。 */
   searchHistory: string[] | null;
+  /** 弹幕偏好（字号/屏蔽词等）。旧版备份无此字段（null）：导入时保留设备现有数据。 */
+  danmakuPreferences: unknown;
+  /** 播放偏好（双击行为/进度条皮肤/清晰度等）。旧版备份无此字段（null）：导入时保留设备现有数据。 */
+  playbackPreferences: unknown;
+  /** 专注服务独立持久化的会话记录（最多 1000 条）。旧版备份无此字段（null）：导入时保留设备现有数据。 */
+  focusSessions: unknown[] | null;
+  /** B 站登录 Cookie（SESSDATA 等）。旧版备份无此字段（null）：导入时保留设备现有登录态。 */
+  bilibiliCookie: string | null;
+  /** B 站账号展示信息（用户名/头像）。旧版备份无此字段（null）：导入时保留设备现有数据。 */
+  bilibiliAuth: unknown;
 }
 
 export interface BackupData {
@@ -296,6 +336,7 @@ export interface BackupData {
   countdowns: CountdownItem[];
   subjects: StudySubject[];
   studyUnits: StudyUnit[];
+  kaoyanDailyPlan: { items: KaoyanDailyItem[]; history: Record<string, KaoyanDailyEntry> };
   wrongQuestions: WrongQuestion[];
   reviewItems: ReviewItem[];
   mockExams: MockExam[];

@@ -1,7 +1,7 @@
 {
   "name": "beid",
   "private": true,
-  "version": "0.3.11",
+  "version": "0.3.12",
   "type": "module",
   "description": "融合节奏工作台与专注看课能力的 B 站考研学习客户端",
   "scripts": {
@@ -14,6 +14,7 @@
     "mobile:doctor": "node scripts/build-android-debug-apk.mjs --doctor",
     "mobile:sdk:install": "node scripts/setup-android-sdk.mjs --install",
     "mobile:apk": "node scripts/build-android-debug-apk.mjs",
+    "icons:android": "node scripts/generate-android-icons.mjs",
     "desktop": "node electron/desktop-server.mjs",
     "desktop:win": "node scripts/build-windows-desktop.mjs"
   },

@@ -69,3 +69,43 @@ function asRecord(value: unknown): Record<string, unknown> {
 function text(value: unknown): string { return typeof value === "string" ? value : ""; }
 function number(value: unknown): number { return typeof value === "number" && Number.isFinite(value) ? value : 0; }
 
+const SUBTITLE_ARROW = "-->";
+
+/** 解析 SRT/WebVTT 定时戳（支持 HH:MM:SS,mmm 与 MM:SS.mmm 两种写法）。 */
+function parseSubtitleTimestamp(value: string): number {
+  const match = value.match(/(?:(\d{1,2}):)?(\d{1,2}):(\d{2})[.,](\d{1,3})/);
+  if (!match) return NaN;
+  const hours = match[1] ? Number(match[1]) : 0;
+  const minutes = Number(match[2]!);
+  const seconds = Number(match[3]!);
+  const millis = Number(match[4]!.padEnd(3, "0"));
+  if (![hours, minutes, seconds, millis].every((part) => Number.isFinite(part))) return NaN;
+  return hours * 3600 + minutes * 60 + seconds + millis / 1000;
+}
+
+/**
+ * 解析本地字幕文件（SRT / WebVTT），返回与 CC 轨一致的 cue 列表。
+ * 文件按空行分块；每块可选序号行，随后是定时行与正文，正文去除内联标签。
+ */
+export function parseSubtitleDocument(raw: string): SubtitleCue[] {
+  const text = raw.replace(/\r\n?/g, "\n").replace(/^\uFEFF/, "");
+  if (!text.trim()) return [];
+  const out: SubtitleCue[] = [];
+  for (const block of text.split(/\n{2,}/)) {
+    const lines = block.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+    if (lines.length === 0) continue;
+    const timingIndex = lines.findIndex((line) => line.includes(SUBTITLE_ARROW));
+    if (timingIndex < 0) continue;
+    const timingParts = lines[timingIndex]!.split(SUBTITLE_ARROW);
+    const from = parseSubtitleTimestamp(timingParts[0] ?? "");
+    let to = parseSubtitleTimestamp(timingParts[1] ?? "");
+    if (!Number.isFinite(from) || !Number.isFinite(to)) continue;
+    if (to <= from) to = from + 0.1;
+    const content = lines.slice(timingIndex + 1).join("\n").replace(/<[^>]+>/g, "").trim();
+    if (!content) continue;
+    out.push({ from, to, content });
+    if (out.length >= 20_000) break;
+  }
+  return out;
+}
+

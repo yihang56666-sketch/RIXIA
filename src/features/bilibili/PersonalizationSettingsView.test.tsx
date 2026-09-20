@@ -13,8 +13,10 @@ const { savePreferences } = vi.hoisted(() => ({
 vi.mock("../../lib/bilibili/services", () => ({
   createPlaybackPreferencesService: () => ({
     load: vi.fn().mockResolvedValue({
-      defaultQualityWifi: 80,
-      defaultQualityCellular: 32,
+      doubleTapAction: "toggle",
+      seekBarSkin: "classic",
+      wifiDefaultQuality: 80,
+      mobileDefaultQuality: 32,
       enableDoubleTapSeek: true,
     }),
     save: savePreferences,
@@ -83,17 +85,17 @@ describe("PersonalizationSettingsView startup update toggle", () => {
   it("reverts a playback preference and reports failure when saving fails", async () => {
     savePreferences.mockResolvedValueOnce(false);
     render(<AppUpdateProvider><M3FeedbackProvider><PersonalizationSettingsView /></M3FeedbackProvider></AppUpdateProvider>);
-    await screen.findByText("启用双击快进快退");
+    await screen.findByText("双击视频画面");
 
-    const tile = screen.getByText("启用双击快进快退").closest(".m3-list-tile") as HTMLElement;
-    const toggle = tile.querySelector("[role=switch]") as HTMLElement;
-    expect(toggle).toHaveAttribute("aria-checked", "true");
+    const tile = screen.getByText("双击视频画面").closest(".m3-list-tile") as HTMLElement;
+    const select = tile.querySelector("select") as HTMLSelectElement;
+    expect(select.value).toBe("toggle");
 
-    fireEvent.click(toggle);
+    fireEvent.change(select, { target: { value: "seek" } });
 
     await waitFor(() => expect(screen.getByText("设置保存失败，请稍后重试。")).toBeInTheDocument());
-    const reverted = screen.getByText("启用双击快进快退").closest(".m3-list-tile") as HTMLElement;
-    expect(reverted.querySelector("[role=switch]")).toHaveAttribute("aria-checked", "true");
+    const reverted = screen.getByText("双击视频画面").closest(".m3-list-tile") as HTMLElement;
+    expect((reverted.querySelector("select") as HTMLSelectElement).value).toBe("toggle");
   });
 
   it("reverts the startup update toggle when the preference cannot be saved", async () => {

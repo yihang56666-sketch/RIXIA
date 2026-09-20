@@ -58,6 +58,7 @@ export const VIEW_TITLES: Record<ViewKey, string> = {
   tasks: "任务",
   habits: "习惯",
   notes: "笔记",
+  journal: "日记",
   countdowns: "倒计时",
   videos: "看课",
   kaoyan: "考研",

@@ -355,9 +355,14 @@ export const DEFAULT_DANMAKU_PREFERENCES: DanmakuPreferences = {
   blockedKeywords: [],
 };
 
+/** 播放进度条皮肤。 */
+export type SeekBarSkin = "classic" | "neon" | "aurora" | "mono";
+
 /** 播放偏好 — 对应 FocuBili 的 PlaybackPreferences。 */
 export interface PlaybackPreferences {
-  enableDoubleTapSeek: boolean;
+  /** 双击视频画面的行为：toggle=播放/暂停（默认），seek=左右快进快退。 */
+  doubleTapAction: "toggle" | "seek";
+  seekBarSkin: SeekBarSkin;
   wifiDefaultQuality: number;
   mobileDefaultQuality: number;
   autoplayNext: boolean;
@@ -368,7 +373,8 @@ export interface PlaybackPreferences {
 }
 
 export const DEFAULT_PLAYBACK_PREFERENCES: PlaybackPreferences = {
-  enableDoubleTapSeek: true,
+  doubleTapAction: "toggle",
+  seekBarSkin: "classic",
   wifiDefaultQuality: 64,
   mobileDefaultQuality: 64,
   autoplayNext: false,

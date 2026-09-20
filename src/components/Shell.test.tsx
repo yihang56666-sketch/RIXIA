@@ -5,7 +5,7 @@ import { useAppStore } from "../store/useAppStore";
 
 describe("Shell", () => {
   beforeEach(() => {
-    useAppStore.setState({ view: "focus-dashboard" });
+    useAppStore.setState({ view: "focus-dashboard", nowPlaying: null });
   });
 
   it("keeps the FocuBili navigation and opens the Rixia command palette with Ctrl+K", () => {
@@ -102,5 +102,34 @@ describe("Shell", () => {
     act(() => useAppStore.getState().setView("kaoyan"));
     act(() => window.dispatchEvent(new PopStateEvent("popstate", { state: { beid: true } })));
     expect(useAppStore.getState().view).toBe("focus-dashboard");
+  });
+
+  it("offers a one-tap return to the video being watched from any other view", () => {
+    act(() => useAppStore.setState({
+      view: "today",
+      nowPlaying: { bvid: "BV1CAxaeHEeH", cid: 404, title: "线代强化第3讲", seconds: 754, updatedAt: "2026-09-19T00:00:00.000Z" },
+    }));
+    render(<Shell><div>内容</div></Shell>);
+
+    const button = screen.getByRole("button", { name: "回到正在看的视频：线代强化第3讲" });
+    expect(button).toHaveTextContent("12:34");
+
+    fireEvent.click(button);
+    const state = useAppStore.getState();
+    expect(state.view).toBe("bilibili-player");
+    expect(state.activeBilibiliBvid).toBe("BV1CAxaeHEeH");
+    expect(state.activeBilibiliPlaybackTarget).toEqual({ cid: 404, seconds: 754 });
+  });
+
+  it("does not show the return button on the player itself or without a snapshot", () => {
+    const { rerender } = render(<Shell><div>内容</div></Shell>);
+    expect(screen.queryByRole("button", { name: /回到正在看的视频/ })).not.toBeInTheDocument();
+
+    act(() => useAppStore.setState({
+      view: "bilibili-player",
+      nowPlaying: { bvid: "BV1CAxaeHEeH", cid: 404, title: "线代强化第3讲", seconds: 754, updatedAt: "2026-09-19T00:00:00.000Z" },
+    }));
+    rerender(<Shell><div>内容</div></Shell>);
+    expect(screen.queryByRole("button", { name: /回到正在看的视频/ })).not.toBeInTheDocument();
   });
 });

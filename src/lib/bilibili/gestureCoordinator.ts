@@ -27,7 +27,8 @@ export interface GestureCoordinatorOptions {
   onLongPress?: () => void;
   onLongPressEnd?: () => void;
   onScrubEnd?: () => void;
-  enableDoubleTapSeek?: boolean;
+  /** 双击行为：toggle=任意位置播放/暂停（默认），seek=左右快进快退、中间播放/暂停。 */
+  doubleTapAction?: "toggle" | "seek";
   getCurrentTime?: () => number;
   getDuration?: () => number;
 }
@@ -234,7 +235,7 @@ export class GestureCoordinator {
   }
 
   private handleDoubleTap(x: number): void {
-    if (this.options.enableDoubleTapSeek === false) {
+    if (this.options.doubleTapAction !== "seek") {
       this.options.onTogglePlay?.();
       return;
     }

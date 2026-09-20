@@ -33,9 +33,13 @@ import {
   SkipForward,
   RefreshCw,
   GraduationCap,
+  MessageCircle,
+  X,
 } from "lucide-react";
 import { createBilibiliPublicContentService } from "../../lib/bilibili/publicContentService";
-import { createDanmakuFetchService } from "../../lib/bilibili/danmakuFetchService";
+import { createBilibiliCommentService } from "../../lib/bilibili/commentService";
+import type { BilibiliComment, CommentSort } from "../../lib/bilibili/commentService";
+import { createDanmakuFetchService, DanmakuLoadError } from "../../lib/bilibili/danmakuFetchService";
 import { DanmakuRenderer } from "../../lib/bilibili/danmakuRenderer";
 import {
   createDanmakuPreferencesService,
@@ -46,6 +50,7 @@ import {
 import type {
   DanmakuEntry,
   DanmakuPreferences,
+  SeekBarSkin,
   VideoCollectionEntry,
   VideoNote,
   VideoPart,
@@ -76,7 +81,7 @@ import { focusTimerController, useFocusTimer } from "./useFocusTimer";
 import { FocusInterruptionKind, FocusSessionStatus, hasVideoAssociation, isActive as isFocusSessionActive } from "../../lib/bilibili/focusSessionModel";
 import { FocusInterruptionFlow } from "./FocusDialogs";
 import { shouldPauseForSleepTimer, shouldRestartLoop } from "../../lib/bilibili/playbackControlPolicy";
-import { createSubtitleService, type SubtitleCue, type SubtitleTrack } from "../../lib/bilibili/subtitleService";
+import { createSubtitleService, parseSubtitleDocument, type SubtitleCue, type SubtitleTrack } from "../../lib/bilibili/subtitleService";
 import { downloadExportPackage, exportVideoNotes, VideoNoteExportFormat } from "../../lib/bilibili/miscServices";
 import { captureVideoShotFrame, createBilibiliVideoShotService } from "../../lib/bilibili/videoShotService";
 import { frameForPosition, type VideoShotFrame, type VideoShotPreview } from "../../lib/bilibili/extendedModels";
@@ -152,8 +157,21 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const [danmaku, setDanmaku] = useState<DanmakuEntry[]>([]);
   const [danmakuStatus, setDanmakuStatus] = useState<"loading" | "ready" | "empty">("loading");
   const [danmakuFailed, setDanmakuFailed] = useState(false);
+  // 区分"加载失败"与"B 站把该视频弹幕关了"：前者给出重试，后者只提示。
+  const [danmakuClosed, setDanmakuClosed] = useState(false);
   const [danmakuCount, setDanmakuCount] = useState(0);
   const [danmakuReload, setDanmakuReload] = useState(0);
+  // 评论导入面板：拉取评论区主楼，按热度/时间排序，可单条或整页导入为视频笔记。
+  const commentService = useMemo(() => createBilibiliCommentService(), []);
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<BilibiliComment[]>([]);
+  const [commentsStatus, setCommentsStatus] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  const [commentsError, setCommentsError] = useState("");
+  const [commentsSort, setCommentsSort] = useState<CommentSort>("hot");
+  const [commentsPage, setCommentsPage] = useState(1);
+  const [commentsTotal, setCommentsTotal] = useState(0);
+  const [commentsReload, setCommentsReload] = useState(0);
+  const importedCommentIdsRef = useRef<Set<number>>(new Set());
   const [prefs, setPrefs] = useState<DanmakuPreferences>(DEFAULT_DANMAKU_PREFERENCES);
   const [notes, setNotes] = useState<VideoNote[]>([]);
   const [noteTitle, setNoteTitle] = useState("");
@@ -199,13 +217,19 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const [sleepTimerPlays, setSleepTimerPlays] = useState<number | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [playbackPreferencesLoaded, setPlaybackPreferencesLoaded] = useState(false);
-  const [doubleTapSeekEnabled, setDoubleTapSeekEnabled] = useState(true);
+  const [doubleTapAction, setDoubleTapAction] = useState<"toggle" | "seek">("toggle");
+  const [seekBarSkin, setSeekBarSkin] = useState<SeekBarSkin>("classic");
   const resumeFromLastPositionRef = useRef(true);
   const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrack[]>([]);
   const [selectedSubtitleId, setSelectedSubtitleId] = useState<number | null>(null);
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
   const [showSubtitles, setShowSubtitles] = useState(false);
   const [subtitleLoading, setSubtitleLoading] = useState(false);
+  // 本地字幕（SRT/VTT 导入）：与 CC 轨互斥使用，选择轨道即退出本地字幕。
+  const [localSubtitle, setLocalSubtitle] = useState<{ name: string; cues: SubtitleCue[] } | null>(null);
+  const [localSubtitleEnabled, setLocalSubtitleEnabled] = useState(false);
+  // 用户手动选择字幕的记忆（off/local/trackId）：换分P后尊重用户选择而不是每次自动选轨。
+  const subtitleUserChoiceRef = useRef<number | "off" | "local" | null>(null);
   const [shotPreview, setShotPreview] = useState<VideoShotPreview | null>(null);
   const [hoveredFrame, setHoveredFrame] = useState<VideoShotFrame | null>(null);
   const [shareMessage, setShareMessage] = useState("");
@@ -354,6 +378,14 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   useEffect(() => {
     nativePlayerActiveRef.current = nativePlayerActive;
   }, [nativePlayerActive]);
+  // 原生播放器时间锚点：Android 原生层每 500ms 才回调一次 position，弹幕的
+  // RAF 循环直接读会 0.5 秒一跳。用"上次回调位置 + 本地经过时间 × 倍速"
+  // 插值出逐帧平滑的播放时钟，stateChange 一到就对齐锚点（seek/暂停同理）。
+  const nativeClockRef = useRef({ positionSeconds: 0, anchoredAtMs: 0, isPlaying: false });
+  const playbackSpeedRef = useRef(1);
+  useEffect(() => {
+    playbackSpeedRef.current = playbackSpeed;
+  }, [playbackSpeed]);
   const shouldUseNativePlayer = isAndroidNativeMediaPlayerAvailable();
   // 浏览器模式用 MSE DASH 直连（对齐 FocuBili：只有自绘控制层一套控制界面，
   // 绝不嵌官方 iframe）。加载失败显示错误卡片 + 重试。
@@ -440,7 +472,8 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       const defaultQuality = chooseDefaultPlaybackQuality(p, connectionType);
       setRequestedQuality(defaultQuality);
       setLoadQuality(defaultQuality);
-      setDoubleTapSeekEnabled(p.enableDoubleTapSeek);
+      setDoubleTapAction(p.doubleTapAction);
+      setSeekBarSkin(p.seekBarSkin);
       setPlaybackSpeed(p.playbackRate);
       lastAudibleVolumeRef.current = p.defaultVolume > 0 ? p.defaultVolume : lastAudibleVolumeRef.current;
       setVolume(p.defaultVolume);
@@ -461,25 +494,32 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     const load = () => {
       setDanmakuStatus("loading");
       setDanmakuFailed(false);
+      setDanmakuClosed(false);
       setDanmakuCount(0);
-      danmakuService.fetchDanmaku(activePartCid)
+      // 分段接口需要 pid（aid）与分 P 时长来并行拉满全部分段；
+      // 拿不到时长时服务内部按"空段即止"探测。
+      const partDuration = video?.parts.find((part) => part.cid === activePartCid)?.durationSeconds
+        ?? video?.durationSeconds;
+      danmakuService.fetchDanmaku(activePartCid, { pid: video?.aid, durationSeconds: partDuration })
         .then((entries) => {
           if (cancelled) return;
           setDanmaku(entries);
           setDanmakuCount(entries.length);
           setDanmakuStatus(entries.length > 0 ? "ready" : "empty");
         })
-        .catch(() => {
+        .catch((err) => {
           if (cancelled) return;
+          const closed = err instanceof DanmakuLoadError && err.kind === "closed";
           setDanmaku([]);
           setDanmakuCount(0);
           setDanmakuStatus("empty");
-          setDanmakuFailed(true);
+          setDanmakuClosed(closed);
+          setDanmakuFailed(!closed);
         });
     };
     load();
     return () => { cancelled = true; };
-  }, [activePartCid, danmakuReload, danmakuService]);
+  }, [activePartCid, danmakuReload, danmakuService, video?.aid, video?.durationSeconds]);
 
   useEffect(() => {
     if (!video || activePartCid == null) {
@@ -492,6 +532,62 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       .catch(() => { if (!cancelled) setEnhancementMetadata({ chapters: [] }); });
     return () => { cancelled = true; };
   }, [activePartCid, enhancementService, video]);
+
+  // 评论面板打开/翻页/换排序时拉取评论区；aid 缺失（旧缓存）时保持关闭。
+  useEffect(() => {
+    if (!showComments || !video?.aid) return;
+    let cancelled = false;
+    setCommentsStatus("loading");
+    setCommentsError("");
+    commentService.listComments(video.aid, { page: commentsPage, sort: commentsSort })
+      .then((page) => {
+        if (cancelled) return;
+        setComments((current) => (commentsPage > 1 ? [...current, ...page.comments] : page.comments));
+        setCommentsTotal(page.totalCount);
+        setCommentsStatus("ready");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if (commentsPage > 1) setCommentsPage(1);
+        setCommentsStatus("failed");
+        setCommentsError(err instanceof Error ? err.message : "评论读取失败");
+      });
+    return () => { cancelled = true; };
+  }, [showComments, video?.aid, commentsPage, commentsSort, commentsReload, commentService]);
+
+  /** 把评论写入视频笔记：位置取当前播放进度，同一评论不重复导入。 */
+  async function importCommentsToNotes(list: BilibiliComment[]) {
+    if (!video || activePartCid == null || list.length === 0) return;
+    const targetPart = video.parts.find((part) => part.cid === activePartCid);
+    const positionSeconds = Math.max(0, Math.floor(currentTimeRef.current));
+    let imported = 0;
+    for (const comment of list) {
+      if (importedCommentIdsRef.current.has(comment.rpid)) continue;
+      const now = new Date().toISOString();
+      const note: VideoNote = {
+        id: createId(),
+        bvid: video.bvid,
+        videoTitle: video.title,
+        ownerName: video.ownerName,
+        partCid: targetPart?.cid ?? activePartCid,
+        partPageNumber: targetPart?.pageNumber ?? 1,
+        partTitle: targetPart?.title ?? video.title,
+        title: `评论·${comment.authorName}`.slice(0, 60),
+        body: comment.content,
+        createdAt: now,
+        updatedAt: now,
+        positionSeconds,
+        videoCoverUrl: video.thumbnailUrl,
+      };
+      const saved = await videoNoteService.save(note);
+      if (!saved) break;
+      importedCommentIdsRef.current.add(comment.rpid);
+      imported += 1;
+    }
+    const refreshed = await videoNoteService.listByVideo(video.bvid);
+    setNotes(refreshed);
+    showMessage(imported > 0 ? `已导入 ${imported} 条评论到笔记` : "所选评论已在笔记中", { durationMs: 2200 });
+  }
 
   useEffect(() => {
     setInteractiveNode(null);
@@ -536,12 +632,50 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
     setSubtitleCues([]);
     setSelectedSubtitleId(null);
     void subtitleService.listTracks(video.bvid, activePartCid).then((tracks) => {
-      if (!cancelled) setSubtitleTracks(tracks);
+      if (cancelled) return;
+      setSubtitleTracks(tracks);
+      if (tracks.length === 0) return;
+      // 换分P/换视频后尊重用户已做的字幕选择；否则自动选中首选轨道（优先中文），
+      // 让"字幕功能"开箱即用，而不是每次都要手动去开。
+      const choice = subtitleUserChoiceRef.current;
+      const remembered = choice != null && typeof choice === "number"
+        ? tracks.find((track) => track.id === choice)
+        : undefined;
+      const preferred = remembered
+        ?? tracks.find((track) => track.language.toLowerCase().startsWith("zh"))
+        ?? tracks[0];
+      setSelectedSubtitleId(choice === "off" ? null : preferred.id);
     }).catch(() => {
       if (!cancelled) setSubtitleTracks([]);
     });
     return () => { cancelled = true; };
   }, [activePartCid, subtitleService, video]);
+
+  // 换视频时清掉本地字幕与选择记忆；同一视频换分P保留（本地字幕按整条视频时间轴制作）。
+  useEffect(() => {
+    setLocalSubtitle(null);
+    setLocalSubtitleEnabled(false);
+    subtitleUserChoiceRef.current = null;
+  }, [video?.bvid]);
+
+  /** 导入本地 SRT/VTT 字幕文件，成功后立即启用并切换到本地字幕。 */
+  async function importLocalSubtitleFile(file: File) {
+    try {
+      const raw = await file.text();
+      const cues = parseSubtitleDocument(raw);
+      if (cues.length === 0) {
+        showMessage("没有解析到字幕内容，请确认是 SRT 或 VTT 文件", { durationMs: 2600 });
+        return;
+      }
+      setLocalSubtitle({ name: file.name, cues });
+      setLocalSubtitleEnabled(true);
+      setSelectedSubtitleId(null);
+      subtitleUserChoiceRef.current = "local";
+      showMessage(`已导入本地字幕：${file.name}（${cues.length} 条）`, { durationMs: 2400 });
+    } catch {
+      showMessage("本地字幕读取失败", { durationMs: 2400 });
+    }
+  }
 
   useEffect(() => {
     const track = subtitleTracks.find((item) => item.id === selectedSubtitleId);
@@ -631,6 +765,17 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       const resource = useAppStore.getState().resources.find((item) => item.bvid === video.bvid);
       if (resource) updateResourceProgress(resource.id, position, duration);
       const isCompleted = duration - position <= 3;
+      // 刷新"正在看"快照：离开播放器后，全局悬浮按钮靠它一键回到当前进度。
+      useAppStore.getState().updateNowPlaying({
+        bvid: video.bvid,
+        cid: activePartCid,
+        title: video.title,
+        ownerName: video.ownerName,
+        thumbnailUrl: video.thumbnailUrl,
+        seconds: isCompleted ? 0 : position,
+        durationSeconds: duration,
+        updatedAt: new Date().toISOString(),
+      });
       void watchHistoryService.record({
         bvid: video.bvid,
         cid: activePartCid,
@@ -749,6 +894,11 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
           return;
         }
         setCurrentTime(state.positionSeconds);
+        nativeClockRef.current = {
+          positionSeconds: state.positionSeconds,
+          anchoredAtMs: performance.now(),
+          isPlaying: state.isPlaying,
+        };
         if (state.durationSeconds > 0) setDuration(state.durationSeconds);
         setPlaying(state.isPlaying);
         if (state.videoWidth && state.videoHeight) {
@@ -849,34 +999,41 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
 
   // 初始化弹幕渲染器：画布尺寸跟随容器变化（全屏/旋转/分屏），
   // 并按 devicePixelRatio 渲染避免 HiDPI 模糊；偏好变化时重建渲染器以应用新字号。
-  useEffect(() => {
-    prefsRef.current = prefs;
+  const syncDanmakuCanvasSize = useCallback(() => {
     const overlay = overlayRef.current;
     const canvas = canvasRef.current;
     if (!overlay || !canvas) return;
+    const rect = overlay.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const width = Math.max(1, Math.round(rect.width));
+    const height = Math.max(1, Math.round(rect.height));
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    dprRef.current = dpr;
+    rendererRef.current = new DanmakuRenderer({
+      canvasWidth: width,
+      canvasHeight: height,
+      preferences: prefsRef.current,
+    });
+  }, []);
 
-    const syncSize = () => {
-      const rect = overlay.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      const dpr = Math.min(3, window.devicePixelRatio || 1);
-      const width = Math.max(1, Math.round(rect.width));
-      const height = Math.max(1, Math.round(rect.height));
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      dprRef.current = dpr;
-      rendererRef.current = new DanmakuRenderer({
-        canvasWidth: width,
-        canvasHeight: height,
-        preferences: prefsRef.current,
-      });
-    };
+  // 回调 ref：canvas 真正挂载（loading 早退分支切回主分支）时立即定尺寸，
+  // 否则初始化 effect 只在挂载时跑一次、canvas 还不存在，渲染器永远建不出来。
+  const attachDanmakuCanvas = useCallback((el: HTMLCanvasElement | null) => {
+    canvasRef.current = el;
+    if (el) syncDanmakuCanvasSize();
+  }, [syncDanmakuCanvasSize]);
 
-    syncSize();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(syncSize);
+  useEffect(() => {
+    prefsRef.current = prefs;
+    syncDanmakuCanvasSize();
+    const overlay = overlayRef.current;
+    if (!overlay || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => syncDanmakuCanvasSize());
     observer.observe(overlay);
     return () => observer.disconnect();
-  }, [prefs]);
+  }, [prefs, syncDanmakuCanvasSize, loading]);
 
   // 浏览器 MSE 模式：DashPlayer 直接控制 <video>，所有控制条/手势/专注联动
   // 通过统一的进程内控制适配器生效。playurl 或媒体流失败时显示错误卡片。
@@ -1099,7 +1256,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       onTap: () => handlers.current.onTap(),
       onLongPress: () => handlers.current.onLongPress(),
       onLongPressEnd: () => handlers.current.onLongPressEnd(),
-      enableDoubleTapSeek: doubleTapSeekEnabled,
+      doubleTapAction,
       getCurrentTime: () => handlers.current.getCurrentTime(),
       getDuration: () => handlers.current.getDuration(),
     });
@@ -1108,7 +1265,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       coord.destroy();
       gestureRefCoordinator.current = null;
     };
-  }, [doubleTapSeekEnabled, gestureElement]);
+  }, [doubleTapAction, gestureElement]);
 
   // Keyboard shortcuts stay bound once; live values come from a ref so timeupdate
   // does not add/remove the window listener every animation frame.
@@ -1288,6 +1445,13 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       return;
     }
     let stopped = false;
+    // 原生模式播放时钟：锚点位置 + 本地经过时间 × 倍速，暂停时冻结在锚点。
+    const readNativeClock = () => {
+      const clock = nativeClockRef.current;
+      if (!clock.isPlaying) return clock.positionSeconds;
+      const next = clock.positionSeconds + ((performance.now() - clock.anchoredAtMs) / 1000) * playbackSpeedRef.current;
+      return durationRef.current > 0 ? Math.min(next, durationRef.current) : next;
+    };
     function tick() {
       if (stopped) return;
       const canvas = canvasRef.current;
@@ -1306,8 +1470,9 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const dpr = dprRef.current;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      // 浏览器模式从 MSE video 读取精确时间，Android 模式使用原生回调时间
-      const t = nativePlayerActiveRef.current ? currentTimeRef.current : (playerControlRef.current?.getCurrentTime() ?? currentTimeRef.current);
+      // 浏览器模式从 MSE video 读取精确时间；Android 原生模式用插值时钟
+      // （原生回调每 500ms 一次，直接读会让弹幕 0.5 秒一跳）。
+      const t = nativePlayerActiveRef.current ? readNativeClock() : (playerControlRef.current?.getCurrentTime() ?? currentTimeRef.current);
       const visible = renderer.schedule(danmaku, t);
       drawDanmaku(ctx, visible, t, renderer.getMetrics(), prefsRef.current);
       animationRef.current = requestAnimationFrame(tick);
@@ -1723,6 +1888,8 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
 
   function finishScrub(input: HTMLInputElement) {
     const pending = scrubTimeRef.current;
+    // 触摸路径没有 mouseleave：松手必须同步清掉帧预览，否则小窗一直挂在进度条上。
+    setHoveredFrame(null);
     if (pending === null) return;
     const value = Number(input.value);
     scrubTimeRef.current = null;
@@ -1922,9 +2089,12 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
   const visibleFocusRemainingMs = focusFollowsCurrentPart && duration > 0
     ? Math.max(0, Math.round((duration - currentTime) * 1000))
     : focusTimer.remainingMs;
-  const activeSubtitle = selectedSubtitleId !== null
-    ? subtitleCues.find((cue) => currentTime >= cue.from && currentTime <= cue.to)?.content ?? ""
-    : "";
+  const useLocalSubtitle = localSubtitleEnabled && localSubtitle != null && localSubtitle.cues.length > 0;
+  const activeSubtitle = useLocalSubtitle && localSubtitle
+    ? localSubtitle.cues.find((cue) => currentTime >= cue.from && currentTime <= cue.to)?.content ?? ""
+    : selectedSubtitleId !== null
+      ? subtitleCues.find((cue) => currentTime >= cue.from && currentTime <= cue.to)?.content ?? ""
+      : "";
   async function chooseInteractiveBranch(choice: Parameters<typeof interactiveChoiceTarget>[0]) {
     const graphVersion = enhancementMetadata.interaction?.graphVersion;
     if (!graphVersion || !video) return;
@@ -2086,27 +2256,57 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
       </label>
     </div>
   );
-  const subtitlePanel = showSubtitles && subtitleTracks.length > 0 && (
+  const subtitlePanel = showSubtitles && (subtitleTracks.length > 0 || localSubtitle != null) && (
     <div className="fb-player-popup" role="dialog" aria-label="字幕轨道">
-      <strong>字幕轨道</strong>
+      <strong>字幕</strong>
       <label className="field-row">
+        <span>字幕来源</span>
         <select
           aria-label="字幕轨道"
-          value={selectedSubtitleId ?? "off"}
+          value={useLocalSubtitle ? "local" : (selectedSubtitleId ?? "off")}
           onChange={(event) => {
             const value = event.target.value;
-            setSelectedSubtitleId(value === "off" ? null : Number(value));
+            if (value === "off") {
+              subtitleUserChoiceRef.current = "off";
+              setSelectedSubtitleId(null);
+              setLocalSubtitleEnabled(false);
+              return;
+            }
+            if (value === "local") {
+              subtitleUserChoiceRef.current = "local";
+              setLocalSubtitleEnabled(true);
+              setSelectedSubtitleId(null);
+              return;
+            }
+            subtitleUserChoiceRef.current = Number(value);
+            setSelectedSubtitleId(Number(value));
+            setLocalSubtitleEnabled(false);
           }}
         >
           <option value="off">关闭字幕</option>
           {subtitleTracks.map((track) => <option key={track.id} value={track.id}>{track.label}</option>)}
+          {localSubtitle != null && <option value="local">本地字幕 · {localSubtitle.name}</option>}
         </select>
       </label>
+      <label className="field-row fb-subtitle-import-row">
+        <span>导入本地字幕</span>
+        <input
+          type="file"
+          accept=".srt,.vtt,application/x-subrip,text/vtt"
+          aria-label="导入本地 SRT/VTT 字幕文件"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) void importLocalSubtitleFile(file);
+          }}
+        />
+      </label>
+      <p className="fb-subtitle-hint">支持 .srt / .vtt 文件，导入后按视频时间轴显示。</p>
     </div>
   );
 
   return (
-    <div className="fb-player-page" ref={playerPageRef} data-player-fullscreen={fullscreen ? "1" : "0"}>
+    <div className="fb-player-page" ref={playerPageRef} data-player-fullscreen={fullscreen ? "1" : "0"} data-seek-skin={seekBarSkin}>
       <div
         className="fb-player-surface"
         ref={overlayRef}
@@ -2151,7 +2351,7 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             </button>
           </div>
         )}
-        <canvas ref={canvasRef} className="player-danmaku-canvas" />
+        <canvas ref={attachDanmakuCanvas} className="player-danmaku-canvas" />
         {activeSubtitle && <div className="player-subtitle-overlay" aria-live="polite">{activeSubtitle}</div>}
         <div ref={attachGestureElement} className="player-gesture-overlay" />
         {resumeNotice && <div className="fb-player-resume-notice" data-controls={controlsVisible ? "shown" : "hidden"} role="status">{resumeNotice}</div>}
@@ -2199,8 +2399,8 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             className="fb-player-topbar-btn"
             onClick={() => setShowSubtitles((v) => !v)}
             aria-label="字幕"
-            title={subtitleLoading ? "正在读取字幕" : subtitleTracks.length === 0 ? "暂无字幕" : "字幕"}
-            disabled={subtitleTracks.length === 0}
+            title={subtitleLoading ? "正在读取字幕" : subtitleTracks.length === 0 && localSubtitle == null ? "暂无在线字幕，可在面板导入本地字幕" : "字幕"}
+            disabled={subtitleTracks.length === 0 && localSubtitle == null}
           >
             <Captions size={18} />
           </button>
@@ -2215,6 +2415,15 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             data-tour-target="player-danmaku-study"
           >
             <GraduationCap size={18} />
+          </button>
+          <button
+            className="fb-player-topbar-btn"
+            onClick={() => setShowComments((v) => !v)}
+            aria-label="评论导入"
+            title="评论导入"
+            data-tour-target="player-comments"
+          >
+            <MessageCircle size={18} />
           </button>
           <button
             className="fb-player-topbar-btn"
@@ -2239,11 +2448,13 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
             ? "正在读取弹幕"
             : danmakuFailed
               ? "弹幕加载失败"
-              : !prefs.enabled
-                ? "弹幕已关闭"
-                : danmakuStatus === "ready"
-                  ? `弹幕 ${danmakuCount} 条`
-                  : "这个视频还没有弹幕"}
+              : danmakuClosed
+                ? "这个视频已关闭弹幕"
+                : !prefs.enabled
+                  ? "弹幕已关闭"
+                  : danmakuStatus === "ready"
+                    ? `弹幕 ${danmakuCount} 条`
+                    : "这个视频还没有弹幕"}
           {danmakuFailed && (
             <button
               className="fb-player-danmaku-retry"
@@ -2358,14 +2569,21 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
                 const value = Number(e.currentTarget.value);
                 scrubTimeRef.current = Number.isFinite(value) ? value : 0;
                 setScrubTime(scrubTimeRef.current);
+                // 触摸/笔拖动时预览由 touchmove 提供并在松手清理；
+                // 鼠标按下即清掉旧预览，避免跨交互残留。
+                if (e.pointerType !== "mouse") setHoveredFrame(null);
               }}
               onPointerUp={(e) => finishScrub(e.currentTarget)}
               onPointerCancel={(e) => finishScrub(e.currentTarget)}
               onLostPointerCapture={(e) => finishScrub(e.currentTarget)}
               onMouseUp={(e) => finishScrub(e.currentTarget)}
               onTouchEnd={(e) => finishScrub(e.currentTarget)}
-              onMouseMove={(e) => previewAt(e.clientX, e.currentTarget)}
-              onMouseLeave={() => setHoveredFrame(null)}
+              // 只认真实鼠标的悬停：触摸结束后浏览器会补发兼容 mouse 事件，
+              // 旧实现会把预览小窗重新挂上且永远等不到 mouseleave（平板残留根因）。
+              onPointerMove={(e) => {
+                if (e.pointerType === "mouse") previewAt(e.clientX, e.currentTarget);
+              }}
+              onPointerLeave={() => setHoveredFrame(null)}
               onTouchMove={(e) => previewAt(e.touches[0]?.clientX ?? 0, e.currentTarget)}
             />
           </div>
@@ -2589,6 +2807,76 @@ export function BilibiliPlayerView({ bvid, initialPlaybackTarget }: { bvid: stri
         {danmakuPrefsPanel}
         {/* 字幕菜单弹窗 */}
         {subtitlePanel}
+        {/* 评论导入面板 */}
+        {showComments && (
+          <div className="fb-player-popup fb-player-comments" role="dialog" aria-label="评论导入">
+            <div className="fb-player-comments-head">
+              <strong>评论{commentsTotal > 0 ? ` · ${formatCount(commentsTotal)}` : ""}</strong>
+              <div className="fb-player-comments-actions">
+                <select
+                  aria-label="评论排序"
+                  value={commentsSort}
+                  onChange={(event) => {
+                    setCommentsSort(event.target.value as CommentSort);
+                    setCommentsPage(1);
+                  }}
+                >
+                  <option value="hot">最热</option>
+                  <option value="time">最新</option>
+                </select>
+                <button
+                  type="button"
+                  className="fb-player-comments-import-all"
+                  disabled={commentsStatus !== "ready" || comments.length === 0}
+                  onClick={() => void importCommentsToNotes(comments)}
+                >
+                  导入本页
+                </button>
+                <button type="button" className="fb-player-topbar-btn" onClick={() => setShowComments(false)} aria-label="关闭评论">
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="fb-player-comments-list">
+              {commentsStatus === "loading" && <p className="fb-player-comments-hint">正在读取评论</p>}
+              {commentsStatus === "failed" && (
+                <div className="fb-player-comments-hint">
+                  <p>{commentsError || "评论读取失败"}</p>
+                  <button type="button" onClick={() => setCommentsReload((count) => count + 1)}>重试</button>
+                </div>
+              )}
+              {commentsStatus === "ready" && comments.length === 0 && (
+                <p className="fb-player-comments-hint">还没有公开评论</p>
+              )}
+              {comments.map((comment) => {
+                const imported = importedCommentIdsRef.current.has(comment.rpid);
+                return (
+                  <div key={comment.rpid} className="fb-player-comment" data-imported={imported ? "1" : "0"}>
+                    <div className="fb-player-comment-main">
+                      <span className="fb-player-comment-author">{comment.authorName}</span>
+                      <p>{comment.content}</p>
+                      <span className="fb-player-comment-meta"><ThumbsUp size={11} /> {formatCount(comment.likeCount)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="fb-player-comment-import"
+                      disabled={imported}
+                      onClick={() => void importCommentsToNotes([comment])}
+                      aria-label={`导入 ${comment.authorName} 的评论到笔记`}
+                    >
+                      {imported ? "已导入" : "导入"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            {commentsStatus === "ready" && comments.length > 0 && comments.length < commentsTotal && (
+              <button type="button" className="fb-player-comments-more" onClick={() => setCommentsPage((page) => page + 1)}>
+                加载更多
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 详情区 */}

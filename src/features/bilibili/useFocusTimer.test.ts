@@ -31,6 +31,8 @@ describe("focus controller backup recovery", () => {
       focusActiveSession: null, focusHistory: [restored], videoNotes: [],
       watchHistory: [], learningList: [], localWatchHistory: [],
       playbackProgress: {}, searchHistory: [],
+      danmakuPreferences: null, playbackPreferences: null,
+      focusSessions: null, bilibiliCookie: null, bilibiliAuth: null,
     });
 
     await vi.waitFor(() => expect(focusTimerController.history.map((session) => session.id)).toEqual(["restored-session"]));

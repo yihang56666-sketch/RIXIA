@@ -4,6 +4,7 @@ import { CountdownsView } from "./features/countdowns/CountdownsView";
 import { FocusView } from "./features/focus/FocusView";
 import { HabitsView } from "./features/habits/HabitsView";
 import { InboxView } from "./features/inbox/InboxView";
+import { JournalView } from "./features/journal/JournalView";
 import { KaoyanView } from "./features/kaoyan/KaoyanView";
 import { LibraryView } from "./features/library/LibraryView";
 import { NotesView } from "./features/notes/NotesView";
@@ -173,7 +174,7 @@ export default function App() {
     >
       <div className="app-overlay" />
       <div className={launching ? "launch-overlay active" : "launch-overlay"} aria-hidden={!launching}>
-        <img src="/beid-icon.png" alt="" />
+        <img src="/beid-icon.png?v=3" alt="" />
         <span>BEID</span>
         <i className="launch-focus" aria-hidden="true" />
       </div>
@@ -213,6 +214,7 @@ export default function App() {
         {view === "tasks" && <TasksView />}
         {view === "habits" && <HabitsView />}
         {view === "notes" && <NotesView />}
+        {view === "journal" && <JournalView />}
         {view === "countdowns" && <CountdownsView />}
         {view === "focus" && <FocusView />}
         {view === "videos" && <VideosView />}

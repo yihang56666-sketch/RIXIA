@@ -1,4 +1,4 @@
-import { type CSSProperties, type FormEvent, useMemo, useState } from "react";
+import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, BookOpen, Brain, CalendarDays, Check, ChevronDown, ChevronUp, ClipboardList,
   Flame, GraduationCap, GripVertical, LineChart, Pencil, Plus, Trash2, TrendingDown, TrendingUp,
@@ -12,6 +12,7 @@ import { ProgressRing } from "../../components/ProgressRing";
 import { daysUntil, formatDateLabel, todayKey, weekdayLabel } from "../../lib/time";
 import { RixiaWorkspacePage } from "../bilibili/RixiaWorkspacePage";
 import { useFocusTimer } from "../bilibili/useFocusTimer";
+import { useM3Feedback } from "../bilibili/m3";
 import {
   buildFocusStatisticsSnapshot, FocusStatisticsRange, todayFocusedMs,
 } from "../../lib/bilibili/focusStatisticsModel";
@@ -153,6 +154,155 @@ function PlanOverviewCard({ today }: { today: string }) {
 
 function ProgressBar({ percent, color }: { percent: number; color: string }) {
   return <div className="progress-track"><div className="progress-fill" style={{ width: `${percent}%`, backgroundColor: color }} /></div>;
+}
+
+/**
+ * 每日计划与进度：固定清单每天勾选 + 进度备注（自动保存）。
+ * 未完成项可以补到今天，也可以转成"任务"功能的今日任务；备注帮助下次接着学。
+ */
+function KaoyanDailyPlanCard({ today }: { today: string }) {
+  const {
+    kaoyanDailyPlan, addKaoyanDailyItem, removeKaoyanDailyItem,
+    toggleKaoyanDailyItem, setKaoyanDailyNote, addTask,
+  } = useAppStore();
+  const showMessage = useM3Feedback().showMessage;
+  const { items, history } = kaoyanDailyPlan;
+  const entry = history[today] ?? { done: [], note: "" };
+  const doneCount = items.filter((item) => entry.done.includes(item.id)).length;
+  const percent = items.length ? Math.round((doneCount / items.length) * 100) : 0;
+
+  const [draftTitle, setDraftTitle] = useState("");
+  const [noteDraft, setNoteDraft] = useState(history[today]?.note ?? "");
+  const noteDirtyRef = useRef(false);
+  const [taskFeedback, setTaskFeedback] = useState("");
+
+  // 跨零点/进页面时以持久化值为准；防抖自动保存备注，未变化不落盘。
+  useEffect(() => {
+    setNoteDraft(history[today]?.note ?? "");
+    noteDirtyRef.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today]);
+  useEffect(() => {
+    if (!noteDirtyRef.current) return;
+    const timer = window.setTimeout(() => {
+      noteDirtyRef.current = false;
+      setKaoyanDailyNote(today, noteDraft);
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [noteDraft, today, setKaoyanDailyNote]);
+
+  // 最近一个有记录的过去日期：上次进度 + 未完成项
+  const lastDate = useMemo(() => (
+    Object.keys(history)
+      .filter((date) => date < today && (history[date]!.note.trim() || history[date]!.done.length > 0))
+      .sort()
+      .pop()
+  ), [history, today]);
+  const lastEntry = lastDate ? history[lastDate] : undefined;
+  const unfinishedFromLast = lastDate && lastEntry
+    ? items.filter((item) => lastEntry.done.includes(item.id) && !entry.done.includes(item.id))
+    : [];
+
+  const last7 = useMemo(() => {
+    const out: Array<{ date: string; percent: number }> = [];
+    for (let offset = 6; offset >= 0; offset -= 1) {
+      const cursor = new Date(`${today}T00:00:00`);
+      cursor.setDate(cursor.getDate() - offset);
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+      const dayEntry = history[key];
+      const done = dayEntry ? items.filter((item) => dayEntry.done.includes(item.id)).length : 0;
+      out.push({ date: key, percent: items.length ? Math.round((done / items.length) * 100) : 0 });
+    }
+    return out;
+  }, [history, items, today]);
+
+  function submitItem(event: FormEvent) {
+    event.preventDefault();
+    if (!draftTitle.trim()) return;
+    addKaoyanDailyItem(draftTitle);
+    setDraftTitle("");
+  }
+
+  function carryOver() {
+    for (const item of unfinishedFromLast) toggleKaoyanDailyItem(item.id, today);
+    showMessage(`已补上 ${unfinishedFromLast.length} 项到今天`, { durationMs: 1800 });
+  }
+
+  function pushUnfinishedToTasks() {
+    const pending = items.filter((item) => !entry.done.includes(item.id));
+    if (pending.length === 0) return;
+    for (const item of pending) addTask(item.title, today);
+    setTaskFeedback(`已把 ${pending.length} 项加入今日任务`);
+    window.setTimeout(() => setTaskFeedback(""), 2400);
+  }
+
+  return <section className="card kaoyan-daily-plan" aria-label="每日计划与进度">
+    <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
+      <div><h3>每日计划与进度</h3><p className="muted">每天勾选完成项，写好进度，下次接着学</p></div>
+      <span className={percent === 100 && items.length > 0 ? "kaoyan-chip done" : "kaoyan-chip accent"}>{percent}% 今日完成</span>
+    </div>
+    <ProgressBar percent={percent} color={percent === 100 && items.length > 0 ? "#43A88B" : "#5B8DEF"} />
+    <div className="kaoyan-daily-items">
+      {items.map((item) => {
+        const done = entry.done.includes(item.id);
+        return <div key={item.id} className="kaoyan-daily-item">
+          <button
+            type="button"
+            className={done ? "day-check on" : "day-check"}
+            aria-pressed={done}
+            aria-label={done ? `取消完成：${item.title}` : `完成：${item.title}`}
+            onClick={() => toggleKaoyanDailyItem(item.id, today)}
+          >{done && <Check size={14} />}</button>
+          <span className={done ? "kaoyan-daily-title done" : "kaoyan-daily-title"}>{item.title}</span>
+          <button type="button" className="icon-button" aria-label={`删除计划项 ${item.title}`} title="删除计划项" onClick={() => removeKaoyanDailyItem(item.id)}>
+            <Trash2 size={14} />
+          </button>
+        </div>;
+      })}
+      {items.length === 0 && <p className="muted">还没有固定计划项，先添加几条（例如：背 50 词、一套数学卷）。</p>}
+    </div>
+    <form className="kaoyan-form" onSubmit={submitItem}>
+      <input className="field" value={draftTitle} placeholder="添加每日计划项…" aria-label="添加每日计划项" onChange={(event) => setDraftTitle(event.target.value)} />
+      <button className="primary compact" type="submit" disabled={!draftTitle.trim()}>添加</button>
+    </form>
+    {unfinishedFromLast.length > 0 && (
+      <div className="row" style={{ marginTop: 8 }}>
+        <button type="button" className="ghost-btn compact" onClick={carryOver}>
+          上次有 {unfinishedFromLast.length} 项未完成，补到今天
+        </button>
+      </div>
+    )}
+    <label className="kaoyan-daily-note">
+      <span className="muted">今日进度（学到哪、下次从哪继续）</span>
+      <textarea
+        className="field"
+        rows={3}
+        value={noteDraft}
+        placeholder="例：高数刷完第 3 章例题，明天从 3.4 继续…"
+        onChange={(event) => {
+          noteDirtyRef.current = true;
+          setNoteDraft(event.target.value);
+        }}
+      />
+    </label>
+    <div className="row" style={{ justifyContent: "space-between", marginTop: 8, gap: 8 }}>
+      <span className="muted" style={{ fontSize: 12 }}>
+        进度自动保存{lastDate && lastEntry?.note.trim() ? ` · 上次（${lastDate.slice(5)}）：${lastEntry.note.trim().slice(0, 26)}` : ""}
+      </span>
+      {items.some((item) => !entry.done.includes(item.id)) && (
+        <button type="button" className="ghost-btn compact" onClick={pushUnfinishedToTasks}>未完成转今日任务</button>
+      )}
+    </div>
+    {taskFeedback && <p className="muted" style={{ fontSize: 12.5, margin: "6px 0 0" }}>{taskFeedback}</p>}
+    <div className="kaoyan-goal-bars" aria-label="最近 7 天每日计划完成率">
+      {last7.map((day) => (
+        <div key={day.date} className="kaoyan-goal-bar-col" title={`${day.date.slice(5)} · ${day.percent}%`}>
+          <div className="kaoyan-goal-bar" style={{ height: Math.max(4, Math.round((day.percent / 100) * 46)), backgroundColor: day.percent === 100 && items.length > 0 ? "#43A88B" : "#5B8DEF" }} />
+          <span>{day.date.slice(5)}</span>
+        </div>
+      ))}
+    </div>
+  </section>;
 }
 
 function SubjectForm({ subject, onDone }: { subject?: StudySubject; onDone: () => void }) {
@@ -735,6 +885,7 @@ export function KaoyanView({ embedded = false }: { embedded?: boolean } = {}) {
     <ExamCountdownHero today={today} />
     <FocusGoalCard />
     <PlanOverviewCard today={today} />
+    <KaoyanDailyPlanCard today={today} />
     <div className="kaoyan-tabs" role="tablist" aria-label="考研功能区">
       {TABS.map(({ key, label, icon: Icon }) => <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? "kaoyan-tab on" : "kaoyan-tab"} onClick={() => setTab(key)}><Icon size={15} /> {label}</button>)}
     </div>

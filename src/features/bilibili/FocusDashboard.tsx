@@ -848,6 +848,61 @@ export function FocusDashboard({ onOpenStatistics }: { onOpenStatistics: () => v
     cleanupSnapRafRef.current?.();
   }, []);
 
+  // ---- 首页下拉弹性过渡（iOS 手感）----
+  // 在滚动顶部继续下拉时，内容跟随手指以阻尼曲线位移 + 轻微放大 + 轻微模糊，
+  // 松手后以弹簧曲线回弹。仅作用于移动/窄屏单栏首页，且尊重系统减弱动态设置。
+  const HOME_PULL_RANGE = 240;
+  const [pullState, setPullState] = useState({ distance: 0, dragging: false });
+  const pullStartRef = useRef<number | null>(null);
+  const pullDraggingRef = useRef(false);
+  const reducedMotionRef = useRef(false);
+  useEffect(() => {
+    reducedMotionRef.current = typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }, []);
+
+  /** iOS 橡皮筋阻尼：距离越远增长越慢，渐近 HOME_PULL_RANGE。 */
+  const dampPull = useCallback((distance: number) => {
+    return (1 - 1 / (distance / HOME_PULL_RANGE + 1)) * HOME_PULL_RANGE;
+  }, []);
+
+  const resetPull = useCallback(() => {
+    pullStartRef.current = null;
+    if (!pullDraggingRef.current) return;
+    pullDraggingRef.current = false;
+    // dragging=false 时 CSS 弹簧过渡接管，回弹到 0。
+    setPullState({ distance: 0, dragging: false });
+  }, []);
+
+  const updatePull = useCallback((clientY: number | undefined | null) => {
+    const el = scrollRef.current;
+    if (!el || pullStartRef.current == null || clientY == null) return;
+    if (el.scrollTop > 0) {
+      // 已经滚离顶部：取消本次下拉跟踪。
+      pullStartRef.current = null;
+      if (pullDraggingRef.current) {
+        pullDraggingRef.current = false;
+        setPullState({ distance: 0, dragging: false });
+      }
+      return;
+    }
+    const distance = clientY - pullStartRef.current;
+    if (distance > 4) {
+      pullDraggingRef.current = true;
+      setPullState({ distance: dampPull(distance), dragging: true });
+    } else if (pullDraggingRef.current) {
+      // 手指回到起点以上：即时归零，保持跟手。
+      setPullState({ distance: 0, dragging: true });
+    }
+  }, [dampPull]);
+
+  const beginPullTracking = useCallback((clientY: number | undefined | null) => {
+    if (reducedMotionRef.current || clientY == null) return;
+    const el = scrollRef.current;
+    if (el && el.scrollTop <= 0) pullStartRef.current = clientY;
+  }, []);
+
   const activeSession = timer.activeSession;
   const finishedSession = timer.lastFinishedSession;
 
@@ -906,6 +961,20 @@ export function FocusDashboard({ onOpenStatistics }: { onOpenStatistics: () => v
     width: "100%",
   };
 
+  const pull = pullState.distance;
+  const pullStyle: React.CSSProperties = {
+    transformOrigin: "top center",
+    willChange: "transform",
+    transform: pull > 0
+      ? `translateY(${pull.toFixed(1)}px) scale(${(1 + pull / 2200).toFixed(4)})`
+      : undefined,
+    filter: pull > 0 ? `blur(${Math.min(3, pull / 70).toFixed(2)}px)` : undefined,
+    // 拖动中即时跟手；松手后交给弹簧曲线回弹（Apple 同款缓动）。
+    transition: pullState.dragging
+      ? "none"
+      : "transform 0.65s var(--ease-spring), filter 0.65s var(--ease-spring)",
+  };
+
   const content = workspace ? (
     <div style={{ display: "flex", gap: 20, padding: 20, height: "100%", overflow: "hidden" }}>
       <div className="fb-scroll-page" style={{ flex: 5, display: "grid", gap: 14, alignContent: "start", overflowY: "auto" }}>
@@ -931,35 +1000,50 @@ export function FocusDashboard({ onOpenStatistics }: { onOpenStatistics: () => v
     <div
       ref={scrollRef}
       className="fb-scroll-page"
+      style={{ overscrollBehaviorY: "contain" }}
       onScroll={handleScroll}
-      onTouchStart={() => {
+      onTouchStart={(event) => {
         gestureStartRef.current = scrollRef.current?.scrollTop ?? null;
+        beginPullTracking(event.touches[0]?.clientY);
       }}
-      onTouchEnd={handleScrollEnd}
+      onTouchMove={(event) => updatePull(event.touches[0]?.clientY)}
+      onTouchEnd={() => {
+        resetPull();
+        handleScrollEnd();
+      }}
+      onTouchCancel={resetPull}
       // 鼠标路径必须重置手势起点：否则 touch 滑动残留的旧起点会被之后的
       // 一次普通点击当作手势开始，误触发回顶吸附动画。
-      onMouseDown={() => {
+      onMouseDown={(event) => {
         gestureStartRef.current = scrollRef.current?.scrollTop ?? null;
+        if (event.button === 0) beginPullTracking(event.clientY);
       }}
-      onMouseUp={handleScrollEnd}
+      onMouseMove={(event) => updatePull(event.clientY)}
+      onMouseUp={() => {
+        resetPull();
+        handleScrollEnd();
+      }}
+      onMouseLeave={resetPull}
     >
-      <HomeHero
-        height={heroHeight}
-        scrollOffset={scrollOffset}
-        profileAvatarUrl={profileAvatarUrl}
-        onOpenProfile={openProfile}
-        onOpenSearch={openSearch}
-      />
-      <div style={cardsStyle}>{timer.ready ? (
-        <>
-          {coreCards}
-          {continueCard}
-        </>
-      ) : (
-        <section className="m3-card" style={{ padding: 32, display: "grid", placeItems: "center" }}>
-          <span className="m3-circular-progress lg" />
-        </section>
-      )}</div>
+      <div className="fb-home-pull" style={pullStyle}>
+        <HomeHero
+          height={heroHeight}
+          scrollOffset={scrollOffset}
+          profileAvatarUrl={profileAvatarUrl}
+          onOpenProfile={openProfile}
+          onOpenSearch={openSearch}
+        />
+        <div style={cardsStyle}>{timer.ready ? (
+          <>
+            {coreCards}
+            {continueCard}
+          </>
+        ) : (
+          <section className="m3-card" style={{ padding: 32, display: "grid", placeItems: "center" }}>
+            <span className="m3-circular-progress lg" />
+          </section>
+        )}</div>
+      </div>
     </div>
   );
 

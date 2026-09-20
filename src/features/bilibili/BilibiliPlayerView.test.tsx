@@ -44,7 +44,8 @@ const loadInteractiveNode = vi.fn().mockResolvedValue({
 });
 const recordWatchHistory = vi.fn().mockResolvedValue([]);
 const playbackPreferences = {
-  enableDoubleTapSeek: true,
+  doubleTapAction: "seek",
+  seekBarSkin: "classic",
   wifiDefaultQuality: 80,
   mobileDefaultQuality: 64,
   autoplayNext: false,

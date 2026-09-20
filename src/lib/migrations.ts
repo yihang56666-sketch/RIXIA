@@ -9,7 +9,10 @@ import type {
   HabitItem,
   InboxItem,
   JournalEntry,
+  KaoyanDailyEntry,
+  KaoyanDailyItem,
   NoteItem,
+  NowPlayingSnapshot,
   ResourceStatus,
   ReviewItem,
   TaskItem,
@@ -111,8 +114,53 @@ function migrateFocusSession(input: unknown): FocusSession | null {
   return { id, date, minutes, completedAt, resourceId, episodeId };
 }
 
-function migrateActiveFocus(input: unknown): ActiveFocus | null {
+/** 正在看快照：字段异常时丢弃整条（按钮只显示，不参与数据完整性）。 */
+function migrateNowPlaying(input: unknown): NowPlayingSnapshot | null {
   if (!isObject(input)) return null;
+  const bvid = typeof input.bvid === "string" ? input.bvid.trim() : "";
+  if (!/^BV[0-9A-Za-z]{10}$/i.test(bvid)) return null;
+  return {
+    bvid,
+    cid: isFiniteNumber(input.cid) && Number.isInteger(input.cid) && input.cid > 0 ? input.cid : 0,
+    title: typeof input.title === "string" ? input.title : "",
+    ownerName: typeof input.ownerName === "string" ? input.ownerName : undefined,
+    thumbnailUrl: typeof input.thumbnailUrl === "string" ? input.thumbnailUrl : undefined,
+    seconds: isFiniteNumber(input.seconds) && input.seconds >= 0 ? input.seconds : 0,
+    durationSeconds: isFiniteNumber(input.durationSeconds) && input.durationSeconds > 0 ? input.durationSeconds : undefined,
+    updatedAt: typeof input.updatedAt === "string" ? input.updatedAt : new Date(0).toISOString(),
+  };
+}
+
+/** 考研每日计划：items 清单 + 按日期的完成/备注历史。形状异常的条目逐项过滤。 */
+function migrateKaoyanDailyPlan(input: unknown): { items: KaoyanDailyItem[]; history: Record<string, KaoyanDailyEntry> } {
+  const fallback = { items: [] as KaoyanDailyItem[], history: {} as Record<string, KaoyanDailyEntry> };
+  if (!isObject(input)) return fallback;
+  const rawItems = asArray<unknown>(input.items, []);
+  const items = rawItems
+    .map((raw): KaoyanDailyItem | null => {
+      if (!isObject(raw)) return null;
+      const id = typeof raw.id === "string" ? raw.id : "";
+      const title = typeof raw.title === "string" ? raw.title.trim() : "";
+      if (!id || !title) return null;
+      return { id, title, createdAt: typeof raw.createdAt === "string" ? raw.createdAt : "" };
+    })
+    .filter((item): item is KaoyanDailyItem => item !== null);
+  const history: Record<string, KaoyanDailyEntry> = {};
+  const rawHistory = isObject(input.history) ? input.history : {};
+  const knownIds = new Set(items.map((item) => item.id));
+  for (const [date, rawEntry] of Object.entries(rawHistory)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !isObject(rawEntry)) continue;
+    const done = asArray<unknown>(rawEntry.done, [])
+      .filter((id): id is string => typeof id === "string" && knownIds.has(id));
+    history[date] = {
+      done,
+      note: typeof rawEntry.note === "string" ? rawEntry.note : "",
+    };
+  }
+  return { items, history };
+}
+
+function migrateActiveFocus(input: unknown): ActiveFocus | null {  if (!isObject(input)) return null;
   const startedAt = typeof input.startedAt === "string" ? input.startedAt : "";
   const mode = input.mode === "countup" ? "countup" : "countdown";
   if (!startedAt) return null;
@@ -386,6 +434,8 @@ export function migratePersistedState(
 
   const activeFocus = migrateActiveFocus(state.activeFocus);
   const playbackTarget = isObject(state.activeBilibiliPlaybackTarget) ? state.activeBilibiliPlaybackTarget : null;
+  const nowPlaying = migrateNowPlaying(state.nowPlaying);
+  const kaoyanDailyPlan = migrateKaoyanDailyPlan(state.kaoyanDailyPlan);
 
   return {
     theme,
@@ -474,6 +524,8 @@ export function migratePersistedState(
     } : null,
     loginAutoOfficial: state.loginAutoOfficial === true,
     activeCloudResourceId: typeof state.activeCloudResourceId === "string" ? state.activeCloudResourceId : null,
+    nowPlaying,
+    kaoyanDailyPlan,
     resources,
     timestampNotes,
     journals: asArray<unknown>(state.journals, [])
@@ -549,6 +601,7 @@ export function validateBackup(input: unknown): BackupData {
     countdowns: migrated.countdowns ?? [],
     subjects: migrated.subjects ?? [],
     studyUnits: migrated.studyUnits ?? [],
+    kaoyanDailyPlan: migrated.kaoyanDailyPlan ?? { items: [], history: {} },
     wrongQuestions: migrated.wrongQuestions ?? [],
     reviewItems: migrated.reviewItems ?? [],
     mockExams: migrated.mockExams ?? [],

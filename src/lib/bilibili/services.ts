@@ -122,7 +122,8 @@ function normalizePlayback(value: unknown): PlaybackPreferences {
   if (typeof value !== "object" || value === null) return { ...DEFAULT_PLAYBACK_PREFERENCES };
   const v = value as Partial<PlaybackPreferences>;
   return {
-    enableDoubleTapSeek: typeof v.enableDoubleTapSeek === "boolean" ? v.enableDoubleTapSeek : true,
+    doubleTapAction: v.doubleTapAction === "seek" ? "seek" : "toggle",
+    seekBarSkin: normalizeSeekBarSkin(v.seekBarSkin),
     wifiDefaultQuality: normalizePreferredQuality(v.wifiDefaultQuality ?? v.defaultQuality),
     mobileDefaultQuality: normalizePreferredQuality(v.mobileDefaultQuality ?? v.defaultQuality),
     autoplayNext: typeof v.autoplayNext === "boolean" ? v.autoplayNext : false,
@@ -131,6 +132,14 @@ function normalizePlayback(value: unknown): PlaybackPreferences {
     defaultVolume: clampNumber(v.defaultVolume, DEFAULT_PLAYBACK_PREFERENCES.defaultVolume, 0, 1),
     playbackRate: clampNumber(v.playbackRate, DEFAULT_PLAYBACK_PREFERENCES.playbackRate, 0.5, 3),
   };
+}
+
+const SEEK_BAR_SKINS = ["classic", "neon", "aurora", "mono"];
+
+function normalizeSeekBarSkin(value: unknown): PlaybackPreferences["seekBarSkin"] {
+  return typeof value === "string" && (SEEK_BAR_SKINS as string[]).includes(value)
+    ? value as PlaybackPreferences["seekBarSkin"]
+    : DEFAULT_PLAYBACK_PREFERENCES.seekBarSkin;
 }
 
 function normalizePreferredQuality(value: unknown): number {

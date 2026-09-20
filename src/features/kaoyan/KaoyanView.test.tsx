@@ -16,6 +16,7 @@ describe("KaoyanView", () => {
       mockExams: [],
       kaoyanWords: [],
       kaoyanExamDate: "2026-12-19",
+      kaoyanDailyPlan: { items: [], history: {} },
     } as Partial<ReturnType<typeof useAppStore.getState>>);
   });
 
@@ -121,5 +122,50 @@ describe("KaoyanView", () => {
     expect(units).toHaveLength(1);
     expect(units[0].startDate).toBe("2030-01-03");
     expect(units[0].endDate).toBe("2030-01-03");
+  });
+});
+
+describe("KaoyanView daily plan card", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useAppStore.setState({
+      view: "kaoyan",
+      subjects: [],
+      studyUnits: [],
+      wrongQuestions: [],
+      reviewItems: [],
+      mockExams: [],
+      kaoyanWords: [],
+      kaoyanExamDate: "2026-12-19",
+      kaoyanDailyPlan: { items: [], history: {} },
+    } as Partial<ReturnType<typeof useAppStore.getState>>);
+  });
+
+  it("adds a plan item, checks it off for today and reports 100%", async () => {
+    render(<KaoyanView />);
+
+    const input = screen.getByLabelText("添加每日计划项");
+    fireEvent.change(input, { target: { value: "背 50 词" } });
+    fireEvent.submit(input.closest("form")!);
+
+    expect(screen.getByText("背 50 词")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "完成：背 50 词" }));
+    expect(screen.getByRole("button", { name: "取消完成：背 50 词" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("100% 今日完成")).toBeInTheDocument();
+  });
+
+  it("saves the progress note into the store for the next session", async () => {
+    const { waitFor } = await import("@testing-library/react");
+    render(<KaoyanView />);
+
+    const note = screen.getByPlaceholderText(/高数刷完第 3 章例题/);
+    fireEvent.change(note, { target: { value: "高数 3.2 结束，明天 3.3" } });
+
+    await waitFor(() => {
+      const today = new Date();
+      const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      expect(useAppStore.getState().kaoyanDailyPlan.history[key]?.note).toBe("高数 3.2 结束，明天 3.3");
+    }, { timeout: 2500 });
   });
 });

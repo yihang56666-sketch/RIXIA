@@ -4,6 +4,36 @@ import { useAppStore } from "./useAppStore";
 
 const initialState = useAppStore.getInitialState();
 
+describe("kaoyan daily plan backup round-trip", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    useAppStore.setState(initialState, true);
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useAppStore.setState(initialState, true);
+    localStorage.clear();
+  });
+
+  it("round-trips the daily plan through export/import for cross-device transfer", () => {
+    useAppStore.getState().addKaoyanDailyItem("背 50 词");
+    const item = useAppStore.getState().kaoyanDailyPlan.items[0]!;
+    useAppStore.getState().toggleKaoyanDailyItem(item.id, "2026-09-19");
+    useAppStore.getState().setKaoyanDailyNote("2026-09-19", "单词打卡完成，数学从 3.4 继续");
+
+    const backup = useAppStore.getState().exportBackup();
+    useAppStore.setState({ kaoyanDailyPlan: { items: [], history: {} } });
+    useAppStore.getState().importBackup(backup);
+
+    expect(useAppStore.getState().kaoyanDailyPlan).toEqual({
+      items: [item],
+      history: { "2026-09-19": { done: [item.id], note: "单词打卡完成，数学从 3.4 继续" } },
+    });
+  });
+});
+
 describe("persisted state validation", () => {
   beforeEach(() => {
     vi.restoreAllMocks();

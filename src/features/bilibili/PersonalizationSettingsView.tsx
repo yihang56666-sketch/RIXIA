@@ -122,18 +122,48 @@ export function PersonalizationSettingsView() {
         <div className="m3-list-tile" style={{ minHeight: 72 }}>
           <span className="m3-tile-leading"><Mi name="touch_app" /></span>
           <span className="m3-tile-body">
-            <span className="m3-body-lg">启用双击快进快退</span>
-            <span className="m3-body-sm">关闭后，双击视频画面的任何位置都会切换播放或暂停。</span>
+            <span className="m3-body-lg">双击视频画面</span>
+            <span className="m3-body-sm">默认双击播放/暂停；切换后双击左右两侧快进快退。</span>
           </span>
           <span className="m3-tile-trailing">
-            <SwitchCheck
-              checked={preferences.enableDoubleTapSeek}
+            <select
+              aria-label="双击视频画面行为"
+              value={preferences.doubleTapAction}
               disabled={saving}
-              onChange={(v) => {
+              onChange={(event) => {
                 setSaving(true);
-                void persist({ ...preferences, enableDoubleTapSeek: v }).finally(() => setSaving(false));
+                const value = event.target.value === "seek" ? "seek" : "toggle";
+                void persist({ ...preferences, doubleTapAction: value }).finally(() => setSaving(false));
               }}
-            />
+            >
+              <option value="toggle">播放 / 暂停</option>
+              <option value="seek">快进 / 快退</option>
+            </select>
+          </span>
+        </div>
+        <hr className="m3-divider" style={{ margin: 0 }} />
+        <div className="m3-list-tile" style={{ minHeight: 72 }}>
+          <span className="m3-tile-leading"><Mi name="linear_scale" /></span>
+          <span className="m3-tile-body">
+            <span className="m3-body-lg">播放进度条皮肤</span>
+            <span className="m3-body-sm">经典、霓虹、极光、极简四套样式即时生效。</span>
+          </span>
+          <span className="m3-tile-trailing">
+            <select
+              aria-label="播放进度条皮肤"
+              value={preferences.seekBarSkin}
+              disabled={saving}
+              onChange={(event) => {
+                setSaving(true);
+                const value = event.target.value as PlaybackPreferences["seekBarSkin"];
+                void persist({ ...preferences, seekBarSkin: value }).finally(() => setSaving(false));
+              }}
+            >
+              <option value="classic">经典</option>
+              <option value="neon">霓虹</option>
+              <option value="aurora">极光</option>
+              <option value="mono">极简</option>
+            </select>
           </span>
         </div>
       </section>

@@ -40,7 +40,7 @@ export function AboutView() {
       <div className="fb-scroll-page">
         <div style={{ maxWidth: 760, margin: "0 auto", padding: 20, display: "grid", gap: 16 }}>
           <section className="m3-card focubili-about-hero" style={{ padding: 28, textAlign: "center" }}>
-            <img src="/beid-icon.png" alt="" className="focubili-about-icon" style={{ width: 64, height: 64, borderRadius: 16 }} />
+            <img src="/beid-icon.png?v=3" alt="" className="focubili-about-icon" style={{ width: 64, height: 64, borderRadius: 16 }} />
             <h2 className="m3-title-lg" style={{ fontWeight: 700, marginTop: 14 }}>BEID</h2>
             <p className="m3-body-sm fb-on-surface-variant">版本 {APP_VERSION}</p>
             <p className="m3-body-md" style={{ marginTop: 10 }}>个人节奏工作台与 B 站专注学习客户端。</p>

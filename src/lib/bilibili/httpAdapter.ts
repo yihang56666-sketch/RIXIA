@@ -129,6 +129,8 @@ export function createJsonRequest(): JsonRequest {
       const response = await capacitorHttp.request({
         url,
         method: "GET",
+        // 显式声明文本响应：XML（弹幕）等非 JSON 依赖原生层原样返回字符串。
+        responseType: "text",
         headers,
       });
       if (response.status !== 200) {
@@ -280,6 +282,55 @@ function proxyUrl(url: string): string {
     return route("/bili-passport");
   }
   return url;
+}
+
+/**
+ * 创建一个跨环境的二进制请求函数（返回 ArrayBuffer），用于 protobuf 接口
+ * （如分段弹幕 seg.so）。原生环境通过 CapacitorHttp 的 base64 arraybuffer
+ * 通道取字节，浏览器走 fetch（dev 下自动改写为 Vite 本地代理）。
+ */
+export function createBinaryRequest(): (url: string) => Promise<ArrayBuffer> {
+  return async (url) => {
+    const headers: Record<string, string> = {
+      "User-Agent": DESKTOP_UA,
+      Referer: refererForBiliUrl(url),
+      Accept: "application/octet-stream",
+    };
+    // Tauri 桌面环境：原生 HTTP 插件返回标准 Response。
+    if (typeof window !== "undefined" && "__TAURI__" in window && typeof window.__TAURI__?.http?.fetch === "function") {
+      const response = await window.__TAURI__.http.fetch(url, { method: "GET", headers } as RequestInit);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return response.arrayBuffer();
+    }
+    // Capacitor 原生环境：arraybuffer 以 base64 字符串回传。
+    const capacitorHttp = getCapacitorHttp();
+    if (isNativeEnvironment() && capacitorHttp) {
+      const response = await capacitorHttp.request({
+        url,
+        method: "GET",
+        responseType: "arraybuffer",
+        headers,
+      });
+      if (response.status !== 200) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      if (typeof response.data !== "string") {
+        throw new Error("原生 HTTP 返回了无法处理的响应类型");
+      }
+      const binary = atob(response.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes.buffer as ArrayBuffer;
+    }
+    // 浏览器环境：dev/桌面走本地代理，纯 PWA 直连（受 CORS 限制）。
+    const fetchResponse = await fetch(proxyUrl(url), { headers, credentials: "omit" });
+    if (!fetchResponse.ok) {
+      throw new Error(`HTTP ${fetchResponse.status}`);
+    }
+    return fetchResponse.arrayBuffer();
+  };
 }
 
 /**

@@ -23,10 +23,12 @@ import type {
   JournalEntry,
   KaoyanWord,
   MockExam,
+  NowPlayingSnapshot,
   NoteItem,
   ResourceStatus,
   ReviewItem,
   StudySubject,
+  KaoyanDailyItem,
   StudyUnit,
   TaskItem,
   TimestampNote,
@@ -69,6 +71,10 @@ interface AppActions {
   removeStudyUnit: (id: string) => void;
   moveStudyUnit: (id: string, direction: -1 | 1) => void;
   toggleStudyDate: (id: string, date: string) => void;
+  addKaoyanDailyItem: (title: string) => void;
+  removeKaoyanDailyItem: (id: string) => void;
+  toggleKaoyanDailyItem: (id: string, date: string) => void;
+  setKaoyanDailyNote: (date: string, note: string) => void;
   addWrongQuestion: (input: { title: string; subjectId?: string; note?: string; tags: string[] }) => void;
   removeWrongQuestion: (id: string) => void;
   addReviewItem: (title: string, subjectId?: string) => void;
@@ -99,6 +105,7 @@ interface AppActions {
   touchResource: (id: string) => void;
   addTimestampNote: (resourceId: string, seconds: number, body: string) => void;
   removeTimestampNote: (id: string) => void;
+  updateNowPlaying: (snapshot: NowPlayingSnapshot | null) => void;
   setActiveFocus: (focus: ActiveFocus | null) => void;
   saveJournal: (date: string, body: string) => void;
   getJournal: (date: string) => JournalEntry | undefined;
@@ -172,6 +179,7 @@ const initialState: Omit<
   countdowns: [],
   subjects: [],
   studyUnits: [],
+  kaoyanDailyPlan: { items: [], history: {} },
   wrongQuestions: [],
   reviewItems: [],
   mockExams: [],
@@ -185,6 +193,7 @@ const initialState: Omit<
   activeBilibiliBvid: null,
   activeCloudResourceId: null,
   activeBilibiliPlaybackTarget: null,
+  nowPlaying: null,
   resources: [],
   timestampNotes: [],
   journals: [],
@@ -390,6 +399,43 @@ export const useAppStore = create<AppState & AppActions>()(
           return { ...item, completedDates };
         }),
       })),
+      // 考研每日计划：固定清单 + 按日期记录完成情况与进度备注。
+      addKaoyanDailyItem: (title) => {
+        const value = title.trim();
+        if (!value) return;
+        const item: KaoyanDailyItem = { id: createId(), title: value, createdAt: new Date().toISOString() };
+        set((state) => ({
+          kaoyanDailyPlan: { items: [...state.kaoyanDailyPlan.items, item], history: state.kaoyanDailyPlan.history },
+        }));
+      },
+      removeKaoyanDailyItem: (id) => set((state) => ({
+        kaoyanDailyPlan: {
+          items: state.kaoyanDailyPlan.items.filter((item) => item.id !== id),
+          history: state.kaoyanDailyPlan.history,
+        },
+      })),
+      toggleKaoyanDailyItem: (id, date) => set((state) => {
+        const entry = state.kaoyanDailyPlan.history[date] ?? { done: [], note: "" };
+        const done = entry.done.includes(id)
+          ? entry.done.filter((item) => item !== id)
+          : [...entry.done, id];
+        return {
+          kaoyanDailyPlan: {
+            items: state.kaoyanDailyPlan.items,
+            history: { ...state.kaoyanDailyPlan.history, [date]: { ...entry, done } },
+          },
+        };
+      }),
+      setKaoyanDailyNote: (date, note) => set((state) => {
+        const entry = state.kaoyanDailyPlan.history[date] ?? { done: [], note: "" };
+        if (entry.note === note) return {};
+        return {
+          kaoyanDailyPlan: {
+            items: state.kaoyanDailyPlan.items,
+            history: { ...state.kaoyanDailyPlan.history, [date]: { ...entry, note } },
+          },
+        };
+      }),
       addWrongQuestion: ({ title, subjectId, note, tags }) => {
         const trimmed = title.trim();
         if (!trimmed) return;
@@ -642,6 +688,8 @@ export const useAppStore = create<AppState & AppActions>()(
       removeTimestampNote: (id) => set((state) => ({
         timestampNotes: state.timestampNotes.filter((item) => item.id !== id),
       })),
+      // 正在看的视频快照：播放器周期性刷新，供全局"回到视频"按钮一键返回。
+      updateNowPlaying: (snapshot) => set({ nowPlaying: snapshot }),
       setActiveFocus: (focus) => set({ activeFocus: focus }),
       saveJournal: (date, body) => set((state) => {
         const existing = state.journals.find((entry) => entry.date === date);
@@ -678,6 +726,7 @@ export const useAppStore = create<AppState & AppActions>()(
           countdowns: data.countdowns,
           subjects: data.subjects,
           studyUnits: data.studyUnits,
+          kaoyanDailyPlan: data.kaoyanDailyPlan ?? { items: [], history: {} },
           wrongQuestions: data.wrongQuestions,
           reviewItems: data.reviewItems,
           mockExams: data.mockExams,
@@ -715,6 +764,7 @@ export const useAppStore = create<AppState & AppActions>()(
           countdowns: state.countdowns,
           subjects: state.subjects,
           studyUnits: state.studyUnits,
+          kaoyanDailyPlan: state.kaoyanDailyPlan,
           wrongQuestions: state.wrongQuestions,
           reviewItems: state.reviewItems,
           mockExams: state.mockExams,
@@ -769,6 +819,7 @@ export const useAppStore = create<AppState & AppActions>()(
         countdowns: state.countdowns,
         subjects: state.subjects,
         studyUnits: state.studyUnits,
+        kaoyanDailyPlan: state.kaoyanDailyPlan,
         wrongQuestions: state.wrongQuestions,
         reviewItems: state.reviewItems,
         mockExams: state.mockExams,
@@ -782,6 +833,7 @@ export const useAppStore = create<AppState & AppActions>()(
         activeBilibiliBvid: state.activeBilibiliBvid,
         activeBilibiliPlaybackTarget: state.activeBilibiliPlaybackTarget,
         activeCloudResourceId: state.activeCloudResourceId,
+        nowPlaying: state.nowPlaying,
         resources: state.resources,
         timestampNotes: state.timestampNotes,
         journals: state.journals,

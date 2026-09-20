@@ -1,6 +1,7 @@
 import {
   Command,
   Home,
+  MonitorPlay,
   Search,
   UserRound,
 } from "lucide-react";
@@ -12,6 +13,16 @@ import { hasOpenOverlays } from "../lib/overlayStack";
 import { useAppStore } from "../store/useAppStore";
 import type { ViewKey } from "../types";
 import { TOUR_PALETTE_OPEN_EVENT } from "../features/tour/FeatureTour";
+
+function formatClock(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
+  const total = Math.floor(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const core = `${m}:${String(s).padStart(2, "0")}`;
+  return h > 0 ? `${h}:${core.padStart(4, "0")}` : core;
+}
 
 const PRIMARY_NAV: Array<{ view: ViewKey; label: string; icon: typeof Home }> = [
   { view: "focus-dashboard", label: "首页", icon: Home },
@@ -51,6 +62,7 @@ const BEID_VIEWS = new Set<ViewKey>([
   "plan",
   "inbox",
   "notes",
+  "journal",
   "tasks",
   "focus",
   "videos",
@@ -78,8 +90,13 @@ function NavigationItem({ view, label, Icon }: { view: ViewKey; label: string; I
 export function Shell({ children }: { children: ReactNode }) {
   const view = useAppStore((state) => state.view);
   const density = useAppStore((state) => state.density);
+  const nowPlaying = useAppStore((state) => state.nowPlaying);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const previousViewRef = useRef<ViewKey[]>([]);
+  // 播放器视图本身就是"正在看"，不需要再放一个返回按钮。
+  const showNowPlayingReturn = Boolean(
+    nowPlaying?.bvid && view !== "bilibili-player",
+  );
 
   useEffect(() => {
     const previous = previousViewRef.current[previousViewRef.current.length - 1];
@@ -188,7 +205,7 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="focubili-shell" data-view={view}>
       <aside className="focubili-rail">
         <div className="focubili-brand" aria-label="BEID">
-          <img className="focubili-mark" src="/beid-icon.png" alt="" />
+          <img className="focubili-mark" src="/beid-icon.png?v=3" alt="" />
           <span>BEID</span>
         </div>
         <nav className="focubili-primary-nav" aria-label="主导航">
@@ -215,6 +232,29 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         </main>
       </div>
+      {showNowPlayingReturn && nowPlaying && (
+        <button
+          type="button"
+          className="focubili-now-playing-return"
+          data-tour-target="now-playing-return"
+          onClick={() => {
+            useAppStore.getState().openBilibiliVideoAt(
+              nowPlaying.bvid,
+              nowPlaying.title,
+              nowPlaying.cid,
+              nowPlaying.seconds,
+            );
+          }}
+          aria-label={`回到正在看的视频：${nowPlaying.title}`}
+          title={`回到正在看的视频：${nowPlaying.title}`}
+        >
+          <MonitorPlay size={17} strokeWidth={1.9} />
+          <span className="focubili-now-playing-text">
+            <strong>{nowPlaying.title}</strong>
+            <em>看到 {formatClock(nowPlaying.seconds)} · 一键回到</em>
+          </span>
+        </button>
+      )}
       <CaptureButton />
       <nav className="focubili-bottom-nav" aria-label="主导航">
         {PRIMARY_NAV.map((item) => {
