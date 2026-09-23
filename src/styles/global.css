@@ -5354,19 +5354,19 @@ html.fb-player-active-fullscreen .fb-player-page { overflow: hidden; }
 
 /* ---------- 首页文案与首次功能巡览 ---------- */
 
-.fb-home-quote {
-  margin: 22px auto 0;
-  max-width: 440px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  line-height: 1.5;
-  opacity: 0.86;
-  text-align: center;
+/* ===== 首页：块状排版（tile grid） ===== */
+.fb-home-hero {
+  padding: 14px 16px 0;
 }
-.fb-home-quote span { flex: 1; }
-
+.fb-home-hero--workspace {
+  padding: 0;
+}
+.fb-home-hero-inner {
+  display: grid;
+  gap: 12px;
+  max-width: 1080px;
+  margin: 0 auto;
+}
 .fb-home-masthead {
   display: flex;
   align-items: center;
@@ -5385,62 +5385,68 @@ html.fb-player-active-fullscreen .fb-player-page { overflow: hidden; }
   font-size: 12px;
   font-weight: 600;
 }
-.fb-home-editorial {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(220px, 0.65fr);
-  gap: 18px;
-  align-items: center;
-  flex: 1;
-  min-height: 0;
-}
-.fb-home-editorial-copy {
-  min-width: 0;
-}
-.fb-home-editorial-copy p {
-  margin: 10px 0 0;
-  max-width: 520px;
-  color: var(--focubili-muted);
-  font-size: 14px;
-  line-height: 1.6;
-}
-.fb-home-editorial-copy .fb-home-quote {
-  margin: 18px auto 0;
-  text-align: left;
-}
-.fb-home-featured {
-  align-self: center;
-  padding: 16px 18px;
+.fb-home-welcome {
+  padding: 18px;
   border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
   background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
   display: grid;
-  gap: 6px;
+  gap: 12px;
 }
-.fb-home-featured span {
-  color: var(--accent);
-  font-size: 11.5px;
-  font-weight: 700;
+.fb-home-welcome-copy {
+  min-width: 0;
 }
-.fb-home-featured strong {
-  font-size: 15px;
-  line-height: 1.4;
-}
-.fb-home-featured p {
-  margin: 0;
+.fb-home-welcome-copy p {
+  margin: 8px 0 0;
   color: var(--focubili-muted);
-  font-size: 12.5px;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.fb-home-welcome .fb-home-quote {
+  margin: 0;
+  max-width: none;
+  text-align: left;
+}
+.fb-home-quote {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
   line-height: 1.5;
+  opacity: 0.86;
+}
+.fb-home-quote span {
+  flex: 1;
+}
+@media (min-width: 720px) {
+  .fb-home-welcome {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 20px 22px;
+  }
+  .fb-home-welcome .fb-home-quote {
+    grid-column: 1 / -1;
+  }
 }
 
-@media (max-width: 719px) {
-  .fb-home-editorial {
-    grid-template-columns: 1fr;
-    align-items: start;
-  }
-  .fb-home-featured {
-    display: none;
+/* 首页卡片块状网格 */
+.fb-tile {
+  min-width: 0;
+  display: flex;
+}
+.fb-tile > * {
+  width: 100%;
+  min-width: 0;
+}
+.fb-tile-wide {
+  grid-column: span 2;
+}
+@media (max-width: 419px) {
+  .fb-tile-wide {
+    grid-column: span 1;
   }
 }
+
 .fb-dashboard-quote {
   margin: 20px 0 0;
   display: flex;
@@ -5582,6 +5588,12 @@ html.fb-player-active-fullscreen .fb-player-page { overflow: hidden; }
 .home-intent-groups {
   display: grid;
   gap: 12px;
+}
+
+@media (min-width: 600px) {
+  .home-intent-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .home-intent-group {

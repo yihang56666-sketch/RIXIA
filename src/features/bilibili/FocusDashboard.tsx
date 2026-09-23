@@ -26,6 +26,7 @@ import {
 import { currentExamDate, reviewStats } from "../../lib/kaoyan";
 import { daysUntil, todayKey } from "../../lib/time";
 import { getDailyQuote } from "../../lib/dailyQuotes";
+import { syncHomeWidgetState } from "../../lib/homeWidget";
 import { M3Dialog, Mi, useM3Feedback } from "./m3";
 import {
   CustomFocusDurationDialog,
@@ -38,8 +39,6 @@ const PRESET_MINUTES = [25, 45, 60] as const;
 const HOME_SNAP_TRIGGER_DISTANCE = 48;
 const HOME_SNAP_OVERSHOOT = 220;
 const HOME_REVERSE_SNAP_DISTANCE = 120;
-const HOME_HERO_FALL_RATIO = 1.32;
-const HOME_HERO_BLUR_MAX = 7;
 const HOME_HERO_FADE_MAX = 0.88;
 
 const LEARNING_STATUS_LABEL: Record<LearningListStatus, string> = {
@@ -558,33 +557,24 @@ function HomeHero({
   onOpenSearch: () => void;
 }) {
   const progress = Math.min(1, Math.max(0, scrollOffset / 280));
-  const fallOffset = scrollOffset * HOME_HERO_FALL_RATIO;
   return (
     <div
       className="fb-home-hero"
       style={{
-        height,
+        minHeight: Math.min(height, 188),
         position: "relative",
         overflow: "hidden",
         flex: "0 0 auto",
       }}
     >
       <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          filter: progress > 0.01 ? `blur(${progress * HOME_HERO_BLUR_MAX}px)` : undefined,
-          opacity: 1 - progress * HOME_HERO_FADE_MAX,
-          transform: `translateY(${fallOffset}px)`,
-          display: "flex",
-          flexDirection: "column",
-          padding: "20px 24px 18px",
-        }}
+        className="fb-home-hero-inner"
+        style={{ opacity: 1 - progress * HOME_HERO_FADE_MAX }}
       >
         <div className="fb-home-masthead">
           <div>
-            <h1 className="m3-headline-sm" style={{ fontWeight: 800 }}>BEID</h1>
-            <span>今日更新</span>
+            <h1 className="m3-title-lg" style={{ fontWeight: 800 }}>BEID</h1>
+            <span>专注工作台</span>
           </div>
           <button
             className="m3-icon-btn-filled"
@@ -595,84 +585,64 @@ function HomeHero({
             {profileAvatarUrl ? (
               <img src={profileAvatarUrl} alt="" referrerPolicy="no-referrer" />
             ) : (
-            <Mi name="person" />
-          )}
-        </button>
+              <Mi name="person" />
+            )}
+          </button>
         </div>
-        <div className="fb-home-editorial">
-          <div className="fb-home-editorial-copy">
-            <h2 className="m3-headline-md" style={{ fontWeight: 650 }}>今天要学点什么？</h2>
-            <p>从一个明确的视频开始，把注意力留给真正想完成的事。</p>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <button
-                className="m3-filled-btn"
-                style={{ minWidth: 160, height: 52, borderRadius: 26, padding: "0 26px" }}
-                onClick={onOpenSearch}
-                data-tour-target="home-search"
-              >
-                开始搜索
-              </button>
-            </div>
-            <p
-              className="fb-home-quote"
-              data-testid="daily-quote"
-              data-tour-target="daily-quote"
-              aria-label="每日语录"
-            >
-              <Mi name="format_quote" size={14} />
-              <span>{getDailyQuote(todayKey()).text}</span>
-            </p>
+        <section className="fb-home-welcome" aria-label="今日开始">
+          <div className="fb-home-welcome-copy">
+            <h2 className="m3-title-md" style={{ fontWeight: 700 }}>今天要学点什么？</h2>
+            <p>选一个视频开始专注学习，暂停和记录会自动保存。</p>
           </div>
-          <aside className="fb-home-featured">
-            <span>今日节奏</span>
-            <strong>看一节，专注一段</strong>
-            <p>把视频、笔记和计时收在同一条线上。</p>
-          </aside>
-        </div>
+          <button
+            className="m3-filled-btn"
+            style={{ height: 48, borderRadius: 24, padding: "0 26px" }}
+            onClick={onOpenSearch}
+            data-tour-target="home-search"
+          >
+            <Mi name="search" size={18} /> 开始学习
+          </button>
+          <p
+            className="fb-home-quote"
+            data-testid="daily-quote"
+            data-tour-target="daily-quote"
+            aria-label="每日一句"
+          >
+            <Mi name="format_quote" size={14} />
+            <span>{getDailyQuote(todayKey()).text}</span>
+          </p>
+        </section>
       </div>
     </div>
   );
 }
 
-// ============ 工作台介绍卡（_buildWorkspaceIntro） ============
-
 function WorkspaceIntro({ onOpenSearch }: { onOpenSearch: () => void }) {
   return (
-    <section className="fb-home-editorial" aria-label="今日更新">
-      <div className="fb-home-editorial-copy">
-        <div className="fb-home-masthead">
-          <div>
-            <h2 className="m3-title-lg" style={{ fontWeight: 800 }}>BEID</h2>
-            <span>今日更新</span>
-          </div>
+    <section className="fb-home-hero fb-home-hero--workspace" aria-label="专注工作台">
+      <div className="fb-home-masthead">
+        <div>
+          <h1 className="m3-title-lg" style={{ fontWeight: 800 }}>BEID</h1>
+          <span>专注工作台</span>
         </div>
-        <h3 className="m3-headline-md" style={{ fontWeight: 650 }}>今天要学点什么？</h3>
-        <p>从一个明确的视频开始，把注意力留给真正想完成的事。</p>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button
-            className="m3-filled-btn"
-            style={{ minWidth: 176, height: 52, borderRadius: 26, padding: "0 26px" }}
-            onClick={onOpenSearch}
-            data-tour-target="home-search"
-          >
-            <Mi name="search" size={18} /> 开始搜索
-          </button>
-        </div>
-        <p className="fb-home-quote" data-testid="daily-quote" data-tour-target="daily-quote">
-          <Mi name="format_quote" size={15} />
-          <span>{getDailyQuote(todayKey()).text}</span>
-        </p>
       </div>
-      <aside className="fb-home-featured">
-        <span>今日节奏</span>
-        <strong>看一节，专注一段</strong>
-        <p>把视频、笔记和计时收在同一条线上。</p>
-      </aside>
+      <div className="fb-home-welcome">
+        <div className="fb-home-welcome-copy">
+          <h2 className="m3-title-md" style={{ fontWeight: 700 }}>今天要学点什么？</h2>
+          <p>选一个视频开始专注学习，暂停和记录会自动保存。</p>
+        </div>
+        <button
+          className="m3-filled-btn"
+          style={{ height: 48, borderRadius: 24, padding: "0 26px" }}
+          onClick={onOpenSearch}
+          data-tour-target="home-search"
+        >
+          <Mi name="search" size={18} /> 开始学习
+        </button>
+      </div>
     </section>
   );
 }
-
-// ============ 主组件 ============
 
 export function FocusDashboard({ onOpenStatistics }: { onOpenStatistics: () => void }) {
   const timer = useFocusTimer();
@@ -760,6 +730,25 @@ export function FocusDashboard({ onOpenStatistics }: { onOpenStatistics: () => v
     },
     [learningList, openLinkedVideo],
   );
+
+  // Home-screen widget sync: keep the widget's today numbers live while the app runs.
+  useEffect(() => {
+    if (!timer.ready) return;
+    void syncHomeWidgetState({
+      focusedMinutes: Math.floor(timer.todayFocusedMs / 60_000),
+      completedCount: timer.todayCompletedCount,
+      continueTitle: continueEntry?.title ?? "",
+    });
+  }, [timer.ready, timer.todayFocusedMs, timer.todayCompletedCount, continueEntry?.title]);
+
+  // Widget "continue learning" tap: resume the current unfinished item.
+  useEffect(() => {
+    const onContinue = () => {
+      if (continueEntry) continueLearning(continueEntry);
+    };
+    window.addEventListener("beid:continue-learning", onContinue);
+    return () => window.removeEventListener("beid:continue-learning", onContinue);
+  }, [continueEntry, continueLearning]);
 
   async function startFocus() {
     const started = await timer.startFocus({
@@ -929,56 +918,72 @@ export function FocusDashboard({ onOpenStatistics }: { onOpenStatistics: () => v
   const coreCards = (
     <>
       {finishedSession && (
-        <FinishedCard session={finishedSession} onClose={timer.dismissLastFinishedSession} />
+        <div className="fb-tile fb-tile-wide">
+          <FinishedCard session={finishedSession} onClose={timer.dismissLastFinishedSession} />
+        </div>
       )}
-      {activeSession ? (
-        <ActiveCard
-          session={activeSession}
-          remainingMs={timer.remainingMs}
-          progress={timer.progress}
-          onPause={() => void pauseWithEncouragement()}
-          onResume={() => continueFocus(activeSession)}
-          onEnd={() => setShowTermination(true)}
-          onExtend={() => void extendFocus()}
-          onOpenLinkedVideo={() => openLinkedVideo(activeSession)}
+      <div className="fb-tile fb-tile-wide">
+        {activeSession ? (
+          <ActiveCard
+            session={activeSession}
+            remainingMs={timer.remainingMs}
+            progress={timer.progress}
+            onPause={() => void pauseWithEncouragement()}
+            onResume={() => continueFocus(activeSession)}
+            onEnd={() => setShowTermination(true)}
+            onExtend={() => void extendFocus()}
+            onOpenLinkedVideo={() => openLinkedVideo(activeSession)}
+          />
+        ) : (
+          <ReadyCard
+            goal={goal}
+            onGoalChange={setGoal}
+            selectedMinutes={selectedMinutes}
+            onSelectMinutes={setSelectedMinutes}
+            onSelectCustom={() => setShowCustomDuration(true)}
+            onStart={() => void startFocus()}
+            onOpenVideo={openSearch}
+          />
+        )}
+      </div>
+      <div className="fb-tile">
+        <TodaySummaryCard
+          focusedMinutes={Math.floor(timer.todayFocusedMs / 60_000)}
+          completedCount={timer.todayCompletedCount}
         />
-      ) : (
-        <ReadyCard
-          goal={goal}
-          onGoalChange={setGoal}
-          selectedMinutes={selectedMinutes}
-          onSelectMinutes={setSelectedMinutes}
-          onSelectCustom={() => setShowCustomDuration(true)}
-          onStart={() => void startFocus()}
-          onOpenVideo={openSearch}
-        />
-      )}
-      <TodaySummaryCard
-        focusedMinutes={Math.floor(timer.todayFocusedMs / 60_000)}
-        completedCount={timer.todayCompletedCount}
-      />
-      <RecentHistoryCard history={timer.history} />
-      <KaoyanTodayCard onOpen={() => setView("kaoyan")} />
-      <HomeIntentGroups onOpen={setView} onOpenStatistics={onOpenStatistics} />
+      </div>
+      <div className="fb-tile">
+        <KaoyanTodayCard onOpen={() => setView("kaoyan")} />
+      </div>
+      <div className="fb-tile">
+        <RecentHistoryCard history={timer.history} />
+      </div>
+      <div className="fb-tile fb-tile-wide">
+        <HomeIntentGroups onOpen={setView} onOpenStatistics={onOpenStatistics} />
+      </div>
     </>
   );
 
   const continueCard = (
-    <ContinueLearningCard
-      entry={continueEntry}
-      loading={learningListLoading}
-      onOpen={continueLearning}
-      onOpenList={openLearningList}
-    />
+    <div className="fb-tile fb-tile-wide">
+      <ContinueLearningCard
+        entry={continueEntry}
+        loading={learningListLoading}
+        onOpen={continueLearning}
+        onOpenList={openLearningList}
+      />
+    </div>
   );
 
   const cardsStyle: React.CSSProperties = {
     display: "grid",
-    gap: 14,
-    padding: "12px 24px 32px",
-    maxWidth: 840,
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 12,
+    padding: "4px 16px 32px",
+    maxWidth: 1080,
     margin: "0 auto",
     width: "100%",
+    alignItems: "start",
   };
 
   const pull = pullState.distance;

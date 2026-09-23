@@ -22,4 +22,14 @@
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
     </style>
+
+    <style name="BeidWidgetButton">
+        <item name="android:background">@drawable/beid_widget_button_bg</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">#E6ECF3</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
 </resources>

@@ -73,6 +73,19 @@
             android:exported="false" />
 
         <receiver
+            android:name=".BeidHomeWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.beid.app.WIDGET_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/beid_widget_home_info" />
+        </receiver>
+
+        <receiver
             android:name=".BeidFocusBootReceiver"
             android:enabled="true"
             android:exported="true">

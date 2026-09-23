@@ -61,6 +61,14 @@ const BEID_VIEWS = new Set<ViewKey>([
   "preferences",
 ]);
 
+// 桌面小插件快捷动作的目标视图
+const WIDGET_VIEW_BY_ACTION: Partial<Record<string, ViewKey>> = {
+  "open-app": "focus-dashboard",
+  focus: "focus",
+  search: "search",
+  "focus-statistics": "focus-statistics",
+};
+
 function NavigationItem({ view, label, Icon }: { view: ViewKey; label: string; Icon: typeof Home }) {
   const active = useAppStore((state) => state.view === view);
   const setView = useAppStore((state) => state.setView);
@@ -143,6 +151,22 @@ export function Shell({ children }: { children: ReactNode }) {
       window.removeEventListener("beid:request-app-back", nativeFallback);
     };
   }, [paletteOpen, view]);
+
+  // Home-screen widget quick actions arrive as DOM events from MainActivity.
+  useEffect(() => {
+    const onWidgetAction = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+      if (!action) return;
+      if (action === "continue-video") {
+        window.dispatchEvent(new Event("beid:continue-learning"));
+        return;
+      }
+      const view = WIDGET_VIEW_BY_ACTION[action];
+      if (view) useAppStore.getState().setView(view);
+    };
+    window.addEventListener("beid:widget-action", onWidgetAction);
+    return () => window.removeEventListener("beid:widget-action", onWidgetAction);
+  }, []);
 
   // 浏览器 / 平板 PWA 的系统返回：应用内返回优先，不能一按返回就把整个应用退掉。
   // 每个视图占一条历史记录；popstate 一律转成应用内返回，走完历史再退到父级页面。

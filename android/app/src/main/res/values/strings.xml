@@ -1,7 +1,19 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">BEID</string>
     <string name="title_activity_main">BEID</string>
     <string name="package_name">com.beid.app</string>
     <string name="custom_url_scheme">com.beid.app</string>
+
+    <!-- 桌面小插件 -->
+    <string name="widget_title">BEID 专注工作台</string>
+    <string name="widget_description">快速继续学习、开始专注、统计今日时长</string>
+    <string name="widget_focus_empty">今日专注 0 分钟</string>
+    <string name="widget_focus_value">今日专注 %1$d 分钟 · 完成 %2$d 次</string>
+    <string name="widget_continue_hint">打开应用，继续上次的学习</string>
+    <string name="widget_continue_label">正在看：%1$s</string>
+    <string name="widget_action_continue">继续学习</string>
+    <string name="widget_action_focus">开始专注</string>
+    <string name="widget_action_search">找视频</string>
+    <string name="widget_action_stats">专注数据</string>
 </resources>

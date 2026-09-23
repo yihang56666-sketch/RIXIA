@@ -132,4 +132,29 @@ describe("Shell", () => {
     rerender(<Shell><div>内容</div></Shell>);
     expect(screen.queryByRole("button", { name: /回到正在看的视频/ })).not.toBeInTheDocument();
   });
+
+  it('routes home-screen widget quick actions to the matching view', () => {
+    render(<Shell><div>内容</div></Shell>);
+
+    act(() => window.dispatchEvent(new CustomEvent('beid:widget-action', { detail: { action: 'search' } })));
+    expect(useAppStore.getState().view).toBe('search');
+
+    act(() => window.dispatchEvent(new CustomEvent('beid:widget-action', { detail: { action: 'focus-statistics' } })));
+    expect(useAppStore.getState().view).toBe('focus-statistics');
+
+    act(() => window.dispatchEvent(new CustomEvent('beid:widget-action', { detail: { action: 'open-app' } })));
+    expect(useAppStore.getState().view).toBe('focus-dashboard');
+  });
+
+  it('turns the widget continue tap into a continue-learning event', () => {
+    render(<Shell><div>内容</div></Shell>);
+
+    const seen: string[] = [];
+    const capture = () => seen.push('continue-learning');
+    window.addEventListener('beid:continue-learning', capture);
+    act(() => window.dispatchEvent(new CustomEvent('beid:widget-action', { detail: { action: 'continue-video' } })));
+    window.removeEventListener('beid:continue-learning', capture);
+
+    expect(seen).toEqual(['continue-learning']);
+  });
 });
